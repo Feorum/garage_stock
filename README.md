@@ -3,11 +3,14 @@
 Mechanics log the work they did on each car; the administrator sees the same data with prices.
 Prices live in a separate table that only admins can read (enforced by the database, not the screen).
 
+Deployed app: https://feorum.github.io/garage_stock/
+
 ## Files
 | File | Role |
 |---|---|
 | `index.html` | Page shell and styles |
 | `app.js` | All app logic (login, mechanic view, admin view) |
+| `account.html` + `account.js` | Secure email-link password setup and authenticated password changes |
 | `sw.js` | Service worker: caches the app so it opens fast and offline |
 | `manifest.webmanifest` + `icons/` | Makes it installable on a phone's home screen |
 | `schema.sql` | Database tables, security rules, sample work list |
