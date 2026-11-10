@@ -29,7 +29,8 @@ const tell = (text, error = false) => {
 const invalidLink = () => {
   form.hidden = true;
   intro.textContent = 'This account link is missing, expired, or invalid.';
-  tell('Ask your administrator for a new password setup email.', true);
+  tell('Setup links work only once. If you already chose a password, open the garage log to sign in. Otherwise, ask your administrator for a new setup email.', true);
+  openApp.hidden = false;
 };
 
 async function initialize() {
