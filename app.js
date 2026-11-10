@@ -24,7 +24,7 @@ const el = (tag, attrs = {}, ...kids) => {
 const eur = n => '€' + Number(n || 0).toLocaleString('en-US');
 const fmtDate = d => d.split('-').reverse().join('.');
 const today = () => new Date().toLocaleDateString('sv'); // YYYY-MM-DD in local time
-const show = (...nodes) => app.replaceChildren(...nodes);
+const show = (...nodes) => app.replaceChildren(...nodes.flat());
 const signOut = async () => { await sb.auth.signOut(); loginView(); };
 const header = title => el('div', { class: 'top' }, el('h1', {}, title),
   el('button', { onclick: signOut }, 'Sign out'));
@@ -141,7 +141,7 @@ async function reportTab(box, date) {
     a.click(); URL.revokeObjectURL(a.href);
   };
   box.replaceChildren(el('div', { class: 'card' }, dt),
-    cards.length ? cards : el('div', { class: 'card mut' }, 'No work recorded on ' + fmtDate(date) + '.'),
+    ...(cards.length ? cards : [el('div', { class: 'card mut' }, 'No work recorded on ' + fmtDate(date) + '.')]),
     el('div', { class: 'card line tot' }, el('span', {}, 'Total ' + fmtDate(date)), el('span', {}, eur(grand))),
     el('button', { class: 'p', onclick: csv }, 'Download day as CSV'));
 }
