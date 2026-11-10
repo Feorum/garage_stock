@@ -1,6 +1,6 @@
 // Service worker: caches the app shell so the app opens fast and works offline.
 // Supabase API calls (other origin) are never cached, so data is always live.
-const CACHE = 'garage-log-v2';
+const CACHE = 'garage-log-v3';
 const SHELL = ['./', './index.html', './app.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 const SHELL_URLS = new Set(SHELL.map(path => new URL(path, self.registration.scope).href));
 
