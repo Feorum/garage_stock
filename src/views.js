@@ -1,13 +1,7 @@
-import { element, icon } from './ui.js';
+import { element } from './ui.js';
 import { getSections } from './navigation.js';
 import { WORKS, VEHICLE_GROUPS, AVAILABLE_WORKS } from './catalogue.js';
-
-function plannedSection(title, description, name) {
-  return element('section', { class: 'empty-state', 'aria-label': title },
-    element('span', { class: 'empty-icon' }, icon(name)),
-    element('span', { class: 'tag tag-neutral' }, 'Coming next'),
-    element('h2', {}, title), element('p', {}, description));
-}
+import { mountOrders } from './orders.js';
 
 function catalogueView() {
   const rows = element('tbody');
@@ -41,19 +35,16 @@ function catalogueView() {
     element('p', { class: 'catalogue-footnote' }, 'Only these works can be included in an order. Unavailable combinations remain excluded until clarified.'));
 }
 
-export function renderSection(role, section) {
+export function createSectionView(role, section, profile, client) {
   // A hash is navigation input, never authority to render another role's section.
-  if (!getSections(role).some(item => item.id === section)) return element('div');
-  if (role === 'admin') {
-    if (section === 'catalogue') return catalogueView();
-    if (section === 'reports') return plannedSection('Work reports are coming next', 'Completed work and order progress will appear here as your team starts using orders.', 'reports');
-    return element('div', {},
-      element('div', { class: 'flow-cards' },
-        element('article', { class: 'flow-card' }, icon('assigned'), element('span', { class: 'eyebrow' }, 'Owner orders'), element('h2', {}, 'Assign client work'), element('p', {}, 'Send vehicle tasks directly to a specific mechanic.')),
-        element('article', { class: 'flow-card' }, icon('orders'), element('span', { class: 'eyebrow' }, 'Manager orders'), element('h2', {}, 'A shared work queue'), element('p', {}, 'Mechanics choose available tasks submitted by managers.'))),
-      plannedSection('Your order board is coming next', 'Creating, assigning and following vehicle orders will be the next step. This workspace does not show live orders yet.', 'orders'));
+  if (!getSections(role).some(item => item.id === section)) return { element: element('div'), dispose() {} };
+  if (role === 'admin' && section === 'catalogue') return { element: catalogueView(), dispose() {} };
+  if (!profile || !client) {
+    return { element: element('p', { class: 'muted' }, 'Sign in to load your vehicle orders.'), dispose() {} };
   }
-  if (section === 'manager-orders') return plannedSection('Manager orders will appear here', 'Once the shared queue is ready, choose a vehicle and start one of its available ordered tasks.', 'orders');
-  if (section === 'my-work') return plannedSection('Your work will appear here', 'Started tasks, blockers and completed work from both order sources will stay together here.', 'work');
-  return plannedSection('Owner assignments will appear here', 'Tasks sent directly to you will stay in this list until completed or reassigned by the Owner.', 'assigned');
+  return mountOrders({ role, profile, section, client });
+}
+
+export function renderSection(role, section, profile, client) {
+  return createSectionView(role, section, profile, client).element;
 }

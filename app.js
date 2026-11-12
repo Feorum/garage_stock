@@ -1,12 +1,19 @@
 import { createAuthController } from './src/auth.js';
 import { element, icon, renderNotice } from './src/ui.js';
 import { getSections, resolveSection } from './src/navigation.js';
-import { renderSection } from './src/views.js';
+import { createSectionView } from './src/views.js';
 
 const app = document.getElementById('app');
 let controller;
+let client;
 let currentState;
 let workspace;
+let activeView;
+
+function disposeView() {
+  activeView?.dispose();
+  activeView = null;
+}
 
 function showLogin(message = '') {
   const email = element('input', { id: 'email', name: 'email', type: 'email', autocomplete: 'username', required: true });
@@ -46,6 +53,7 @@ function showLogin(message = '') {
 }
 
 function showError(message) {
+  disposeView();
   workspace = null;
   app.replaceChildren(element('main', { id: 'main-content', class: 'startup' },
     element('span', { class: 'wordmark' }, 'Garage/'),
@@ -65,7 +73,9 @@ function updateWorkspace(focus = false) {
   }
   workspace.title.textContent = section.label;
   workspace.description.textContent = section.description;
-  workspace.content.replaceChildren(renderSection(profile.role, section.id));
+  disposeView();
+  activeView = createSectionView(profile.role, section.id, profile, client);
+  workspace.content.replaceChildren(activeView.element);
   document.title = `${section.label} · Garage`;
   if (focus) workspace.title.focus();
 }
@@ -90,7 +100,7 @@ function showWorkspace(profile) {
     element('aside', { class: 'sidebar' },
       element('a', { class: 'wordmark', href: `#${sections[0].id}`, 'aria-label': 'Garage home' }, 'Garage', element('span', { 'aria-hidden': 'true' }, '/')),
       element('p', { class: 'sidebar-caption' }, owner ? 'Owner workspace' : 'Mechanic workspace'), navigation,
-      element('div', { class: 'sidebar-foot' }, element('span', { class: 'version-label' }, 'Foundation · 01'), connection)),
+      element('div', { class: 'sidebar-foot' }, element('span', { class: 'version-label' }, 'Workshop workspace'), connection)),
     element('div', { class: 'workspace-body' },
       element('header', { class: 'workspace-header' },
         element('div', { class: 'identity' }, element('span', { class: 'avatar', 'aria-hidden': 'true' }, name.slice(0, 1).toLocaleUpperCase()),
@@ -105,6 +115,7 @@ function showWorkspace(profile) {
 }
 
 function showState(state) {
+  disposeView();
   currentState = state;
   workspace = null;
   if (state.status === 'signed_out') {
@@ -131,6 +142,7 @@ window.addEventListener('offline', () => workspace?.updateConnection());
 async function start() {
   try {
     const { sb } = await import('./src/supabase.js');
+    client = sb;
     controller = createAuthController(sb, { onChange: showState });
     await controller.start();
   } catch {
