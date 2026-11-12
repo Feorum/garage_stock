@@ -28,6 +28,8 @@ export function createClient() {
   // These records are synthetic fixtures, never copies of uploaded business data.
   const clone = value => JSON.parse(JSON.stringify(value));
   const orders = clone(fixture.orders || []);
+  const sheetSources = clone(fixture.sheetSources || []);
+  const sheetSecrets = new Map();
   const staff = clone(fixture.staff || [
     { id: user.id, name: 'Test Mechanic' },
     { id: '22222222-2222-4222-8222-222222222222', name: 'Other Mechanic' },
@@ -36,6 +38,8 @@ export function createClient() {
   const errorCounts = new Map();
   let serial = 0;
   let lostCreateResponse = false;
+  let lostSheetRegisterResponse = false;
+  let lostSheetRotateResponse = false;
   const currentRole = () => (fixture.profile === undefined ? 'admin' : fixture.profile?.role);
   const errorResult = (message, code = 'P0001') => ({ data: null, error: { message, code } });
   const workName = code => ({ W01: 'капот полностью', W02: 'Бампер', W13: 'Зеркала', W19: 'тонировка задней полусферы (5%,15%)' }[code] || code);
@@ -46,8 +50,11 @@ export function createClient() {
     return tasks.length ? [{ ...clone(order), tasks: clone(tasks) }] : [];
   });
   globalThis.__garageOrderState = { orders, receipts, staff };
+  globalThis.__garageSheetState = { sources: sheetSources };
 
   async function rpc(name, args = {}) {
+    const authenticatedAtRequest = Boolean(session);
+    const frozenSheetList = name === 'garage_sheet_sources' && fixture.freezeSheetListSnapshot ? clone(sheetSources) : null;
     calls.push({ method: 'rpc', name, args: clone(args) });
     await pause(fixture.rpcDelays?.[name] ?? fixture.rpcDelay);
     const configuredError = fixture.rpcErrors?.[name];
@@ -58,8 +65,55 @@ export function createClient() {
         return errorResult(typeof configuredError === 'string' ? configuredError : configuredError.message);
       }
     }
-    if (!session) return errorResult('Sign in to continue.', '42501');
+    if (!session && !(fixture.allowLateRpcResponse && authenticatedAtRequest)) return errorResult('Sign in to continue.', '42501');
     const owner = currentRole() === 'admin';
+    if (['garage_sheet_sources', 'garage_register_sheet', 'garage_rotate_sheet_secret', 'garage_set_sheet_active'].includes(name)) {
+      if (!owner) return errorResult('Owner access required.', '42501');
+      if (name === 'garage_sheet_sources') return { data: frozenSheetList || clone(sheetSources), error: null };
+      if (name === 'garage_register_sheet') {
+        if (!args.p_name?.trim() || !/^[A-Za-z0-9_-]{20,200}$/.test(args.p_spreadsheet_id || '') || !args.p_secret || !args.p_source_id) {
+          return errorResult('Connection fields are invalid.');
+        }
+        let source = sheetSources.find(row => row.id === args.p_source_id);
+        if (source) {
+          if (source.spreadsheet_id !== args.p_spreadsheet_id || sheetSecrets.get(source.id) !== args.p_secret) return errorResult('Connection identity is already registered.');
+        } else {
+          if (sheetSources.some(row => row.spreadsheet_id === args.p_spreadsheet_id)) return errorResult('This spreadsheet is already registered.');
+          source = {
+            id: args.p_source_id, source_id: args.p_source_id, name: args.p_name.trim(), spreadsheet_id: args.p_spreadsheet_id,
+            active: true, version: 1, last_success_at: null, last_error_at: null, last_error_code: null, last_error: null,
+            created_at: '2026-11-12T10:00:00Z',
+          };
+          sheetSources.push(source);
+          sheetSecrets.set(source.id, args.p_secret);
+        }
+        if (fixture.loseSheetRegisterResponseOnce && !lostSheetRegisterResponse) {
+          lostSheetRegisterResponse = true;
+          return errorResult('Network response was lost. Retry the same request.', 'NETWORK');
+        }
+        return { data: clone(source), error: null };
+      }
+      const source = sheetSources.find(row => row.id === args.p_source_id);
+      if (!source) return errorResult('Connection not found.');
+      if (name === 'garage_set_sheet_active') {
+        if (source.version !== args.p_expected_version) return errorResult('This connection changed. Refresh and try again.', '40001');
+        source.active = args.p_active;
+        source.version += 1;
+        return { data: clone(source), error: null };
+      }
+      if (source.version === args.p_expected_version + 1 && sheetSecrets.get(source.id) === args.p_secret) {
+        return { data: clone(source), error: null };
+      }
+      if (source.version !== args.p_expected_version) return errorResult('This connection changed. Refresh and try again.', '40001');
+      if (!args.p_secret) return errorResult('A setup key is required.');
+      sheetSecrets.set(source.id, args.p_secret);
+      source.version += 1;
+      if (fixture.loseSheetRotateResponseOnce && !lostSheetRotateResponse) {
+        lostSheetRotateResponse = true;
+        return errorResult('Network response was lost. Retry the same setup key.', 'NETWORK');
+      }
+      return { data: clone(source), error: null };
+    }
     if (name === 'garage_list_orders') return { data: visibleOrders(), error: null };
     if (name === 'garage_staff') return owner ? { data: clone(staff), error: null } : errorResult('Owner access required.', '42501');
     if (name === 'garage_order_financials') {
@@ -155,6 +209,7 @@ export function createClient() {
   }
 
   return {
+    supabaseUrl: fixture.supabaseUrl || 'https://example.supabase.co',
     auth: {
       async getSession() {
         calls.push({ method: 'getSession' });

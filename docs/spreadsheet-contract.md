@@ -74,9 +74,9 @@ Run synthetic tests with:
 python3 tests/test-workbook-preview.py
 ```
 
-## New Manager workbook contract
+## Manager workbook contract
 
-The future live feed should use a separate sanitized Manager workbook, not the
+The live submission feed uses a separate sanitized Manager workbook, not the
 Owner financial workbook and not an automatic replay of the historical export.
 Use one header row per order and a separate row per requested task:
 
@@ -92,8 +92,8 @@ are protected feedback and cannot authorize publication or overwrite server
 execution. Owner-assigned other-client orders never become shared through this
 integration.
 
-The future worker must capture immutable order/task snapshots, preserve UUIDs
-through sorting, allocate source revisions, and retain the same submission ID
+The standalone worker captures immutable order/task snapshots, preserves UUIDs
+through sorting, allocates source revisions, and retains the same submission ID
 and hash on retries. The server must validate a complete revision atomically,
 reject duplicate identities and stale/conflicting scope, and authenticate the
 registered source. A Manager-name cell remains an attribution label unless a
@@ -105,7 +105,10 @@ or changing its vehicle group, requires explicit Owner resolution while keeping
 the last accepted scope and history. Error and reconciliation responses expose
 no financial values or confidential financial reasons.
 
-Readiness to connect live Google Sheets additionally requires the actual shared
-spreadsheet identity, Owner-controlled worker credentials, and the registered
-integration endpoint. Uploaded XLSX copies are passive reference snapshots;
-they do not grant a live Google account connection.
+Live operation requires registration of the exact spreadsheet, Owner-private
+worker settings, and one-time Google authorization of its scheduled trigger.
+The import/status endpoint and source management are described in
+[manager-api.md](manager-api.md); installation is in
+[the standalone worker guide](../integrations/google-sheets/README.md).
+Uploaded XLSX copies remain passive references; their unchecked rows are not
+automatically submitted.

@@ -1,7 +1,8 @@
 const OWNER = [
   { id: 'orders', label: 'Orders', icon: 'orders', description: 'Client assignments and manager orders in one place.' },
   { id: 'catalogue', label: 'Approved works', icon: 'catalogue', description: 'The closed work list, organized by vehicle group.' },
-  { id: 'reports', label: 'Reports', icon: 'reports', description: 'A clear record of the work performed by your team.' }
+  { id: 'reports', label: 'Reports', icon: 'reports', description: 'A clear record of the work performed by your team.' },
+  { id: 'sheets', label: 'Sheet connections', icon: 'catalogue', description: 'Manage the workbooks that submit Manager orders.' }
 ];
 
 const MECHANIC = [

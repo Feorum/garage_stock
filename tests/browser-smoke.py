@@ -106,7 +106,7 @@ def run(args):
         try:
             # Both roles load only their own workspace navigation.
             for role, name, expected_links, forbidden in [
-                ('admin', 'Test Owner', ['Orders', 'Approved works', 'Reports'], 'Assigned by Owner'),
+                ('admin', 'Test Owner', ['Orders', 'Approved works', 'Reports', 'Sheet connections'], 'Assigned by Owner'),
                 ('mechanic', 'Test Mechanic', ['Assigned by Owner', 'Manager orders', 'My work'], 'Reports'),
             ]:
                 viewport = {'width': 390, 'height': 844} if role == 'mechanic' else None
@@ -240,12 +240,12 @@ def run(args):
                 context.close()
             passed.append('unsupported and failed account callbacks rejected and scrubbed')
 
-            # Real service-worker upgrade: install a minimal v4 worker on the same scope first.
+            # Real service-worker upgrade: install a minimal v5 worker on the same scope first.
             server.stub_config = True
             context, page, errors, live = new_page(browser, {'signedIn': False}, service_workers='allow')
             legacy = """
               self.addEventListener('install', event => {
-                event.waitUntil(caches.open('garage-log-v4').then(cache =>
+                event.waitUntil(caches.open('garage-log-v5').then(cache =>
                   cache.put('./legacy-marker', new Response('old shell'))));
                 self.skipWaiting();
               });
@@ -282,16 +282,16 @@ def run(args):
             page.goto(base + '/index.html')
             expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
             page.wait_for_function("navigator.serviceWorker.controller && new URL(navigator.serviceWorker.controller.scriptURL).pathname.endsWith('/sw.js')")
-            page.wait_for_function("caches.keys().then(keys => keys.includes('garage-log-v5') && !keys.includes('garage-log-v4'))")
+            page.wait_for_function("caches.keys().then(keys => keys.includes('garage-log-v6') && !keys.includes('garage-log-v5'))")
             keys = page.evaluate('caches.keys()')
             assert 'another-app-v1' in keys, keys
-            cache_urls = page.evaluate("caches.open('garage-log-v5').then(c => c.keys()).then(reqs => reqs.map(r => r.url))")
+            cache_urls = page.evaluate("caches.open('garage-log-v6').then(c => c.keys()).then(reqs => reqs.map(r => r.url))")
             assert not any('/account.html' in url or '/account.js' in url for url in cache_urls), cache_urls
             assert any('/styles.css' in url for url in cache_urls), cache_urls
             assert any('/src/' in url for url in cache_urls), cache_urls
             assert not errors, errors
             assert not live, live
-            passed.append('v4 to v5 service-worker upgrade, sibling-cache preservation and account exclusions')
+            passed.append('v5 to v6 service-worker upgrade, sibling-cache preservation and account exclusions')
             context.close()
             server.stub_config = False
         finally:

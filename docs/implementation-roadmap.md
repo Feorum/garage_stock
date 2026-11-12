@@ -29,7 +29,7 @@ been analyzed privately and are supported by a dry-run preview tool.
 | 2 — delivered | Additive order/task schema, RLS and transactional operations | Mandatory assignment, shared claims, private financial access and retry invariants have isolated database checks |
 | 3 — delivered | Owner creates, assigns and publishes an order; mechanic starts/blocks/completes | Another mechanic cannot access mandatory work; completion is recorded once |
 | 4 — delivered | Manager shared queue and concurrent task claiming | Two mechanics claiming one task produce one winner; Owner registers Manager requests |
-| 5 — next | Sanitized Google Sheets feed, authenticated import, stable IDs, retries | Dry-run preview/contract are prepared; live source and submission integration still required |
+| 5 — ready for activation | Sanitized Manager template, authenticated import/status, stable IDs, revisions, retries and Owner source management | Backend and standalone worker are implemented/tested; Owner's one-time Google installation/authorization starts the schedule |
 | 6 — partial | Owner operational reports and immutable rate snapshots | Snapshot reports are delivered; accounting, correction workflows and source-build automation remain later work |
 | 7 | Pilot, legacy history, controlled cutover and installed-client update | Existing identities/job history reconcile; old clients cannot bypass ordered work |
 
@@ -51,3 +51,8 @@ workbook remain in restricted project notes, outside this public repository.
 The supplied operational sheet uses a completed checkbox, not a submission flag.
 Historical completed rows and financial extracts never enter the new queue
 automatically. Planned date, deadline and server completion timestamps are distinct.
+
+See [Manager API](manager-api.md) and [worker setup](../integrations/google-sheets/README.md).
+The Google connector prepares Sheets but does not deploy Apps Script projects or
+authorize installable triggers. Source registration is reported separately from
+its first successful synchronization.

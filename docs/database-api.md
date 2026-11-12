@@ -101,8 +101,11 @@ Orders keep visit-specific vehicle/VIN/colour/group snapshots. They do not merge
 visits on a VIN or plate. Legacy jobs retain their original IDs and have no
 invented order linkage or historical price snapshot.
 
-Manager/shared orders can currently be registered by the Owner. Live Google
-ingestion, versioned source amendments, automatic promotion rules, reopening or
-voiding completed work, full accounting/payroll and customer invoicing are later
-increments. The supplied historical spreadsheets are private references and
-dry-run inputs, not an instruction to create active tasks automatically.
+Manager/shared orders can be registered by the Owner or by a registered
+spreadsheet source through migration `202611120002` and its authenticated Edge
+endpoint. Pending source amendments are version-checked; work already changed
+in the program requires Owner review. See [Manager API](manager-api.md).
+The standalone Google worker needs one-time Owner authorization before its
+schedule runs. Automatic promotion rules, completion corrections, full
+accounting/payroll and customer invoicing remain later increments. Historical
+spreadsheets remain private references and dry-run inputs, not active tasks.

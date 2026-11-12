@@ -1,0 +1,6 @@
+project_id = "garage-stock"
+
+[functions.manager-orders]
+# Source credentials are checked by the handler and its private database RPCs.
+verify_jwt = false
+entrypoint = "./functions/manager-orders/index.ts"

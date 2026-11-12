@@ -21,8 +21,12 @@ Live app: https://feorum.github.io/garage_stock/.
 - Spreadsheet copies have been analyzed privately. A local preview tool
   identifies history and ambiguous mappings without creating live orders.
 
-Automatic Google Sheets synchronization is a subsequent increment. The shared
-queue currently accepts requests registered by the Owner; it is not a live feed.
+Google Sheets submissions are supported by an authenticated import endpoint and
+an Owner-private standalone worker. Automatic delivery starts after the Owner's
+one-time Google installation/authorization; a registered source alone is not a
+running scheduled feed. The shared queue also accepts Owner-entered requests.
+Manage registration, private setup values, rotation and pause under **Sheet
+connections**. Never place its credential in a Manager-editable script/workbook.
 See [the roadmap](docs/implementation-roadmap.md) and
 [spreadsheet contract](docs/spreadsheet-contract.md).
 
@@ -66,7 +70,10 @@ Notify PostgREST to reload its schema after an API-based migration. See
 python3 scripts/build-pages.py
 python3 tests/browser-smoke.py
 python3 tests/browser-orders.py
+python3 tests/browser-sheets.py
 bash tests/run-database-tests.sh
+bash tests/run-manager-tests.sh
+node --test tests/manager-edge.test.mjs tests/google-worker.test.mjs
 python3 tests/test-workbook-preview.py
 ```
 
@@ -85,16 +92,19 @@ Workbook tests use synthetic fixtures and the optional dependency in
 | `app.js` | Startup, session routing and view disposal |
 | `src/supabase.js`, `src/auth.js` | Shared client, verified user/profile state |
 | `src/orders.js` | Owner forms, mechanic actions, operational reports and private amounts |
+| `src/sheets.js` | Owner-only spreadsheet source setup and sync status |
 | `src/views.js`, `src/navigation.js`, `src/ui.js` | Role-specific views and safe DOM helpers |
 | `src/catalogue.js` | Operational work/group labels and availability; no rates |
 | `account.html`, `account.js` | Implicit email-link password setup and changes |
 | `supabase/migrations/` | Server-authorized workflow, RLS and data structures |
+| `supabase/functions/manager-orders/` | Source-authenticated import/status endpoint |
+| `integrations/google-sheets/` | Standalone Owner-private worker and setup instructions |
 | `scripts/preview-workbooks.py` | Private source preview without database writes |
 | `scripts/build-pages.py`, `sw.js` | Public build and versioned static cache |
 
 ## Caching and deployment
 
-`garage-log-v5` precaches one complete public module graph. Updates wait for older
+`garage-log-v6` precaches one complete public module graph. Updates wait for older
 app tabs to close; close/reopen the app to activate an update. Only `garage-log-`
 caches are cleaned up. Account callbacks, authorized requests, Supabase data and
 financial responses bypass the service-worker cache. Work actions require a
