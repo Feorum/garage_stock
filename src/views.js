@@ -2,6 +2,7 @@ import { element } from './ui.js';
 import { getSections } from './navigation.js';
 import { WORKS, VEHICLE_GROUPS, AVAILABLE_WORKS } from './catalogue.js';
 import { mountOrders } from './orders.js';
+import { mountSheets } from './sheets.js';
 
 function catalogueView() {
   const rows = element('tbody');
@@ -42,6 +43,7 @@ export function createSectionView(role, section, profile, client) {
   if (!profile || !client) {
     return { element: element('p', { class: 'muted' }, 'Sign in to load your vehicle orders.'), dispose() {} };
   }
+  if (role === 'admin' && section === 'sheets') return mountSheets({ profile, client });
   return mountOrders({ role, profile, section, client });
 }
 
