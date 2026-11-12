@@ -1,40 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1f6feb">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<title>Garage Daily Log</title>
-<style>
-:root{--bg:#f4f6f9;--card:#fff;--tx:#1c2430;--mut:#667085;--ac:#1f6feb;--bd:#d9dee6;--er:#c62828;color-scheme:light dark}
-@media (prefers-color-scheme:dark){:root{--bg:#12161c;--card:#1b222c;--tx:#e8edf3;--mut:#93a0b2;--ac:#4c8dff;--bd:#2c3644;--er:#ff7b72}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,Arial,sans-serif;
- padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
-main{max-width:640px;margin:0 auto;padding:14px}
-h1{font-size:20px;margin:0}h2{font-size:16px;margin:0 0 8px}
-.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.sub{color:var(--mut);font-size:14px;margin-bottom:12px}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
-input{width:100%;font:inherit;padding:11px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);margin-bottom:8px}
-button{font:inherit;padding:12px 14px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--tx);min-height:44px}
-button.p{background:var(--ac);color:#fff;border-color:var(--ac);font-weight:bold;width:100%}
-button.d{color:var(--er)}
-.chips{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 12px}
-.chip{border-radius:999px;padding:9px 12px;font-size:14px;min-height:40px}
-.chip.on{background:var(--ac);color:#fff;border-color:var(--ac)}
-.row{display:flex;gap:8px;align-items:center}.row>.grow{flex:1}
-.tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button{flex:1}.tabs .on{background:var(--ac);color:#fff;border-color:var(--ac)}
-.line{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px dashed var(--bd)}
-.tot{font-weight:bold}.mut{color:var(--mut)}.msg{color:var(--er);font-size:14px;margin-top:6px}
-.price{width:100px}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#176b57">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Garage · Work orders</title>
 </head>
 <body>
-<main id="app"><p class="mut">Loading…</p></main>
-<script type="module" src="app.js"></script>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div id="app">
+    <main id="main-content" class="startup" aria-live="polite">
+      <span class="wordmark">Garage<span aria-hidden="true">/</span></span>
+      <p>Opening your workspace…</p>
+    </main>
+  </div>
+  <noscript><p class="startup">Enable JavaScript to sign in to your garage workspace.</p></noscript>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
