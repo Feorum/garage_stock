@@ -1,56 +1,107 @@
-# Garage Daily Log (PWA + Supabase)
+# Garage Daily Log
 
-Mechanics log the work they did on each car; the administrator sees the same data with prices.
-Prices live in a separate table that only admins can read (enforced by the database, not the screen).
+A mobile PWA for vehicle orders, built incrementally on Supabase and GitHub Pages.
+The first increment is an application skeleton: real sign-in and profile lookup,
+separate Owner and Mechanic navigation, and a read-only approved-work catalogue.
+Order lists are explicitly marked as being prepared. They are not connected to
+an order database yet and do not imply that the database contains zero orders.
 
-Deployed app: https://feorum.github.io/garage_stock/
+The previous daily log is preserved in Git history at commit `240fd91`. The
+existing hosted site is https://feorum.github.io/garage_stock/. Local source
+changes do not publish the new skeleton or change the existing database.
+
+## Current increment
+
+- Existing Supabase accounts and `profiles` remain in use. The `admin` role is
+  displayed as Owner. Unknown roles and failed profiles do not receive a workspace.
+- Owner and Mechanic screens have separate navigation and planned-state content.
+- The approved catalogue contains 19 work types and 17 vehicle groups, with
+  sanitized availability information. It contains no rates or financial data.
+- Password setup/recovery remains on `account.html` with the existing implicit
+  Supabase callback, verified session, and URL cleanup.
+- No order creation, task claim/completion, Google Sheets integration, database
+  migration, or financial reporting is implemented in this increment.
+
+The UI is a foundation, not a replacement for database authorization. Future
+task operations must enforce routing, assignment and confidentiality server-side.
+See [the implementation roadmap](docs/implementation-roadmap.md).
+
+## Run locally
+
+Use the existing project's public browser settings:
+
+```sh
+export SUPABASE_URL='https://YOUR-PROJECT.supabase.co'
+export SUPABASE_PUBLISHABLE_KEY='your-public-publishable-key'
+python3 scripts/build-pages.py
+python3 -m http.server 8080 --directory dist
+```
+
+Open http://localhost:8080. A legacy public `SUPABASE_ANON_KEY` can replace the
+publishable-key variable. Never use a secret key, service-role key, or Management
+API token in this build. Source configuration intentionally uses placeholders;
+the builder substitutes public settings only in `src/supabase.js`.
+
+The builder uses an explicit public-file allowlist. Tests, documentation, SQL,
+source spreadsheets and private project notes are excluded. `dist/` is ignored.
+To use another dedicated output directory, pass `--output /path/to/empty-folder`.
+Existing outputs containing unlisted files are refused, so stale private files
+cannot silently become part of a public release.
+
+## Validate
+
+With Python Playwright and Chromium available, build first and run:
+
+```sh
+python3 tests/browser-smoke.py
+```
+
+The browser checks use a mocked Supabase SDK and no live credentials. By default
+they serve `dist/`, use `/usr/bin/chromium`, and save artifacts under
+`/workspace/scratch/skeleton-smoke`. Override these with `--directory`,
+`--chromium`, and `--output` when running elsewhere.
 
 ## Files
-| File | Role |
-|---|---|
-| `index.html` | Page shell and styles |
-| `app.js` | All app logic (login, mechanic view, admin view) |
-| `account.html` + `account.js` | Secure email-link password setup and authenticated password changes |
-| `sw.js` | Service worker: caches the app so it opens fast and offline |
-| `manifest.webmanifest` + `icons/` | Makes it installable on a phone's home screen |
-| `schema.sql` | Database tables, security rules, sample work list |
 
-## Setup
-1. **Create a Supabase project** at supabase.com (free tier is enough).
-2. **Run the schema:** SQL Editor -> New query -> paste `schema.sql` -> Run.
-3. **Lock sign-ups:** Authentication settings -> turn off "Allow new users to sign up" (you create accounts yourself).
-4. **Create accounts:** Authentication -> Users -> Add user, one for you and one per mechanic (email + password, auto-confirm).
-5. **Set names and your admin role** in the SQL Editor (replace the emails):
-   ```sql
-   update profiles set role = 'admin' where id = (select id from auth.users where email = 'you@example.com');
-   update profiles set name = 'Andrey' where id = (select id from auth.users where email = 'andrey@example.com');
-   update profiles set name = 'Fedor'  where id = (select id from auth.users where email = 'fedor@example.com');
-   update profiles set name = 'John'   where id = (select id from auth.users where email = 'john@example.com');
-   ```
-6. **Build the public site:** set `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` (or the legacy public `SUPABASE_ANON_KEY`) in your shell, then run `python3 scripts/build-pages.py`.
-   Only public browser settings belong in this build. Never use a secret or `service_role` key. The output is in `dist/`.
-7. **Test locally:** in this folder run `python3 -m http.server 8080 --directory dist`, open http://localhost:8080
-   (service workers work on localhost without HTTPS).
-8. **Deploy** the contents of `dist/` to a static host with HTTPS, such as GitHub Pages.
-9. **Install on phones:** Android Chrome -> menu -> Install app. iPhone Safari -> Share -> Add to Home Screen.
+| File | Responsibility |
+| --- | --- |
+| `index.html`, `styles.css` | Responsive application shell and styles |
+| `app.js` | Application startup and session-driven rendering |
+| `src/supabase.js` | Shared Supabase client and public build configuration |
+| `src/auth.js` | Authentication/profile state |
+| `src/navigation.js`, `src/ui.js`, `src/views.js` | Role-aware navigation and screens |
+| `src/catalogue.js` | Approved operational labels and availability; no prices |
+| `account.html`, `account.js` | Email-link password setup and authenticated changes |
+| `sw.js` | Versioned cache of public app assets |
+| `schema.sql` | Original apply-once schema and sample data; not a new migration |
 
-## Check that prices are really hidden
-Sign in as a mechanic, open the browser dev console and run:
-`await sb.from('work_prices').select()` (or temporarily expose `sb`). It should return an empty list.
+## Service-worker updates
 
-## Account setup emails
+The public module graph is precached together in `garage-log-v4`. It uses a
+cache-first strategy so a running version does not receive a mixture of old and
+new modules. Updates wait until older app tabs close; reopen the app to use the
+new version. Bump the cache version whenever changing a cached asset.
 
-`account.html` accepts Supabase's implicit invitation/password-recovery callback. It verifies the session, removes authentication data from the address bar, and lets the user choose and confirm a password of at least 12 characters. Account pages and callback URLs bypass the service-worker cache.
+Only this app's `garage-log-` caches are cleaned up. Account pages, callback URLs,
+authorized requests, Supabase data and future financial API responses are not
+cached. The shell may open offline after it has loaded, but sign-in/profile
+verification and future work actions require a confirmed network response.
 
-Set Supabase Authentication's site URL to the deployed app and add the exact HTTPS `account.html` address to its redirect allowlist before sending emails. Existing confirmed users need a **password recovery/setup email**; the invitation endpoint rejects accounts that already exist. The email should redirect to `account.html`, and the page then links back to the garage log.
+## Existing accounts and database
 
-Supabase's default email service only sends to organization team members. Configure a custom SMTP sender for other recipients. For a small app, Gmail SMTP uses `smtp.gmail.com`, port `587`, the sender's Gmail address, and a Google app password. Keep the app password in secure settings, never in this repository or the public build.
+Use the currently provisioned accounts. This increment reads authentication and
+profiles only. Do not rerun `schema.sql`: it is the original initial migration,
+including a sample work catalogue unrelated to the new approved list. Existing
+user IDs and historical job rows must survive future additive migrations.
 
-The original schema is an initial migration: apply it once to a new database, not on every deployment.
+For account emails, retain the deployed app as Supabase's site URL and allow the
+exact HTTPS `account.html` redirect. Existing confirmed users need a password
+recovery/setup email rather than a new invitation. SMTP credentials remain in
+secure settings, outside this repository and all browser assets.
 
-## Ideas to learn next
-- Daily email to the administrator: a Supabase Edge Function + `pg_cron` + an email service such as Resend.
-- Offline queue: save entries in IndexedDB when there is no signal and sync later.
-- Realtime: let the admin screen update live with `sb.channel(...)`.
-- Cars and customers as their own tables instead of free text.
-- When you change `app.js`, bump `CACHE` in `sw.js` (e.g. `garage-log-v2`) so phones pick up the update.
+## Publish
+
+Build and validate the intended revision, then publish the contents of `dist/`
+to the configured `gh-pages` branch. Updating `main` alone does not run a source
+build or publish this application. A source-to-Pages pipeline is a later roadmap
+step; this increment does not change hosting or deploy automatically.

@@ -1,11 +1,11 @@
 {
-  "name": "Garage Daily Log",
-  "short_name": "Garage Log",
+  "name": "Garage Work Orders",
+  "short_name": "Garage",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#12161c",
-  "theme_color": "#1f6feb",
+  "background_color": "#f5f6f3",
+  "theme_color": "#176b57",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }

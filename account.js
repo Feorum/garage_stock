@@ -1,17 +1,10 @@
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
-
-// Public project settings are substituted when the site is served or built.
-const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR-ANON-PUBLIC-KEY';
+import { sb } from './src/supabase.js';
 
 const callback = new URL(location.href);
 const fragment = new URLSearchParams(callback.hash.slice(1));
 const callbackError = fragment.has('error') || fragment.has('error_description') ||
   callback.searchParams.has('error') || callback.searchParams.has('error_description');
 const unsupportedCallback = callback.searchParams.has('code') || callback.searchParams.has('token_hash');
-const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { flowType: 'implicit', detectSessionInUrl: true }
-});
 
 const form = document.getElementById('password-form');
 const password = document.getElementById('password');
