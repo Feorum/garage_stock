@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the skeleton against a fake SDK. No live accounts or database writes.
+"""Run authentication, navigation and cache checks against a fake SDK.
 
 Requires Python Playwright and Chromium. Build first:
   python3 scripts/build-pages.py
@@ -58,7 +58,12 @@ def check_no_private_data(page):
     calls = page.evaluate('globalThis.__garageCalls || []')
     reads = [entry['table'] for entry in calls if entry['method'] == 'from']
     assert set(reads) <= {'profiles'}, reads
-    assert not any(entry['method'] in ('insert', 'delete', 'upsert', 'rpc') for entry in calls), calls
+    assert not any(entry['method'] in ('insert', 'delete', 'upsert') for entry in calls), calls
+    role = page.evaluate("globalThis.__garageTest?.profile?.role || 'admin'")
+    rpc_names = {entry['name'] for entry in calls if entry['method'] == 'rpc'}
+    assert rpc_names <= {'garage_list_orders', 'garage_staff'}, rpc_names
+    if role == 'mechanic':
+        assert 'garage_staff' not in rpc_names
     body = page.locator('body').inner_text()
     assert not re.search(r'€|\bBYN\b|\bEUR\b|\bVAT\b', body), body
 
@@ -180,8 +185,9 @@ def run(args):
             passed.append('successful sign-in opens the verified mechanic workspace')
             context.close()
 
-            # Unknown role and missing profile cannot fall through to a mechanic workspace.
-            for profile in (None, {'name': 'Unexpected User', 'role': 'manager'}):
+            # Missing, unsupported and inactive accounts cannot receive a workspace.
+            for profile in (None, {'name': 'Unexpected User', 'role': 'manager'},
+                            {'name': 'Inactive User', 'role': 'mechanic', 'active': False}):
                 context, page, errors, live = new_page(browser, {'profile': profile})
                 page.goto(base + '/index.html')
                 expect(page.get_by_role('button', name='Sign out', exact=True)).to_be_visible()
@@ -190,7 +196,7 @@ def run(args):
                 assert not errors, errors
                 assert not live, live
                 context.close()
-            passed.append('missing profiles and unknown roles denied')
+            passed.append('missing profiles, unknown roles and inactive users denied')
 
             # Session expiry must win a race against a slow profile fetch.
             context, page, errors, live = new_page(browser, {'profileDelay': 600})
@@ -234,12 +240,12 @@ def run(args):
                 context.close()
             passed.append('unsupported and failed account callbacks rejected and scrubbed')
 
-            # Real service-worker upgrade: install a minimal v3 worker on the same scope first.
+            # Real service-worker upgrade: install a minimal v4 worker on the same scope first.
             server.stub_config = True
             context, page, errors, live = new_page(browser, {'signedIn': False}, service_workers='allow')
             legacy = """
               self.addEventListener('install', event => {
-                event.waitUntil(caches.open('garage-log-v3').then(cache =>
+                event.waitUntil(caches.open('garage-log-v4').then(cache =>
                   cache.put('./legacy-marker', new Response('old shell'))));
                 self.skipWaiting();
               });
@@ -276,16 +282,16 @@ def run(args):
             page.goto(base + '/index.html')
             expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
             page.wait_for_function("navigator.serviceWorker.controller && new URL(navigator.serviceWorker.controller.scriptURL).pathname.endsWith('/sw.js')")
-            page.wait_for_function("caches.keys().then(keys => keys.includes('garage-log-v4') && !keys.includes('garage-log-v3'))")
+            page.wait_for_function("caches.keys().then(keys => keys.includes('garage-log-v5') && !keys.includes('garage-log-v4'))")
             keys = page.evaluate('caches.keys()')
             assert 'another-app-v1' in keys, keys
-            cache_urls = page.evaluate("caches.open('garage-log-v4').then(c => c.keys()).then(reqs => reqs.map(r => r.url))")
+            cache_urls = page.evaluate("caches.open('garage-log-v5').then(c => c.keys()).then(reqs => reqs.map(r => r.url))")
             assert not any('/account.html' in url or '/account.js' in url for url in cache_urls), cache_urls
             assert any('/styles.css' in url for url in cache_urls), cache_urls
             assert any('/src/' in url for url in cache_urls), cache_urls
             assert not errors, errors
             assert not live, live
-            passed.append('v3 service-worker upgrade, sibling-cache preservation and account exclusions')
+            passed.append('v4 to v5 service-worker upgrade, sibling-cache preservation and account exclusions')
             context.close()
             server.stub_config = False
         finally:

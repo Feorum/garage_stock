@@ -1,9 +1,9 @@
 # Incremental implementation roadmap
 
-The current increment is the bare application foundation. It retains existing
-authentication, introduces role-aware navigation, and provides the approved
-operational catalogue without financial data. It makes no database or hosting
-changes.
+The current increment extends the application foundation with server-authorized
+orders and task execution. The approved catalogue remains closed, and financial
+snapshots occupy separate Owner-only tables. Historical spreadsheet copies have
+been analyzed privately and are supported by a dry-run preview tool.
 
 ## Rules to preserve
 
@@ -25,12 +25,12 @@ changes.
 
 | Step | Deliverable | Completion condition |
 | --- | --- | --- |
-| 1 — current | Sign-in, verified profile/role, workspace navigation, approved catalogue | Both role shells work; failed/unknown profiles do not open a workspace |
-| 2 | Additive order/task schema, RLS and transactional operations in staging | Mandatory assignment, shared claims, private financial access and retry invariants have database checks |
-| 3 | Owner creates, assigns and publishes an order; mechanic starts/blocks/completes | Another mechanic cannot access the mandatory task; completion is recorded once |
-| 4 | Manager shared queue and concurrent task claiming | Two mechanics claiming the same task produce one successful claimant |
-| 5 | Sanitized Google Sheets template, authenticated import, stable IDs, retries | A valid submission publishes once; edits cannot overwrite execution history |
-| 6 | Owner reports and immutable price snapshots, production build pipeline | Historical task values stay stable; private data never reaches unauthorized roles |
+| 1 — delivered | Sign-in, verified profile/role, workspace navigation, approved catalogue | Both role shells work; failed/unknown/inactive profiles do not open a workspace |
+| 2 — delivered | Additive order/task schema, RLS and transactional operations | Mandatory assignment, shared claims, private financial access and retry invariants have isolated database checks |
+| 3 — delivered | Owner creates, assigns and publishes an order; mechanic starts/blocks/completes | Another mechanic cannot access mandatory work; completion is recorded once |
+| 4 — delivered | Manager shared queue and concurrent task claiming | Two mechanics claiming one task produce one winner; Owner registers Manager requests |
+| 5 — next | Sanitized Google Sheets feed, authenticated import, stable IDs, retries | Dry-run preview/contract are prepared; live source and submission integration still required |
+| 6 — partial | Owner operational reports and immutable rate snapshots | Snapshot reports are delivered; accounting, correction workflows and source-build automation remain later work |
 | 7 | Pilot, legacy history, controlled cutover and installed-client update | Existing identities/job history reconcile; old clients cannot bypass ordered work |
 
 Use versioned migrations rather than rerunning `schema.sql`. Preserve the old
@@ -47,3 +47,7 @@ Decisions for the affected steps include whole-order versus per-task assignment,
 workshop timezone, exact vehicle identification, commercial meaning of the source
 rates, and any promotion/dependency rules. Actual rates and the source financial
 workbook remain in restricted project notes, outside this public repository.
+
+The supplied operational sheet uses a completed checkbox, not a submission flag.
+Historical completed rows and financial extracts never enter the new queue
+automatically. Planned date, deadline and server completion timestamps are distinct.

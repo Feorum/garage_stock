@@ -1,2 +1,7 @@
 /dist/
 __pycache__/
+*.xlsx
+*.xlsm
+*.xls
+*.private.json
+*.owner-only.*

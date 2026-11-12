@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FILES = (
     'index.html', 'styles.css', 'app.js', 'account.html', 'account.js', 'sw.js',
     'src/supabase.js', 'src/auth.js', 'src/ui.js', 'src/navigation.js',
-    'src/views.js', 'src/catalogue.js', 'manifest.webmanifest',
+    'src/views.js', 'src/orders.js', 'src/catalogue.js', 'manifest.webmanifest',
     'icons/icon-192.png', 'icons/icon-512.png',
 )
 CONFIG_FILE = 'src/supabase.js'

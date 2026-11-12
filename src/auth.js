@@ -50,7 +50,7 @@ export function createAuthController(client, { onChange }) {
       }
 
       const user = verified.data.user;
-      const result = await client.from('profiles').select('id,name,role').eq('id', user.id).single();
+      const result = await client.from('profiles').select('id,name,role,active').eq('id', user.id).single();
       if (!current()) return;
       if (result.error || !result.data) {
         emit({ status: 'error', message: 'Your account profile is unavailable. Try again, or ask the Owner to check your access.' });
@@ -58,6 +58,10 @@ export function createAuthController(client, { onChange }) {
       }
       if (!ROLES.has(result.data.role)) {
         emit({ status: 'error', message: 'This account does not have a supported workspace role. Ask the Owner to check your access.' });
+        return;
+      }
+      if (result.data.active === false) {
+        emit({ status: 'error', message: 'Your workspace access is inactive. Ask the Owner to check your account.' });
         return;
       }
       emit({ status: 'ready', user, profile: { id: user.id, name: String(result.data.name || ''), role: result.data.role } });
