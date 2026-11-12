@@ -105,7 +105,10 @@ Manager/shared orders can be registered by the Owner or by a registered
 spreadsheet source through migration `202611120002` and its authenticated Edge
 endpoint. Pending source amendments are version-checked; work already changed
 in the program requires Owner review. See [Manager API](manager-api.md).
-The standalone Google worker needs one-time Owner authorization before its
-schedule runs. Automatic promotion rules, completion corrections, full
-accounting/payroll and customer invoicing remain later increments. Historical
-spreadsheets remain private references and dry-run inputs, not active tasks.
+Migration `202611130001` reads the existing layout from the approved operational
+copy, reserves checked history and keeps ambiguous rows in Owner review. Its
+private reader needs one-time Owner Google authorization before the minute
+trigger runs. Valid closed-catalogue scope publishes only after two unchanged
+reads at least one minute apart. Completion corrections, full accounting/payroll
+and customer invoicing remain later increments. Checked historical rows never
+become active tasks, and copy-only work does not edit or connect the original.

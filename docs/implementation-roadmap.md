@@ -3,7 +3,8 @@
 The current increment extends the application foundation with server-authorized
 orders and task execution. The approved catalogue remains closed, and financial
 snapshots occupy separate Owner-only tables. Historical spreadsheet copies have
-been analyzed privately and are supported by a dry-run preview tool.
+been analyzed privately. The Manager integration now reads a full operational
+copy in the existing table layout; the original remains untouched.
 
 ## Rules to preserve
 
@@ -29,7 +30,7 @@ been analyzed privately and are supported by a dry-run preview tool.
 | 2 — delivered | Additive order/task schema, RLS and transactional operations | Mandatory assignment, shared claims, private financial access and retry invariants have isolated database checks |
 | 3 — delivered | Owner creates, assigns and publishes an order; mechanic starts/blocks/completes | Another mechanic cannot access mandatory work; completion is recorded once |
 | 4 — delivered | Manager shared queue and concurrent task claiming | Two mechanics claiming one task produce one winner; Owner registers Manager requests |
-| 5 — ready for activation | Sanitized Manager template, authenticated import/status, stable IDs, revisions, retries and Owner source management | Backend and standalone worker are implemented/tested; Owner's one-time Google installation/authorization starts the schedule |
+| 5 — private reader setup required | Existing-layout working copy, closed catalogue parsing, automatic eligible requests, private source identities/retries and Owner review | The original stays untouched; actual successful authorized reads, rather than connection creation, establish sync health |
 | 6 — partial | Owner operational reports and immutable rate snapshots | Snapshot reports are delivered; accounting, correction workflows and source-build automation remain later work |
 | 7 | Pilot, legacy history, controlled cutover and installed-client update | Existing identities/job history reconcile; old clients cannot bypass ordered work |
 
@@ -49,10 +50,17 @@ rates, and any promotion/dependency rules. Actual rates and the source financial
 workbook remain in restricted project notes, outside this public repository.
 
 The supplied operational sheet uses a completed checkbox, not a submission flag.
-Historical completed rows and financial extracts never enter the new queue
-automatically. Planned date, deadline and server completion timestamps are distinct.
+Valid unfinished requests from the connected working copy are imported automatically;
+completed history and financial extracts never become pending work. Ambiguous
+model/work text waits for Owner review. Work selections are moving to the closed
+catalogue inside that same layout. Planned date, deadline and actual completion
+timestamps remain distinct. Managers need neither app accounts nor a Submit step.
+Changes made to the original after copying are not automatically mirrored.
 
-See [Manager API](manager-api.md) and [worker setup](../integrations/google-sheets/README.md).
-The Google connector prepares Sheets but does not deploy Apps Script projects or
-authorize installable triggers. Source registration is reported separately from
-its first successful synchronization.
+See [Manager API](manager-api.md) and [private reader setup](../integrations/existing-google-sheet/README.md).
+The reader is a standalone Owner-private Google project with read-only source
+access; it never changes either spreadsheet or makes the working copy public.
+The Google connector cannot deploy or authorize Apps Script triggers, so one-time
+Owner authorization remains required. The app distinguishes a connected source
+from its first successful read. Row deletion does not cancel work and a source
+checkbox never impersonates mechanic completion.

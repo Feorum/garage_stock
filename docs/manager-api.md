@@ -1,4 +1,58 @@
-# Manager spreadsheet submission API
+# Existing Manager spreadsheet integration
+
+The current Owner screen uses migration `202611130001_existing_sheet_pull.sql`
+on top of the source/receipt protocol below. It reads the approved operational
+copy in its existing A:J layout; it does not require the separate template.
+
+## Existing-copy setup and private reads
+
+- `garage_connect_sheet_pull(p_name,p_spreadsheet_id,p_sheet_gid)` creates an
+  idempotent, Owner-bound connection. It defaults to private-reader mode and
+  returns a safe source row, never a credential. A different existing tab or
+  another Owner's source cannot be silently rebound.
+- `garage_sheet_pull_sources()` lists safe source/read counters and health;
+  `garage_sheet_pull_reviews(p_source_id)` returns only that Owner's review rows.
+- `garage_prepare_sheet_reader(p_source_id,p_secret,p_expected_version)` installs
+  a fresh browser-generated scoped key in the source hash and Supabase Vault
+  atomically. The Owner copies it once into their private standalone reader.
+  It never enters browser storage or the shared spreadsheet.
+- `garage_set_sheet_active` pauses/resumes the existing source. Pausing or
+  deactivating the Owner blocks delivery.
+
+The read-only Google worker sends `{spreadsheet_id,sheet_gid,csv}` to
+`POST /functions/v1/pull-manager-sheets/source`, using
+`Authorization: Bearer <source UUID>.<scoped key>`. The handler authenticates
+and leases precisely that source with service-only `garage_acquire_sheet_reader`.
+The server parses the full snapshot, reserves history/visit identities and
+persists exact immutable submission payloads before using `garage_ingest_sheet`.
+No source cell, validation, comment or sharing setting is written by the reader.
+The Google connector cannot install the reader's trigger; one-time Owner Google
+authorization is still required. A private copy must not be made public as a
+shortcut.
+
+Service-only `garage_checkpoint_sheet_pull` and `garage_commit_sheet_pull` use
+lease-token and state-version checks. An expired worker cannot overwrite a new
+lease. A crash or lost receipt reuses the same durable order/task/submission IDs.
+Private state and Vault references are not accessible to either browser role.
+
+Valid new/changed scope must stay the same across two reads at least a minute
+apart. Completed source history is excluded. Deletion never cancels app work;
+changed identity, reopened history, nonstandard dimensions, partial legacy
+progress and conflicts after app activity require Owner review. Native row
+positions are feedback locations, never order identities.
+
+An optional server-scheduled direct CSV reader exists only for explicitly
+configured sources already readable by that server. Private-reader feeds are
+excluded from that schedule. The scheduler requires a separate random server
+credential; only Vault and the Edge environment hold it. This path does not
+change Google sharing or expose its database credentials to Google.
+
+See [the copy reader](../integrations/existing-google-sheet/README.md) and
+[the spreadsheet contract](spreadsheet-contract.md). Run
+`bash tests/run-existing-sheet-tests.sh` and
+`node --test tests/existing-sheet-*.test.mjs` for the new boundaries.
+
+## Underlying source/receipt protocol
 
 Migration `202611120002_manager_submissions.sql` follows the existing order
 migration. It adds source registration, immutable submission receipts, stable
@@ -6,7 +60,7 @@ external-order/task bindings and revision history. It contains no real source
 IDs, credentials, uploaded rows or financial rates. Apply it once after local
 checks and an appropriate pre-release application snapshot.
 
-## Owner setup
+### Historical separate-template setup API
 
 `garage_sheet_sources()` returns the signed-in active Owner's registered sources.
 Each safe row contains `id`, `source_id`, `name`, `spreadsheet_id`, `active`,
@@ -27,8 +81,10 @@ Owner-only setup RPCs:
 - `garage_set_sheet_active(p_source_id uuid, p_active boolean,
   p_expected_version integer)` pauses or resumes the source with a version check.
 
-Only a SHA-256 hash of the scoped credential is stored. Its plaintext belongs in
-the Owner-controlled standalone worker's private properties, never in the Manager
+The source table stores only a SHA-256 hash of the scoped credential. Private
+reader credentials also have an encrypted Supabase Vault record for the narrow
+server reader. Plaintext belongs in the Owner-controlled standalone worker's
+private properties, never in the Manager
 spreadsheet, public source or static app assets. Rotation invalidates the prior
 credential. Pausing a source or deactivating its Owner blocks ingestion/status.
 

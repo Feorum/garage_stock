@@ -282,16 +282,16 @@ def run(args):
             page.goto(base + '/index.html')
             expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
             page.wait_for_function("navigator.serviceWorker.controller && new URL(navigator.serviceWorker.controller.scriptURL).pathname.endsWith('/sw.js')")
-            page.wait_for_function("caches.keys().then(keys => keys.includes('garage-log-v6') && !keys.includes('garage-log-v5'))")
+            page.wait_for_function("caches.keys().then(keys => keys.includes('garage-log-v7') && !keys.includes('garage-log-v5'))")
             keys = page.evaluate('caches.keys()')
             assert 'another-app-v1' in keys, keys
-            cache_urls = page.evaluate("caches.open('garage-log-v6').then(c => c.keys()).then(reqs => reqs.map(r => r.url))")
+            cache_urls = page.evaluate("caches.open('garage-log-v7').then(c => c.keys()).then(reqs => reqs.map(r => r.url))")
             assert not any('/account.html' in url or '/account.js' in url for url in cache_urls), cache_urls
             assert any('/styles.css' in url for url in cache_urls), cache_urls
             assert any('/src/' in url for url in cache_urls), cache_urls
             assert not errors, errors
             assert not live, live
-            passed.append('v5 to v6 service-worker upgrade, sibling-cache preservation and account exclusions')
+            passed.append('v5 to v7 service-worker upgrade, sibling-cache preservation and account exclusions')
             context.close()
             server.stub_config = False
         finally:

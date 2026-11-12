@@ -29,7 +29,8 @@ export function createClient() {
   const clone = value => JSON.parse(JSON.stringify(value));
   const orders = clone(fixture.orders || []);
   const sheetSources = clone(fixture.sheetSources || []);
-  const sheetSecrets = new Map();
+  const sheetReviews = clone(fixture.sheetReviews || {});
+  const sheetReaderSecrets = new Map();
   const staff = clone(fixture.staff || [
     { id: user.id, name: 'Test Mechanic' },
     { id: '22222222-2222-4222-8222-222222222222', name: 'Other Mechanic' },
@@ -39,7 +40,7 @@ export function createClient() {
   let serial = 0;
   let lostCreateResponse = false;
   let lostSheetRegisterResponse = false;
-  let lostSheetRotateResponse = false;
+  let lostSheetReaderResponse = false;
   const currentRole = () => (fixture.profile === undefined ? 'admin' : fixture.profile?.role);
   const errorResult = (message, code = 'P0001') => ({ data: null, error: { message, code } });
   const workName = code => ({ W01: 'капот полностью', W02: 'Бампер', W13: 'Зеркала', W19: 'тонировка задней полусферы (5%,15%)' }[code] || code);
@@ -54,7 +55,7 @@ export function createClient() {
 
   async function rpc(name, args = {}) {
     const authenticatedAtRequest = Boolean(session);
-    const frozenSheetList = name === 'garage_sheet_sources' && fixture.freezeSheetListSnapshot ? clone(sheetSources) : null;
+    const frozenSheetList = name === 'garage_sheet_pull_sources' && fixture.freezeSheetListSnapshot ? clone(sheetSources) : null;
     calls.push({ method: 'rpc', name, args: clone(args) });
     await pause(fixture.rpcDelays?.[name] ?? fixture.rpcDelay);
     const configuredError = fixture.rpcErrors?.[name];
@@ -67,25 +68,25 @@ export function createClient() {
     }
     if (!session && !(fixture.allowLateRpcResponse && authenticatedAtRequest)) return errorResult('Sign in to continue.', '42501');
     const owner = currentRole() === 'admin';
-    if (['garage_sheet_sources', 'garage_register_sheet', 'garage_rotate_sheet_secret', 'garage_set_sheet_active'].includes(name)) {
+    if (['garage_sheet_pull_sources', 'garage_connect_sheet_pull', 'garage_sheet_pull_reviews', 'garage_prepare_sheet_reader', 'garage_set_sheet_active'].includes(name)) {
       if (!owner) return errorResult('Owner access required.', '42501');
-      if (name === 'garage_sheet_sources') return { data: frozenSheetList || clone(sheetSources), error: null };
-      if (name === 'garage_register_sheet') {
-        if (!args.p_name?.trim() || !/^[A-Za-z0-9_-]{20,200}$/.test(args.p_spreadsheet_id || '') || !args.p_secret || !args.p_source_id) {
+      if (name === 'garage_sheet_pull_sources') return { data: frozenSheetList || clone(sheetSources), error: null };
+      if (name === 'garage_sheet_pull_reviews') return { data: clone(sheetReviews[args.p_source_id] || []), error: null };
+      if (name === 'garage_connect_sheet_pull') {
+        if (!args.p_name?.trim() || !/^[A-Za-z0-9_-]{20,200}$/.test(args.p_spreadsheet_id || '')
+            || !Number.isSafeInteger(args.p_sheet_gid) || args.p_sheet_gid < 0 || args.p_sheet_gid > 2147483647) {
           return errorResult('Connection fields are invalid.');
         }
-        let source = sheetSources.find(row => row.id === args.p_source_id);
-        if (source) {
-          if (source.spreadsheet_id !== args.p_spreadsheet_id || sheetSecrets.get(source.id) !== args.p_secret) return errorResult('Connection identity is already registered.');
-        } else {
-          if (sheetSources.some(row => row.spreadsheet_id === args.p_spreadsheet_id)) return errorResult('This spreadsheet is already registered.');
+        let source = sheetSources.find(row => row.spreadsheet_id === args.p_spreadsheet_id && row.sheet_gid === args.p_sheet_gid);
+        if (!source) {
+          serial += 1;
           source = {
-            id: args.p_source_id, source_id: args.p_source_id, name: args.p_name.trim(), spreadsheet_id: args.p_spreadsheet_id,
-            active: true, version: 1, last_success_at: null, last_error_at: null, last_error_code: null, last_error: null,
-            created_at: '2026-11-12T10:00:00Z',
+            id: `33333333-3333-4333-8333-${String(serial).padStart(12, '0')}`,
+            name: args.p_name.trim(), spreadsheet_id: args.p_spreadsheet_id, sheet_gid: args.p_sheet_gid,
+            mode: 'pull', reader_only: true, active: true, version: 1, last_success_at: null, last_error_code: null,
+            review_count: 0, summary: {}, created_at: '2026-11-13T10:00:00Z',
           };
           sheetSources.push(source);
-          sheetSecrets.set(source.id, args.p_secret);
         }
         if (fixture.loseSheetRegisterResponseOnce && !lostSheetRegisterResponse) {
           lostSheetRegisterResponse = true;
@@ -95,23 +96,22 @@ export function createClient() {
       }
       const source = sheetSources.find(row => row.id === args.p_source_id);
       if (!source) return errorResult('Connection not found.');
-      if (name === 'garage_set_sheet_active') {
+      if (name === 'garage_prepare_sheet_reader') {
+        if (source.version === args.p_expected_version + 1 && sheetReaderSecrets.get(source.id) === args.p_secret) return { data: clone(source), error: null };
         if (source.version !== args.p_expected_version) return errorResult('This connection changed. Refresh and try again.', '40001');
-        source.active = args.p_active;
+        if (!/^[A-Za-z0-9_-]{43}$/.test(args.p_secret || '')) return errorResult('A reader key is required.');
+        sheetReaderSecrets.set(source.id, args.p_secret);
+        source.reader_only = true;
         source.version += 1;
-        return { data: clone(source), error: null };
-      }
-      if (source.version === args.p_expected_version + 1 && sheetSecrets.get(source.id) === args.p_secret) {
+        if (fixture.loseSheetReaderResponseOnce && !lostSheetReaderResponse) {
+          lostSheetReaderResponse = true;
+          return errorResult('Network response was lost. Retry the same request.', 'NETWORK');
+        }
         return { data: clone(source), error: null };
       }
       if (source.version !== args.p_expected_version) return errorResult('This connection changed. Refresh and try again.', '40001');
-      if (!args.p_secret) return errorResult('A setup key is required.');
-      sheetSecrets.set(source.id, args.p_secret);
+      source.active = args.p_active;
       source.version += 1;
-      if (fixture.loseSheetRotateResponseOnce && !lostSheetRotateResponse) {
-        lostSheetRotateResponse = true;
-        return errorResult('Network response was lost. Retry the same setup key.', 'NETWORK');
-      }
       return { data: clone(source), error: null };
     }
     if (name === 'garage_list_orders') return { data: visibleOrders(), error: null };

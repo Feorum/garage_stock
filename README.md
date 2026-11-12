@@ -21,12 +21,18 @@ Live app: https://feorum.github.io/garage_stock/.
 - Spreadsheet copies have been analyzed privately. A local preview tool
   identifies history and ambiguous mappings without creating live orders.
 
-Google Sheets submissions are supported by an authenticated import endpoint and
-an Owner-private standalone worker. Automatic delivery starts after the Owner's
-one-time Google installation/authorization; a registered source alone is not a
-running scheduled feed. The shared queue also accepts Owner-entered requests.
-Manage registration, private setup values, rotation and pause under **Sheet
-connections**. Never place its credential in a Manager-editable script/workbook.
+The Manager integration reads an approved complete copy of the existing
+operational spreadsheet. It keeps its existing vehicle rows, work-list columns,
+completed checkbox and notes; Managers do not need an app account or a replacement
+Orders/Tasks template. Only closed-catalogue selections publish automatically;
+unclear legacy text or nonstandard scope remains in Owner review. Completed
+history is excluded. Copy-only development never connects or edits the original.
+
+Private copies stay private. An Owner-private standalone Google reader uses
+read-only spreadsheet access; the Owner authorizes it once. The application
+keeps durable delivery state in its private database. Connecting a workbook
+alone does not install a Google trigger. Use **Sheet connections** for private
+reader setup, pause and review. Never put its credential in the shared workbook.
 See [the roadmap](docs/implementation-roadmap.md) and
 [spreadsheet contract](docs/spreadsheet-contract.md).
 
@@ -73,7 +79,9 @@ python3 tests/browser-orders.py
 python3 tests/browser-sheets.py
 bash tests/run-database-tests.sh
 bash tests/run-manager-tests.sh
+bash tests/run-existing-sheet-tests.sh
 node --test tests/manager-edge.test.mjs tests/google-worker.test.mjs
+node --test tests/existing-sheet-*.test.mjs
 python3 tests/test-workbook-preview.py
 ```
 
@@ -98,13 +106,15 @@ Workbook tests use synthetic fixtures and the optional dependency in
 | `account.html`, `account.js` | Implicit email-link password setup and changes |
 | `supabase/migrations/` | Server-authorized workflow, RLS and data structures |
 | `supabase/functions/manager-orders/` | Source-authenticated import/status endpoint |
-| `integrations/google-sheets/` | Standalone Owner-private worker and setup instructions |
+| `supabase/functions/pull-manager-sheets/` | Existing-layout parser, private source reader and durable delivery |
+| `integrations/existing-google-sheet/` | Read-only standalone reader for the approved operational copy |
+| `integrations/google-sheets/` | Historical optional separate-template integration |
 | `scripts/preview-workbooks.py` | Private source preview without database writes |
 | `scripts/build-pages.py`, `sw.js` | Public build and versioned static cache |
 
 ## Caching and deployment
 
-`garage-log-v6` precaches one complete public module graph. Updates wait for older
+`garage-log-v7` precaches one complete public module graph. Updates wait for older
 app tabs to close; close/reopen the app to activate an update. Only `garage-log-`
 caches are cleaned up. Account callbacks, authorized requests, Supabase data and
 financial responses bypass the service-worker cache. Work actions require a

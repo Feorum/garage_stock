@@ -4,3 +4,8 @@ project_id = "garage-stock"
 # Source credentials are checked by the handler and its private database RPCs.
 verify_jwt = false
 entrypoint = "./functions/manager-orders/index.ts"
+
+[functions.pull-manager-sheets]
+# The private schedule credential is checked before any source is acquired.
+verify_jwt = false
+entrypoint = "./functions/pull-manager-sheets/index.ts"

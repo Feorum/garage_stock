@@ -1,7 +1,7 @@
 // One complete module graph per version. A waiting update activates after the
 // previous app tabs close, rather than replacing modules under a running page.
 const CACHE_PREFIX = 'garage-log-';
-const CACHE = `${CACHE_PREFIX}v6`;
+const CACHE = `${CACHE_PREFIX}v7`;
 const SHELL = [
   './', './index.html', './styles.css', './app.js',
   './src/supabase.js', './src/auth.js', './src/ui.js',
