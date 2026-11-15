@@ -24,9 +24,11 @@ Live app: https://feorum.github.io/garage_stock/.
 The Manager integration reads an approved complete copy of the existing
 operational spreadsheet. It keeps its existing vehicle rows, work-list columns,
 completed checkbox and notes; Managers do not need an app account or a replacement
-Orders/Tasks template. Only closed-catalogue selections publish automatically;
-unclear legacy text or nonstandard scope remains in Owner review. Completed
-history is excluded. Copy-only development never connects or edits the original.
+Orders/Tasks template. The Owner's price workbook defines the complete work
+catalogue. Recognized selections publish automatically, while other descriptions
+remain visible Manager comments. Rows without a selected work or a valid vehicle
+identity, and conflicting selections, remain in Owner review. Completed history
+is excluded. Copy-only development never connects or edits the original.
 
 Private copies stay private. An Owner-private standalone Google reader uses
 read-only spreadsheet access; the Owner authorizes it once. The application

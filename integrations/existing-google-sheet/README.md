@@ -42,18 +42,23 @@ private operational copy public as a shortcut.
 The existing A:J layout is retained: A date, B derived weekday (ignored), C
 Manager, D vehicle group/model, E VIN, F colour, G selected wrapping works,
 H rear-hemisphere tint choice, I completed checkbox, J additional instructions.
-Only explicit approved catalogue work names/codes are accepted. Multiple G
-selections may be separated by commas, semicolons or newlines. H must specify
-rear-hemisphere 5% or 15%; there is no inferred default.
+Approved catalogue work names/codes and recognized service abbreviations create
+tasks. Multiple G selections may be separated by commas, semicolons or newlines.
+H must explicitly select rear-hemisphere 5% or 15% to create a tint task; there is
+no inferred default. Other G/H descriptions remain visible Manager comments and
+do not block independently valid selections. A row with no selected catalogue
+work remains in review.
 
 In J, use `[W01] instruction` on its own line to attach text to a selected task;
-untagged lines remain order instructions. Dimensions or scope changes such as
-40 cm hood are preserved for Owner review instead of changing an approved full,
-25 cm or 45 cm work. Prices and financial notes are never sent to Mechanics.
+untagged or unplaceable lines remain order comments. Dimensions such as 40 cm
+stay visible as details without creating or replacing an approved full, 25 cm or
+45 cm work. Explicit contradictions of selected packages need clarification.
+Prices and financial notes are never sent to Mechanics.
 
 Checked historical rows are not reopened. Missing source rows never cancel
-application work. A changed visit identity, ambiguous legacy wording, existing
-progress or a scope conflict remains in Owner review. Valid inputs must remain
+application work. A changed visit identity, an explicit completion conflict or
+contradictory selected packages remain in Owner review. Preparation notes alone
+do not record completion or prevent valid work from importing. Valid inputs must remain
 unchanged over two reads at least one minute apart so edits can settle before
 automatic publication. Started application work is never overwritten by a
 spreadsheet amendment.

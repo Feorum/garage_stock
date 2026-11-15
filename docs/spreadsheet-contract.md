@@ -26,13 +26,20 @@ The operational copy uses these columns on its existing order tab:
 | G | Wrapping | Requested works from the closed catalogue |
 | H | Tinting | Approved rear-hemisphere service with explicit 5% or 15% option |
 | I | `Готовность` | Checked means completed, so historical rows are excluded |
-| J | Additional instructions | Order context and explicit per-work instructions; partial-work annotations require review |
+| J | Manager comments | Order context and optional per-work details; comments do not create tasks or record completion |
 
 The importer checks the exact headers before reading orders. It ignores blank
 checkbox templates and non-order notices. It never writes UUIDs, Submit flags,
 feedback columns, prices or protection rules into either spreadsheet.
 
-## Closed work selection
+## Authoritative catalogue and manager comments
+
+The Owner-provided June 2026 Geely price workbook is the comprehensive source
+for selectable works and variants. Its two worksheets agree with the existing
+19 work types, 17 model groups and 283 available work-model combinations.
+The private workbook and its amounts stay outside the repository. Its promotion
+footnote is an Owner pricing condition, not another work type or an automatic
+task selected from a Manager comment.
 
 The work system is moving from arbitrary descriptions to a closed list. Keep
 that selection within the existing operational layout: use the approved work
@@ -41,12 +48,18 @@ work type is created from a phrase in a source cell. The approved catalogue has
 19 works, 17 vehicle groups and model-specific availability. Blank/dash
 work-model combinations remain unavailable until clarified.
 
-During the transition, exact recognized selections can be imported; an unknown
-fragment or ambiguous abbreviation holds the whole vehicle request for Owner
-review. Do not silently infer a generic Atlas model, matte-film package, hood
-width, tint scope or missing percentage. Duplicate mentions of the same approved
-work are normalized without adding another task. Notes that indicate partial
-execution do not create fresh pending work automatically.
+Recognized catalogue selections become tasks. Other wrapping/tint descriptions
+are preserved visibly as Manager comments, with their source column identified.
+Comments and ordinary details do not prevent independently valid selected works
+from importing. They never create another task, select a different package,
+change a price, assign a mechanic or record completion. A row containing only
+comments still needs at least one actual catalogue selection.
+
+Do not silently infer a generic Atlas model, matte-film package, hood width,
+tint scope or missing percentage. Duplicate mentions of the same approved work
+are normalized without adding another task. Invalid vehicle identity, missing
+dates, unavailable work-model combinations, contradictory selected packages,
+explicit completion conflicts and confidential financial text require review.
 
 The parser recognizes a bounded set of older service spellings as the same
 catalogue packages: explicit 45 cm hood strips and partial 25 cm hood strips;
@@ -54,16 +67,22 @@ catalogue packages: explicit 45 cm hood strips and partial 25 cm hood strips;
 `полоса над лобовым [стеклом]`; `стойки А` / `стойки лобового [стекла]`;
 `зона маникюра`; and door-edge / inner-sill abbreviations that explicitly say
 four pieces. These shortened service names retain the catalogue package scope.
-Matching consumes the entire description. Generic `стойки` or `пороги`, a
-different quantity, a 20 cm above-windshield strip, a hood size without its unit,
-unknown suffixes and tint without an explicit rear-hemisphere scope still need
-Owner confirmation. Source descriptions remain unchanged in the snapshot.
+Recognition uses exact catalogue names and approved aliases. A separate trailing
+detail stays visible as a comment. The above-windshield work has no width in the
+price list, so an explicit width such as 20 cm can accompany that selected work.
+This does not extend fixed hood-strip sizes or other defined packages. Generic
+`стойки` or `пороги`, a different package quantity, a hood size without its unit
+and tint without an explicit rear-hemisphere scope remain comments rather than
+silently selecting a catalogue task. Source descriptions remain unchanged in
+the snapshot.
 
-Additional instructions can refer to a selected task with `[W01] instruction`
-on its own line in J. Untagged text remains order instructions. A note that
-changes dimensions or the chosen package, such as a custom 40 cm hood strip,
-is preserved for Owner review; it is not silently converted to full, 25 cm or
-45 cm coverage or priced as a different approved work.
+Additional instructions may refer to a selected task with `[W01] instruction`
+on its own line in J. Untagged or unplaceable text remains an order comment, so
+Managers do not need to use task codes. Custom dimensions stay visible as
+details without changing the selected package. An explicit contradiction of a
+selected package still needs clarification. Preparation notes stay visible;
+they do not mark work completed. Comments never silently turn a custom 40 cm
+hood strip into full, 25 cm or 45 cm coverage or a different price.
 
 ## Import and reconciliation
 

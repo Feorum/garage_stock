@@ -2,12 +2,13 @@
 // guessed scope, row-number identities, or spreadsheet formula evaluation.
 import { WORKS, VEHICLE_GROUPS, AVAILABLE_WORKS } from './catalogue.ts';
 
-export const PARSER_VERSION = 'alfort-closed-list-v3';
+export const PARSER_VERSION = 'alfort-catalogue-comments-v4';
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_ROWS = 5000;
 const MAX_COLUMNS = 26;
 const HEADERS = ['Столбец 1', 'День', 'Менеджер', 'Автомобиль', 'VIN', 'Цвет', 'Оклейка', 'Тонировка', 'Готовность', 'Примечание'];
 const VIN = /^[A-HJ-NPR-Z0-9]{17}$/;
+const FINANCIAL_NOTE = /(?:[€$£₽¥]|(?:\d[\d\s.,]*\s*р\.)|(?:^|[^\p{L}])(?:BYN|EUR|USD|VAT|GBP|RUB|PLN|UAH|CNY|BR|price|cost|rate|amount|discount|НДС|руб(?:ль|ля|лей)?|цен(?:а|ы|у|е|ой|ам|ами|ах)?|стоимост[а-я]*|скидк[а-я]*|оплат[а-я]*|сумм(?:а|ы|у|е|ой)?|тариф[а-я]*|ставк[а-я]*|прайс[а-я]*)(?=$|[^\p{L}]))/iu;
 
 export type ParsedTask = {
   task_key: string; work_code: string; options: Record<string, number>; instructions: string;
@@ -114,7 +115,7 @@ function scopeParts(value: string): { parts: string[]; malformed: boolean } {
     const char = value[i];
     if (char === '(') depth++;
     if (char === ')') { depth--; if (depth < 0) { malformed = true; depth = 0; } }
-    if ((char === ',' && depth === 0) || char === ';' || char === '\n' || char === '\r') {
+    if (depth === 0 && [',', ';', '\n', '\r'].includes(char)) {
       const part = value.slice(start, i).trim();
       if (part) parts.push(part);
       start = i + 1;
@@ -130,7 +131,8 @@ function canonicalTint(name: string): number | null {
 }
 // Recognized shorthand for existing catalogue packages only. Match the entire
 // fragment: dimensions, quantities and trailing details must never be discarded.
-// Generic pillars/sills, custom sizes, model names and tint scope need review.
+// Generic pillars/sills, custom sizes and unknown tint scope remain comments;
+// they never become a guessed catalogue task.
 const WORK_ALIASES: Record<string, string> = {
   'крылья целиком': 'W05',
   'часть крыльев': 'W06',
@@ -171,46 +173,102 @@ function workTask(value: string): ParsedTask | null {
   return { task_key: work.code, work_code: work.code, options: {}, instructions: '' };
 }
 
+function workSelection(value: string): { task: ParsedTask | null; comment: string | null } {
+  const exact = workTask(value);
+  if (exact) return { task: exact, comment: null };
+  // W09 has no catalogue width constraint. A width after its exact known name
+  // is a manual detail, not a different priced package or an inferred dimension.
+  const width = /^(.*?)\s+\d+(?:[.,]\d+)?\s*(?:см|мм|cm|mm)\.?$/iu.exec(value);
+  if (width && workTask(width[1])?.work_code === 'W09') return { task: workTask(width[1]), comment: value };
+  // A separated free-text annotation may follow an independently selected name.
+  // Do not reinterpret a mismatched code-label pair or changed fixed dimensions
+  // / package quantities as that work. The complete fragment remains visible.
+  const annotated = /^(.*?)\s+[—–-]\s+(.+)$/u.exec(value);
+  if (annotated && !/^w\d{2}(?::\d+)?$/iu.test(annotated[1].trim())
+      && !/\d+(?:[.,]\d+)?\s*(?:см|мм|cm|mm|м|m|%|шт\.?|pcs|pieces)(?!\p{L})/iu.test(annotated[2])
+      && !/^\d+(?:[.,]\d+)?$/u.test(annotated[2].trim())
+      && !/\b(?:rear|front|inner|outer|repair|replace|paint|partial|whole|full)\b/iu.test(annotated[2])
+      && !/частич|част[ьи]\s+капот|полос|не\s+полност|целик|полност|full\s+hood|hood\s+strip|задн|передн|наруж|внешн|внутр|ремонт|замен|покрас|окрас|(?:^|\s)(?:один|одна|одно|одну|два|две|три|четыре|one|two|three|four)(?:\s|$)/iu.test(annotated[2])) {
+    const task = workTask(annotated[1]);
+    if (task) return { task, comment: value };
+  }
+  return { task: null, comment: value };
+}
+
+function hoodConflict(detail: string, selected: ParsedTask[]): boolean {
+  const value = normalized(detail);
+  if (selected.some(task => task.work_code === 'W01') && /(?:частич|част[ьи]\s*(?:капот|hood)|полос|не\s+полност|partial|hood\s+strip)/iu.test(value)) return true;
+  return selected.some(task => ['W03', 'W04'].includes(task.work_code))
+    && /(?:полност|целик|весь\s+капот|full\s+hood|whole\s+hood)/iu.test(value);
+}
+function tintConflict(detail: string, selected: ParsedTask[]): boolean {
+  return selected.some(task => task.work_code === 'W19'
+    && [...detail.matchAll(/(\d+(?:[.,]\d+)?)\s*%/gu)].some(match => Number(match[1].replace(',', '.')) !== task.options.tint_percent));
+}
+function generalDetailConflict(detail: string, selected: ParsedTask[]): boolean {
+  return (/капот|hood/iu.test(detail) && hoodConflict(detail, selected))
+    || (/тонир|полусфер|tint|w19/iu.test(detail) && tintConflict(detail, selected));
+}
+
 // J may contain ordinary order instructions and explicit per-task lines.
-// Keep the original J value in source.notes for Owner reconciliation. Do not
-// interpret a detail as a new package, width, tint option or reassignment.
+// Keep the original J value in source.notes. Unplaceable tags stay visible as
+// ordinary comments; no detail creates a package, option or reassignment.
 function taskNotes(notes: string, tasks: ParsedTask[]): { instructions: string; issues: string[] } {
   const ordinary: string[] = [], issues: string[] = [];
   const targets = new Set<string>();
-  const dimensions = /\d+(?:[.,]\d+)?\s*(?:см|мм|cm|mm|%)/iu;
-  const hood = tasks.filter(task => ['W01', 'W03', 'W04'].includes(task.work_code));
-  const hoodConflict = (detail: string, selected: ParsedTask[]) => {
-    const value = normalized(detail);
-    if (selected.some(task => task.work_code === 'W01') && /(?:частич|част[ьи]\s+(?:капот|hood)|полос|не\s+полност|partial|hood\s+strip)/iu.test(value)) return true;
-    if (selected.some(task => ['W03', 'W04'].includes(task.work_code)) && /(?:полност|целик|весь\s+капот|full\s+hood|whole\s+hood)/iu.test(value)) return true;
-    return false;
-  };
   for (const line of notes.split(/\r?\n/)) {
     const trimmed = line.trim();
     const tag = /^\[\s*(W\d{2})(?::(\d+))?\s*\]\s*(.*)$/iu.exec(trimmed);
     if (!tag) {
       ordinary.push(line);
-      if (/^\[\s*w\d/iu.test(trimmed)) issues.push('INVALID_TASK_DETAIL_TAG');
-      if (dimensions.test(trimmed) || (/капот|hood/iu.test(trimmed) && hoodConflict(trimmed, hood))) issues.push('NONSTANDARD_TASK_DETAIL');
+      if (generalDetailConflict(trimmed, tasks)) issues.push('NONSTANDARD_TASK_DETAIL');
       continue;
     }
     const workCode = tag[1].toUpperCase(), option = tag[2], detail = tag[3].trim();
     const candidates = tasks.filter(task => task.work_code === workCode
       && (option === undefined || task.task_key === `${workCode}:${option}`));
-    if (option !== undefined && (workCode !== 'W19' || !['5', '15'].includes(option))) issues.push('INVALID_TASK_DETAIL_TAG');
-    if (!candidates.length) issues.push('TASK_DETAIL_TARGET_MISSING');
-    else if (candidates.length !== 1) issues.push('AMBIGUOUS_TASK_DETAIL_TAG');
-    else {
+    const validOption = option === undefined || (workCode === 'W19' && ['5', '15'].includes(option));
+    if (!validOption || candidates.length !== 1 || !detail || /\[\s*w\d/iu.test(detail)
+        || (candidates.length === 1 && targets.has(candidates[0].task_key)) || detail.length > 2000) {
+      ordinary.push(line);
+    } else {
       const task = candidates[0];
-      if (targets.has(task.task_key)) issues.push('DUPLICATE_TASK_DETAIL_TAG');
-      else { task.instructions = detail; targets.add(task.task_key); }
+      task.instructions = detail; targets.add(task.task_key);
     }
-    if (!detail) issues.push('EMPTY_TASK_DETAIL');
     if (detail.length > 2000) issues.push('TASK_DETAIL_TOO_LONG');
-    if (/\[\s*w\d/iu.test(detail)) issues.push('AMBIGUOUS_TASK_DETAIL_TAG');
-    if (dimensions.test(detail) || hoodConflict(detail, candidates)) issues.push('NONSTANDARD_TASK_DETAIL');
+    if (hoodConflict(detail, candidates) || tintConflict(detail, candidates) || generalDetailConflict(trimmed, tasks)) issues.push('NONSTANDARD_TASK_DETAIL');
   }
   return { instructions: ordinary.join('\n').trim(), issues: unique(issues) };
+}
+
+// Preparation/placement notes are comments, not task status. Hold only explicit
+// completion of a selected task or the whole order; never complete app work here.
+function completedSelectedWork(value: string, tasks: ParsedTask[]): boolean {
+  const mentions: Record<string, RegExp> = {
+    W01: /капот|hood/iu, W02: /бампер|bumper/iu, W03: /капот|hood/iu, W04: /капот|hood/iu,
+    W05: /крыл|wing/iu, W06: /крыл|wing/iu, W07: /фар|headlight/iu, W08: /птф|fog\s*light/iu,
+    W09: /над\s+лобов|above.*windshield/iu, W10: /стойк.*(?:лобов|\sа(?:\W|$))|windshield.*pillar/iu,
+    W11: /маникюр|manicure/iu, W12: /погруз|loading\s+zone/iu, W13: /зеркал|mirror/iu,
+    W14: /нижн.*передн.*двер/iu, W15: /нижн.*задн.*двер/iu, W16: /кант.*двер|door\s+edge/iu,
+    W17: /порог|sill/iu, W18: /арки|акрки|arch/iu, W19: /тонир|полусфер|tint/iu,
+  };
+  return value.split(/[\r\n;,]/u).some(clause => {
+    let subject: string[] = [];
+    // An explicit completion elsewhere must not disappear behind a preparation
+    // clause. A trailing "after preparation" also does not undo completion.
+    return normalized(clause).replace(/(?:после|до)\s+подготовк[а-я]*/giu, '').split(/\s+и\s+/u).some(note => {
+      const mentioned = Object.entries(mentions).filter(([code, name]) => name.test(note)
+        || new RegExp(`(?:^|[^\\p{L}\\p{N}])${code}(?:[^\\p{L}\\p{N}]|$)`, 'iu').test(note)).map(([code]) => code);
+      const preparation = /подготовк|(?:^|[^а-я])подг(?:[^а-я]|$)|накин/iu.test(note);
+      if (mentioned.length && !preparation) subject = mentioned;
+      if (preparation || !/(?:^|[^\p{L}])(?:сделан[аоы]?|готов[аоы]?|завершен[аоы]?|выполнен[аоы]?|закончен[аоы]?|completed|done|finished)(?:[^\p{L}]|$)/iu.test(note)) return false;
+      if (/будет|будут|когда|если|\b(?:when|if)\b/iu.test(note)
+          || /не\s+(?:все|весь|сделан|готов|заверш|выполн|закончен)|\b(?:not|isn't|wasn't)\s+(?:(?:yet|all)\s+)?(?:done|finished|completed|work|tasks)\b/iu.test(note)
+          || /готов[аоы]?\s+к(?:\s|$)/iu.test(note)) return false;
+      if (/все\s+работы|весь\s+заказ|заказ\s+полностью|все\s+сделано|all\s+(?:work|tasks)/iu.test(note)) return true;
+      return tasks.some(task => subject.includes(task.work_code));
+    });
+  });
 }
 
 export function parseExistingSheetRows(input: unknown[][]): ParsedSheet {
@@ -251,32 +309,43 @@ export function parseExistingSheetRows(input: unknown[][]): ParsedSheet {
     const group = vehicleGroup(source.vehicle);
     if (!group) issues.push('UNKNOWN_VEHICLE_GROUP');
     const tasks: ParsedTask[] = [];
+    const comments: string[] = [], unmatchedFields: string[] = [];
     for (const field of ['wrapping', 'tint'] as const) {
       const scope = source[field];
       if (!scope) continue;
       const fragments = scopeParts(scope);
-      if (fragments.malformed) issues.push('MALFORMED_WORK_LIST');
-      for (const fragment of fragments.parts) {
-        const task = workTask(fragment);
-        if (!task) issues.push(field === 'wrapping' ? 'UNKNOWN_WRAPPING_WORK' : 'UNKNOWN_TINT_WORK');
-        else if (!tasks.some(existing => existing.task_key === task.task_key)) tasks.push(task);
+      const unmatched: string[] = [];
+      // Unbalanced free text cannot be split into reliable task selections.
+      // Preserve that whole cell as a comment; the other column is independent.
+      if (fragments.malformed) unmatched.push(scope);
+      for (const fragment of fragments.malformed ? [] : fragments.parts) {
+        const selected = workSelection(fragment), task = selected.task;
+        if (selected.comment) unmatched.push(selected.comment);
+        if (task && !tasks.some(existing => existing.task_key === task.task_key)) tasks.push(task);
+      }
+      if (unmatched.length) {
+        unmatchedFields.push(field === 'wrapping' ? 'UNKNOWN_WRAPPING_WORK' : 'UNKNOWN_TINT_WORK');
+        comments.push(`Manager comment — ${field}:\n${unmatched.join('\n')}`);
       }
     }
-    if (!tasks.length) issues.push('NO_APPROVED_TASKS');
+    if (!tasks.length) issues.push('NO_APPROVED_TASKS', ...unmatchedFields);
     if (tasks.filter(task => ['W01', 'W03', 'W04'].includes(task.work_code)).length > 1) issues.push('CONFLICTING_HOOD_SCOPE');
     if (tasks.filter(task => task.work_code === 'W19').length > 1) issues.push('CONFLICTING_TINT_OPTIONS');
+    if (comments.some(comment => comment.split(/\r?\n/u).some(detail => generalDetailConflict(detail, tasks)))) issues.push('NONSTANDARD_TASK_DETAIL');
     if (group && tasks.some(task => !(AVAILABLE_WORKS as Record<string, string[]>)[group]?.includes(task.work_code))) issues.push('WORK_UNAVAILABLE_FOR_VEHICLE');
-    if (/(?:^|[^а-яa-z])(?:подг(?:отов[а-яa-z]*)?|накинул[а-яa-z]*|сделан[а-яa-z]*|готов[а-я]*|заверш[а-я]*)(?:[^а-яa-z]|$)/iu.test(source.notes)) issues.push('SOURCE_PROGRESS_REQUIRES_REVIEW');
-    if (/(?:\b(?:BYN|EUR|USD|VAT)\b|НДС|(?:\d[\d\s.,]*\s*(?:руб|р\.|€|\$))|цен[аыуе]|стоимост)/iu.test(source.notes)) issues.push('CONFIDENTIAL_NOTE_REQUIRES_REVIEW');
+    if ([source.wrapping, source.tint, source.notes].some(value => completedSelectedWork(value, tasks))) issues.push('SOURCE_PROGRESS_REQUIRES_REVIEW');
+    if ([source.wrapping, source.tint, source.notes].some(value => FINANCIAL_NOTE.test(normalized(value)))) issues.push('CONFIDENTIAL_NOTE_REQUIRES_REVIEW');
     const notes = taskNotes(source.notes, tasks);
     issues.push(...notes.issues);
+    const instructions = [notes.instructions, ...comments].filter(Boolean).join('\n\n');
+    if (instructions.length > 4000) issues.push('FIELD_TOO_LONG');
     item.tasks = tasks;
     item.issues = unique(issues);
     if (!item.issues.length && group && source.planned_date) {
       item.state = 'ready';
       item.order = { vehicle: source.vehicle, vin: source.vin, colour: source.colour,
         vehicle_group_code: group, planned_date: source.planned_date, due_date: null,
-        priority: 'normal', manager_label: source.manager_label, instructions: notes.instructions };
+        priority: 'normal', manager_label: source.manager_label, instructions };
     }
   }
   const identities = new Map<string, ParsedRow[]>();
