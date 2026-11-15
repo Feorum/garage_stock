@@ -1,0 +1,102 @@
+name: Test and deploy Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Test and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Check integration boundaries and release tooling
+        run: |
+          node --test tests/*.test.mjs
+          python tests/test-build-pages.py
+          python tests/test-verify-pages.py
+      - name: Build the public site
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" || "$GITHUB_REF" != "refs/heads/main" ]]; then
+            export SUPABASE_URL='https://ci.example.supabase.co'
+            export SUPABASE_PUBLISHABLE_KEY='sb_publishable_ci_checks_only'
+          fi
+          python scripts/build-pages.py --output dist --release "$GITHUB_SHA"
+      - name: Install the browser test runtime
+        run: |
+          python -m pip install playwright==1.65.2
+          python -m playwright install --with-deps chromium
+      - name: Locate Chromium
+        id: browser
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as playwright:
+              print('chromium=' + playwright.chromium.executable_path)
+          PY
+      - name: Check authentication, orders, Sheets and release cache
+        env:
+          CHROMIUM: ${{ steps.browser.outputs.chromium }}
+        run: |
+          python tests/browser-smoke.py --directory dist --output /tmp/garage-browser-smoke --chromium "$CHROMIUM"
+          python tests/browser-orders.py --directory dist --output /tmp/garage-browser-orders --chromium "$CHROMIUM"
+          python tests/browser-sheets.py --directory dist --output /tmp/garage-browser-sheets --chromium "$CHROMIUM"
+          python tests/browser-owner-editing.py --directory dist --output /tmp/garage-browser-owner --chromium "$CHROMIUM"
+      - name: Upload only the tested public build
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist
+
+  deploy:
+    name: Deploy and verify
+    needs: build
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Publish the tested artifact
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      - name: Verify the live commit and every public asset
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: python3 scripts/verify-pages.py --url "$PAGE_URL" --commit "$GITHUB_SHA"

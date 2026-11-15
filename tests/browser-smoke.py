@@ -9,6 +9,7 @@ Requires Python Playwright and Chromium. Build first:
 import argparse
 import functools
 import http.server
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -20,6 +21,9 @@ from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[1]
 SDK = (ROOT / 'tests' / 'fake-supabase.js').read_text(encoding='utf-8')
+CACHE_SPEC = importlib.util.spec_from_file_location('garage_cache_check', ROOT / 'tests/browser_cache.py')
+CACHE_CHECK = importlib.util.module_from_spec(CACHE_SPEC)
+CACHE_SPEC.loader.exec_module(CACHE_CHECK)
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -98,6 +102,8 @@ def ready(page, name):
 def run(args):
     built = args.directory.resolve()
     assert (built / 'index.html').exists(), 'Build the site first.'
+    cache_name = json.loads((built / 'release.json').read_text())['cache']
+    assert re.fullmatch(r'garage-log-(?:v[0-9]+|sha-[0-9a-f]{40})', cache_name), cache_name
     args.output.mkdir(parents=True, exist_ok=True)
     server, base = serve(built)
     passed = []
@@ -233,59 +239,8 @@ def run(args):
             passed.append('unsupported and failed account callbacks rejected and scrubbed')
 
             # Real service-worker upgrade: install a minimal v5 worker on the same scope first.
-            server.stub_config = True
-            context, page, errors, live = new_page(browser, {'signedIn': False}, service_workers='allow')
-            legacy = """
-              self.addEventListener('install', event => {
-                event.waitUntil(caches.open('garage-log-v5').then(cache =>
-                  cache.put('./legacy-marker', new Response('old shell'))));
-                self.skipWaiting();
-              });
-              self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
-            """
-            context.route('**/legacy-test-sw.js', lambda route: route.fulfill(
-                content_type='text/javascript', headers={'Service-Worker-Allowed': '/'}, body=legacy))
-            page.goto(base + '/account.html')
-            page.evaluate("""async () => {
-              await caches.open('another-app-v1').then(cache => cache.put('./sibling-marker', new Response('keep')));
-              await navigator.serviceWorker.register('./legacy-test-sw.js', {scope: './'});
-              await navigator.serviceWorker.ready;
-            }""")
-            page.wait_for_function('navigator.serviceWorker.controller !== null')
-            page.goto(base + '/index.html')
-            expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
-            # A waiting version is deliberate: do not mix its modules into an old controlled tab.
-            page.wait_for_function('navigator.serviceWorker.getRegistration().then(reg => !!reg.waiting)')
-            page.close()
-            worker = next(worker for worker in context.service_workers if urlsplit(worker.url).path.endswith('/sw.js'))
-            worker.evaluate("""() => new Promise((resolve, reject) => {
-              const deadline = setTimeout(() => reject(new Error('Waiting service worker did not activate')), 10000);
-              const check = () => {
-                if (self.registration.active && new URL(self.registration.active.scriptURL).pathname.endsWith('/sw.js')) {
-                  clearTimeout(deadline);
-                  resolve(true);
-                }
-                else setTimeout(check, 25);
-              };
-              check();
-            })""")
-            page = context.new_page()
-            page.on('pageerror', lambda error: errors.append(str(error)))
-            page.goto(base + '/index.html')
-            expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
-            page.wait_for_function("navigator.serviceWorker.controller && new URL(navigator.serviceWorker.controller.scriptURL).pathname.endsWith('/sw.js')")
-            page.wait_for_function("caches.keys().then(keys => keys.includes('garage-log-v8') && !keys.includes('garage-log-v5'))")
-            keys = page.evaluate('caches.keys()')
-            assert 'another-app-v1' in keys, keys
-            cache_urls = page.evaluate("caches.open('garage-log-v8').then(c => c.keys()).then(reqs => reqs.map(r => r.url))")
-            assert not any('/account.html' in url or '/account.js' in url for url in cache_urls), cache_urls
-            assert any('/styles.css' in url for url in cache_urls), cache_urls
-            assert any('/src/' in url for url in cache_urls), cache_urls
-            assert not errors, errors
-            assert not live, live
-            passed.append('v5 to v8 service-worker upgrade, sibling-cache preservation and account exclusions')
-            context.close()
-            server.stub_config = False
+            CACHE_CHECK.check_cache_upgrade(browser, server, base, new_page, cache_name)
+            passed.append('v5 to built-release service-worker upgrade, sibling-cache preservation and account exclusions')
         finally:
             browser.close()
             server.shutdown()

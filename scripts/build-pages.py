@@ -1,6 +1,7 @@
 """Build the allowlisted static site using only public Supabase configuration."""
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
@@ -16,7 +17,7 @@ FILES = (
     'icons/icon-192.png', 'icons/icon-512.png',
 )
 CONFIG_FILE = 'src/supabase.js'
-PUBLIC_OUTPUT = frozenset((*FILES, '.nojekyll'))
+PUBLIC_OUTPUT = frozenset((*FILES, '.nojekyll', 'release.json'))
 
 
 def browser_configuration():
@@ -41,8 +42,17 @@ def browser_configuration():
     return url, key
 
 
-def public_files(url, key):
+def release_identity(value):
+    if value is None:
+        return None
+    if not re.fullmatch(r'[0-9a-fA-F]{40}', value):
+        raise SystemExit('Release must be a full 40-character Git commit SHA.')
+    return value.lower()
+
+
+def public_files(url, key, release=None):
     assets = {}
+    cache_version = None
     for name in FILES:
         data = (ROOT / name).read_bytes()
         if name == CONFIG_FILE:
@@ -51,17 +61,33 @@ def public_files(url, key):
             if source.count(old_url) != 1 or source.count(old_key) != 1:
                 raise SystemExit(f'{name}: expected exactly one public configuration placeholder pair.')
             data = source.replace(old_url, json.dumps(url)).replace(old_key, json.dumps(key)).encode()
+        if name == 'sw.js':
+            source = data.decode()
+            marker = re.compile(r"^const RELEASE = '([A-Za-z0-9._-]+)';(?=\r?$)", re.MULTILINE)
+            matches = marker.findall(source)
+            if len(matches) != 1:
+                raise SystemExit('sw.js: expected exactly one cache release marker.')
+            cache_version = 'sha-' + release if release else matches[0]
+            data = marker.sub('const RELEASE = ' + json.dumps(cache_version) + ';', source).encode()
         if name.endswith(('.js', '.html', '.css')) and (
                 b'YOUR-PROJECT.supabase.co' in data or b'YOUR-ANON-PUBLIC-KEY' in data):
             raise SystemExit(f'{name}: unresolved public configuration placeholder.')
         assets[name] = data
+    assets['release.json'] = (json.dumps({
+        'commit': release,
+        'cache': 'garage-log-' + cache_version,
+        'assets': {name: hashlib.sha256(data).hexdigest() for name, data in assets.items()},
+    }, indent=2, sort_keys=True) + '\n').encode()
     return assets
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, default=ROOT / 'dist')
+    parser.add_argument('--release', default=os.environ.get('GARAGE_RELEASE_SHA'),
+                        help='Full Git commit SHA; defaults to GARAGE_RELEASE_SHA.')
     args = parser.parse_args()
+    release = release_identity(args.release)
     url, key = browser_configuration()
     output = args.output.resolve()
     if (output == ROOT or output in ROOT.parents
@@ -74,13 +100,13 @@ def main():
                       if path.is_file() and path.relative_to(output).as_posix() not in PUBLIC_OUTPUT]
         if unexpected:
             raise SystemExit('Output contains files outside the public build allowlist; use a new empty directory.')
-    assets = public_files(url, key)
+    assets = public_files(url, key, release)
     for name, data in assets.items():
         target = output / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
     (output / '.nojekyll').write_text('')
-    print(f'Built {len(FILES)} public site files in {output}; no private keys or database seed files included.')
+    print(f'Built {len(assets)} public site files in {output}; no private keys or database seed files included.')
 
 
 if __name__ == '__main__':

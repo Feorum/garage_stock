@@ -31,7 +31,7 @@ copy in the existing table layout; the original remains untouched.
 | 3 — delivered | Owner creates, assigns and publishes an order; mechanic starts/blocks/completes | Another mechanic cannot access mandatory work; completion is recorded once |
 | 4 — delivered | Manager shared queue and concurrent task claiming | Two mechanics claiming one task produce one winner; Owner registers Manager requests |
 | 5 — delivered | Existing-layout working copy, catalogue parsing, automatic eligible requests, private source identities/retries and Owner review | The authorized private reader reports successful reads; source rows stay unchanged |
-| 6 — partial | Owner interpretation/editing, compact source-ordered rows, operational reports and immutable rate snapshots | Owner corrections and snapshot reports are delivered; accounting and source-build automation remain later work |
+| 6 — partial | Owner interpretation/editing, compact source-ordered rows, operational reports, immutable rate snapshots and automatic website deployment | Owner corrections, snapshot reports and tested releases from main are delivered; accounting remains later work |
 | 7 | Pilot, legacy history, controlled cutover and installed-client update | Existing identities/job history reconcile; old clients cannot bypass ordered work |
 
 Use versioned migrations rather than rerunning `schema.sql`. Preserve the old

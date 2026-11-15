@@ -108,6 +108,8 @@ bash tests/run-owner-edit-tests.sh
 node --test tests/manager-edge.test.mjs tests/google-worker.test.mjs
 node --test tests/existing-sheet-*.test.mjs
 python3 tests/test-workbook-preview.py
+python3 tests/test-build-pages.py
+python3 tests/test-verify-pages.py
 ```
 
 Browser checks require Python Playwright and Chromium, use a mocked SDK and make
@@ -135,17 +137,26 @@ Workbook tests use synthetic fixtures and the optional dependency in
 | `integrations/existing-google-sheet/` | Read-only standalone reader for the approved operational copy |
 | `integrations/google-sheets/` | Historical optional separate-template integration |
 | `scripts/preview-workbooks.py` | Private source preview without database writes |
-| `scripts/build-pages.py`, `sw.js` | Public build and versioned static cache |
+| `scripts/build-pages.py`, `sw.js` | Public build and release-specific static cache |
+| `.github/workflows/deploy-pages.yml`, `scripts/verify-pages.py` | Tested deployment from main and live asset verification |
 
 ## Caching and deployment
 
-`garage-log-v7` precaches one complete public module graph. Updates wait for older
-app tabs to close; close/reopen the app to activate an update. Only `garage-log-`
-caches are cleaned up. Account callbacks, authorized requests, Supabase data and
-financial responses bypass the service-worker cache. Work actions require a
-confirmed online response.
+Every push to `main` runs integration, build and browser checks, then publishes
+only the tested `dist/` artifact through GitHub Pages Actions. Pull requests run
+checks without deployment. Public connection settings are repository variables;
+the workflow needs no database or service-role credential. See the
+[deployment and rollback guide](docs/deployment.md).
 
-Build and validate, then publish only `dist/` to `gh-pages`. Updating `main` alone
-does not run a source build. Preserve the deployed account callback URL in the
-Supabase redirect allowlist; SMTP and integration credentials stay in secure
-settings. The previous daily-log implementation remains in Git at `240fd91`.
+Release builds use `garage-log-sha-<commit>` to cache one complete public module
+graph. Updates wait for older app tabs to close; close/reopen the app to activate
+an update. Only `garage-log-` caches are cleaned up. Account callbacks, authorized
+requests, Supabase data, financial responses and `release.json` bypass this cache.
+The release manifest records the commit and SHA-256 of every public asset, which
+the workflow verifies against the live site after publishing. Work actions
+require a confirmed online response.
+
+Preserve the deployed account callback URL in the Supabase redirect allowlist.
+Database migrations, Edge Functions, SMTP and Google reader configuration use
+their separate release process. The previous daily-log implementation remains
+in Git at `240fd91`.
