@@ -156,7 +156,8 @@ def run(args):
             existing = order(172, 7, [protected, task(number=8)])
             linked = intake(172)
             linked.update({'order_id': existing['id'], 'status': 'owner_managed', 'owner_managed': True, 'source_changed': True})
-            context, page, errors, live = smoke.new_page(browser, {'orders': [existing], 'managerIntakes': [linked]})
+            context, page, errors, live = smoke.new_page(browser, {'orders': [existing], 'managerIntakes': [linked],
+                'rpcDelays': {'garage_edit_order': 150}})
             page.goto(base + '/index.html')
             smoke.ready(page, 'Test Owner')
             card = expand(page, '[data-order-id]')
@@ -170,6 +171,8 @@ def run(args):
             page.locator('#new-work-W09').check()
             page.get_by_label('Colour (optional)', exact=True).fill('Blue')
             page.get_by_role('button', name='Save changes', exact=True).click()
+            expect(page.get_by_text('The order was updated. Your work selection is preserved against later table changes.', exact=True)).to_be_visible()
+            expect(page.locator('.new-order-form')).to_have_count(0)
             sent = calls(page, 'garage_edit_order')[0]['args']
             kept = next(item for item in sent['p_tasks'] if item['work_code'] == 'W19')
             assert kept['id'] == protected['id'] and kept['options'] == {'tint_percent': 15}
@@ -244,6 +247,7 @@ def run(args):
             context, page, errors, live = smoke.new_page(browser, {'profile': {'name': 'Test Mechanic', 'role': 'mechanic'}, 'managerIntakes': [intake()], 'orders': [order(168)]}, {'width':390,'height':844})
             page.goto(base + '/index.html#manager-orders')
             smoke.ready(page, 'Test Mechanic')
+            expect(page.locator('[data-order-id]')).to_have_count(1)
             assert not calls(page, 'garage_manager_intakes') and not calls(page, 'garage_quote_order')
             assert 'Free-written custom request' not in page.locator('body').inner_text()
             expect(page.get_by_role('button', name='Edit order', exact=True)).to_have_count(0)
