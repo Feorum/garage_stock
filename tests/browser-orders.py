@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright, expect
+from order_browser_helpers import navigate_section, task_card
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,15 +45,6 @@ def order(number, source='owner', tasks=None):
 
 def rpc_calls(page, name):
     return page.evaluate('(name) => (__garageCalls || []).filter(call => call.method === "rpc" && call.name === name)', name)
-
-
-def task_card(page, task_id):
-    card = page.locator(f'[data-task-id="{task_id}"]')
-    details = card.locator('xpath=ancestor::details[contains(@class,"compact-order")][1]')
-    expect(details).to_have_count(1)
-    if details.get_attribute('open') is None:
-        details.locator(':scope > summary').click()
-    return card
 
 
 def safe_mechanic(page):
@@ -225,22 +217,22 @@ def run(args):
             page.evaluate('window.scrollTo(0, 0)')
             page.screenshot(path=str(args.output / 'mechanic-active-order.png'), full_page=True)
             card.get_by_role('button', name='Complete task', exact=True).click()
-            page.get_by_role('link', name='My work', exact=True).click()
+            navigate_section(page, 'My work')
             expect(page.get_by_text('Synthetic vehicle 1', exact=True)).to_be_visible()
             assert page.evaluate("__garageOrderState.orders[0].tasks[0].status") == 'completed'
             safe_mechanic(page)
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             passed.append('assigned mechanic starts, blocks, resumes and completes without financial access')
-            page.get_by_role('link', name='Manager orders', exact=True).click()
+            navigate_section(page, 'Manager orders')
             shared_card = task_card(page, shared['tasks'][0]['id'])
             shared_card.get_by_role('button', name='Start task', exact=True).click()
-            page.get_by_role('link', name='My work', exact=True).click()
+            navigate_section(page, 'My work')
             shared_card = task_card(page, shared['tasks'][0]['id'])
             expect(shared_card.get_by_role('button', name='Complete task', exact=True)).to_be_visible()
             shared_card.get_by_role('button', name='Return to queue', exact=True).click()
             shared_card.get_by_label('Reason', exact=True).fill('Synthetic shared release reason')
             shared_card.get_by_role('button', name='Confirm return', exact=True).click()
-            page.get_by_role('link', name='Manager orders', exact=True).click()
+            navigate_section(page, 'Manager orders')
             expect(task_card(page, shared['tasks'][0]['id']).get_by_role('button', name='Start task', exact=True)).to_be_visible()
             safe_mechanic(page)
             passed.append('mechanic self-claims and explicitly returns a Manager task without changing Owner assignments')
@@ -253,12 +245,12 @@ def run(args):
             page.goto(base + '/index.html')
             smoke.ready(page, 'Test Owner')
             page.wait_for_function("(__garageCalls || []).some(call => call.name === 'garage_list_orders')")
-            page.get_by_role('link', name='Sheet connections', exact=True).click()
+            navigate_section(page, 'Sheet connections')
             expect(page.get_by_role('heading', name='Sheet connections', exact=True)).to_be_visible()
             page.wait_for_timeout(750)
             expect(page.get_by_role('heading', name='Sheet connections', exact=True)).to_be_visible()
             expect(page.get_by_text('Synthetic vehicle 9', exact=True)).to_have_count(0)
-            page.get_by_role('link', name='Orders', exact=True).click()
+            navigate_section(page, 'Orders')
             page.get_by_role('button', name='Sign out', exact=True).click()
             expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
             page.wait_for_timeout(750)
