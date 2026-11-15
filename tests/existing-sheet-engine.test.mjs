@@ -57,6 +57,49 @@ test('checkpoint failure prevents all outbound delivery', async () => {
   assert.equal(s.calls.length, 0);
 });
 
+test('Owner bindings suppress new automatic requests before allocating delivery identities', async () => {
+  const s=setup(); s.deps.ownerManagedKeys=[row().source_key];
+  const result=await runFeed(feed(),parsed([row()]),s.deps);
+  assert.equal(s.calls.length,0); assert.equal(s.saved.length,0);
+  assert.deepEqual(result.state.entries,{}); assert.deepEqual(result.review,[]);
+});
+
+test('Owner bindings durably retire pending replay without changing accepted history', async () => {
+  const a=setup({ingest:()=>{throw new Error('Synthetic lost acknowledgement');}});
+  const first=await runFeed(feed(),parsed([row()]),a.deps);
+  const key=row().source_key, original=first.state.entries[key];
+  const b=setup({state:first.state,startVersion:first.version}); b.deps.ownerManagedKeys=[key];
+  const result=await runFeed({...feed(first.state),version:first.version},parsed([row({number:99})]),b.deps);
+  assert.equal(b.calls.length,0);
+  assert.equal(result.state.entries[key].external_order_id,original.external_order_id);
+  assert.equal(result.state.entries[key].owner_managed,true);
+  assert.equal(result.state.entries[key].pending,undefined);
+  assert.equal(result.summary.pending_deliveries,0); assert.deepEqual(result.review,[]);
+  const c=setup({state:result.state,startVersion:result.version});
+  const restarted=await runFeed({...feed(result.state),version:result.version},null,c.deps);
+  assert.equal(c.calls.length,0); assert.deepEqual(restarted.review,[]);
+});
+
+test('row bindings suppress only the current incomplete observation and never persist as identity', async () => {
+  const incomplete={...row({state:'review'}),source_key:null,order:null,tasks:[],issues:['NO_APPROVED_TASKS']};
+  const a=setup(); a.deps.ownerManagedRows=[2];
+  const first=await runFeed(feed(),parsed([incomplete]),a.deps);
+  assert.deepEqual(first.state.entries,{}); assert.deepEqual(first.review,[]);
+  const b=setup({state:first.state,startVersion:first.version});
+  await runFeed({...feed(first.state),version:first.version},parsed([row()]),b.deps);
+  assert.equal(b.calls.length,1);
+});
+
+test('server Owner override race becomes a permanent conflict instead of a repeated overwrite', async () => {
+  const a=setup({ingest:payload=>({status:'conflict',submission_id:payload.submission_id,
+    external_order_id:payload.external_order_id,revision:payload.revision,error:{code:'ORDER_CHANGED'}})});
+  const first=await runFeed(feed(),parsed([row()]),a.deps);
+  assert.equal(a.calls.length,1); assert.equal(first.state.entries[row().source_key].blocked.permanent,true);
+  const b=setup({state:first.state,startVersion:first.version});
+  await runFeed({...feed(first.state),version:first.version},parsed([row({instructions:'Later Manager text'})]),b.deps);
+  assert.equal(b.calls.length,0);
+});
+
 test('timeout and lost acknowledgement retry immutable body after a restart', async () => {
   const a = setup({ ingest: () => { throw new Error('Synthetic lost response'); } });
   const first = await runFeed(feed(), parsed([row()]), a.deps);

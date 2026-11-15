@@ -112,3 +112,60 @@ trigger runs. Valid closed-catalogue scope publishes only after two unchanged
 reads at least one minute apart. Completion corrections, full accounting/payroll
 and customer invoicing remain later increments. Checked historical rows never
 become active tasks, and copy-only work does not edit or connect the original.
+
+## Owner interpretation and editing
+
+Migration `20261115015355_owner_manager_order_editing.sql` adds a private Manager
+intake beside published orders. It records all substantive unfinished source
+requests, including free-text-only requests and rows with incomplete identity.
+The original and latest raw source text stay separate. Duplicate occurrences
+retain all raw entries and must be clarified before publication. Source row
+numbers are provenance and display ordering, never durable order identity.
+
+The service-only `garage_capture_manager_rows(source_id, lease_token,
+expected_version, rows)` checks the active import lease and version before
+capturing observations. A valid date/VIN source key identifies a draft; otherwise
+a content hash excluding position and weekday identifies the observation.
+Capture leaves importer CAS state unchanged and returns Owner-managed keys and
+current-snapshot row numbers so the reader can suppress its own obsolete work.
+
+Owner RPCs use the same selected catalogue works and order fields as creation:
+
+| RPC | Behavior |
+| --- | --- |
+| `garage_manager_intakes()` | Owner-only original/latest requests, source provenance, version, suggested selections, linked order and interpretation state. |
+| `garage_publish_manager_intake(p_intake_id, p_expected_version, p_order, p_tasks, p_request_id)` | Publish a complete interpreted Manager request with at least one catalogue task, preserving the original text privately. |
+| `garage_edit_order(p_order_id, p_expected_version, p_order, p_tasks, p_request_id)` | Edit an open order. Existing tasks are supplied with `id`; new tasks omit it. |
+| `garage_quote_order(p_vehicle_group_code, p_tasks, p_order_id = null)` | Owner-only preview using frozen retained snapshots and active approved rates for new work. Missing rates remain unknown. |
+
+`p_order` contains `vehicle`, `vehicle_group_code`, `vin`, `colour`,
+`manager_label`, `instructions`, `planned_date`, `due_date` and `priority`.
+`p_tasks` contains `id?`, `work_code`, `options`, `instructions` and
+`assigned_to?`. Manager tasks remain shared; Owner assignments require an active
+mechanic. Raw intake text never automatically populates financial values, work
+choices or completion. Commercial text is stripped from suggested operational
+instructions and rejected if submitted to the published instruction fields.
+
+Unchanged tasks retain their IDs and frozen prices. Removed or replaced pending
+work is cancelled and retained in history; replacement work receives a new task
+and snapshot. Started, blocked and completed tasks must remain unchanged, and
+their vehicle-group pricing context is frozen. Completed ledger entries and
+financial snapshots are never deleted or repriced by editing.
+
+Owner saves are version-checked and request-ID idempotent. They reserve both
+original and corrected source identities, and mark the order as Owner-managed.
+Migration `20261115022416_owner_intake_identity_guards.sql` retains every prior
+Owner date/VIN identity privately, including identities later changed or cleared.
+The backfill also recovers earlier interpretations from successful request receipts.
+Historical aliases remain reserved against automatic submissions and other Owner
+orders; missing or expired capture leases are rejected explicitly.
+A source-locked service guard prevents a later or previously captured spreadsheet
+submission from overwriting or duplicating that order, even with a new external
+ID. Previously recorded receipts remain exactly replayable. Source polls update
+the private latest observation without changing Owner decisions. Missing source
+rows never cancel application work.
+
+Ordinary order JSON contains only safe source name/ID/row metadata for table
+ordering. Private original text and quote amounts require Owner authorization;
+Mechanics receive neither. Run isolated synthetic checks with
+`bash tests/run-owner-edit-tests.sh` after preloading the pinned PostgreSQL image.

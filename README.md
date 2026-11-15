@@ -14,6 +14,12 @@ Live app: https://feorum.github.io/garage_stock/.
   can block/resume/complete work and return shared tasks to the queue.
 - Owner can transfer or cancel work with a reason and close finished orders.
   Transferring active Manager work preserves its shared origin.
+- Owner can interpret free-written Manager requests and edit open orders with
+  the same form used to create an order. Catalogue selections preview private
+  amounts; saved tasks use server-calculated, immutable rate snapshots.
+- Orders use compact, collapsible rows in their source spreadsheet sequence.
+  Requests awaiting Owner interpretation appear in that same list. The
+  catalogue is available inside order forms without a separate navigation page.
 - The approved catalogue has 19 works, 17 vehicle groups and sanitized
   availability. The tint package requires an explicit 5% or 15% option.
 - Owner-only rate snapshots are separate from operational rows. Unpriced values
@@ -29,6 +35,14 @@ catalogue. Recognized selections publish automatically, while other descriptions
 remain visible Manager comments. Rows without a selected work or a valid vehicle
 identity, and conflicting selections, remain in Owner review. Completed history
 is excluded. Copy-only development never connects or edits the original.
+
+Original Manager entries and subsequent source observations remain private to
+the Owner. After the Owner interprets or edits a linked order, spreadsheet
+polling retains provenance but cannot replace those operational changes or
+publish a second order for its reserved source identity. Removed or replaced
+pending tasks are cancelled with history retained; started and completed tasks
+remain unchanged. Owner corrections are saved in the application and are not
+written back to the Manager spreadsheet.
 
 Private copies stay private. An Owner-private standalone Google reader uses
 read-only spreadsheet access; the Owner authorizes it once. The application
@@ -72,6 +86,13 @@ tables; actual rates are deliberately absent from source and migration seeds.
 Notify PostgREST to reload its schema after an API-based migration. See
 [the database API](docs/database-api.md) for the contract and release sequence.
 
+Existing deployments apply the additive
+`20261115015355_owner_manager_order_editing.sql` and
+`20261115022416_owner_intake_identity_guards.sql` migrations before updating the
+reader and static app. They introduce private Manager intake and Owner editing,
+retaining prior corrected identities. They do not rerun the historical schema or
+replace stored orders or rates.
+
 ## Validate
 
 ```sh
@@ -79,9 +100,11 @@ python3 scripts/build-pages.py
 python3 tests/browser-smoke.py
 python3 tests/browser-orders.py
 python3 tests/browser-sheets.py
+python3 tests/browser-owner-editing.py
 bash tests/run-database-tests.sh
 bash tests/run-manager-tests.sh
 bash tests/run-existing-sheet-tests.sh
+bash tests/run-owner-edit-tests.sh
 node --test tests/manager-edge.test.mjs tests/google-worker.test.mjs
 node --test tests/existing-sheet-*.test.mjs
 python3 tests/test-workbook-preview.py

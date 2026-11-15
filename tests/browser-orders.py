@@ -47,12 +47,18 @@ def rpc_calls(page, name):
 
 
 def task_card(page, task_id):
-    return page.locator(f'[data-task-id="{task_id}"]')
+    card = page.locator(f'[data-task-id="{task_id}"]')
+    details = card.locator('xpath=ancestor::details[contains(@class,"compact-order")][1]')
+    if details.count() and details.get_attribute('open') is None:
+        details.locator(':scope > summary').click()
+    return card
 
 
 def safe_mechanic(page):
     assert not rpc_calls(page, 'garage_staff')
     assert not rpc_calls(page, 'garage_order_financials')
+    assert not rpc_calls(page, 'garage_manager_intakes')
+    assert not rpc_calls(page, 'garage_quote_order')
     body = page.locator('body').inner_text()
     for forbidden in ('BYN', 'EUR', 'VAT', '€', 'View Owner amounts'):
         assert forbidden not in body, forbidden
@@ -245,10 +251,10 @@ def run(args):
             page.goto(base + '/index.html')
             smoke.ready(page, 'Test Owner')
             page.wait_for_function("(__garageCalls || []).some(call => call.name === 'garage_list_orders')")
-            page.get_by_role('link', name='Approved works', exact=True).click()
-            expect(page.get_by_label('Vehicle group', exact=True)).to_be_visible()
+            page.get_by_role('link', name='Sheet connections', exact=True).click()
+            expect(page.get_by_role('heading', name='Sheet connections', exact=True)).to_be_visible()
             page.wait_for_timeout(750)
-            expect(page.get_by_role('heading', name='Approved works', exact=True)).to_be_visible()
+            expect(page.get_by_role('heading', name='Sheet connections', exact=True)).to_be_visible()
             expect(page.get_by_text('Synthetic vehicle 9', exact=True)).to_have_count(0)
             page.get_by_role('link', name='Orders', exact=True).click()
             page.get_by_role('button', name='Sign out', exact=True).click()

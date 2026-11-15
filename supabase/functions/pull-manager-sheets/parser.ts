@@ -1,8 +1,9 @@
 // Read-only parser for the existing Managers' sheet. No source edits, prices,
 // guessed scope, row-number identities, or spreadsheet formula evaluation.
 import { WORKS, VEHICLE_GROUPS, AVAILABLE_WORKS } from './catalogue.ts';
+import { rawSource, type RawSource } from './intake.ts';
 
-export const PARSER_VERSION = 'alfort-catalogue-comments-v4';
+export const PARSER_VERSION = 'alfort-owner-intake-v5';
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_ROWS = 5000;
 const MAX_COLUMNS = 26;
@@ -16,6 +17,8 @@ export type ParsedTask = {
 export type ParsedRow = {
   row_number: number;
   source_key: string | null;
+  raw: RawSource;
+  suggested_order: Record<string, unknown> | null;
   state: 'completed' | 'ready' | 'review';
   source: {
     planned_date: string | null; manager_label: string; vehicle: string; vin: string;
@@ -273,6 +276,7 @@ function completedSelectedWork(value: string, tasks: ParsedTask[]): boolean {
 
 export function parseExistingSheetRows(input: unknown[][]): ParsedSheet {
   if (!Array.isArray(input) || !input.length || input.length > MAX_ROWS) throw new Error('INVALID_ROWS');
+  if (new TextEncoder().encode(JSON.stringify(input)).length > MAX_BYTES) throw new Error('CSV_TOO_LARGE');
   const grid = input.map(row => {
     if (!Array.isArray(row) || row.length > MAX_COLUMNS) throw new Error('TOO_MANY_COLUMNS');
     return row.map(text);
@@ -293,7 +297,7 @@ export function parseExistingSheetRows(input: unknown[][]): ParsedSheet {
       completed: completion(values[8]), notes: values[9],
     };
     const sourceKey = source.planned_date && VIN.test(source.vin) ? `${source.planned_date}|${source.vin}` : null;
-    const item: ParsedRow = { row_number: index + 1, source_key: sourceKey, source,
+    const item: ParsedRow = { row_number: index + 1, source_key: sourceKey, source, raw: rawSource(input[index]), suggested_order: null,
       state: source.completed === true ? 'completed' : 'review', order: null, tasks: [], issues: [] };
     rows.push(item);
     if (source.completed === true) continue;
@@ -341,6 +345,10 @@ export function parseExistingSheetRows(input: unknown[][]): ParsedSheet {
     if (instructions.length > 4000) issues.push('FIELD_TOO_LONG');
     item.tasks = tasks;
     item.issues = unique(issues);
+    item.suggested_order = { vehicle: source.vehicle, vin: source.vin, colour: source.colour,
+      vehicle_group_code: group, planned_date: source.planned_date, due_date: null,
+      priority: 'normal', manager_label: source.manager_label,
+      instructions: item.issues.includes('CONFIDENTIAL_NOTE_REQUIRES_REVIEW') ? '' : instructions };
     if (!item.issues.length && group && source.planned_date) {
       item.state = 'ready';
       item.order = { vehicle: source.vehicle, vin: source.vin, colour: source.colour,

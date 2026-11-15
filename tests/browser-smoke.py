@@ -19,7 +19,7 @@ from playwright.sync_api import sync_playwright, expect
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SDK = (ROOT / 'tests' / 'fake-supabase.js').read_text()
+SDK = (ROOT / 'tests' / 'fake-supabase.js').read_text(encoding='utf-8')
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -61,9 +61,10 @@ def check_no_private_data(page):
     assert not any(entry['method'] in ('insert', 'delete', 'upsert') for entry in calls), calls
     role = page.evaluate("globalThis.__garageTest?.profile?.role || 'admin'")
     rpc_names = {entry['name'] for entry in calls if entry['method'] == 'rpc'}
-    assert rpc_names <= {'garage_list_orders', 'garage_staff'}, rpc_names
+    assert rpc_names <= {'garage_list_orders', 'garage_staff', 'garage_manager_intakes'}, rpc_names
     if role == 'mechanic':
         assert 'garage_staff' not in rpc_names
+        assert 'garage_manager_intakes' not in rpc_names
     body = page.locator('body').inner_text()
     assert not re.search(r'€|\bBYN\b|\bEUR\b|\bVAT\b', body), body
 
@@ -106,7 +107,7 @@ def run(args):
         try:
             # Both roles load only their own workspace navigation.
             for role, name, expected_links, forbidden in [
-                ('admin', 'Test Owner', ['Orders', 'Approved works', 'Reports', 'Sheet connections'], 'Assigned by Owner'),
+                ('admin', 'Test Owner', ['Orders', 'Reports', 'Sheet connections'], 'Assigned by Owner'),
                 ('mechanic', 'Test Mechanic', ['Assigned by Owner', 'Manager orders', 'My work'], 'Reports'),
             ]:
                 viewport = {'width': 390, 'height': 844} if role == 'mechanic' else None
@@ -123,21 +124,12 @@ def run(args):
                 assert not live, live
                 if role == 'admin':
                     page.screenshot(path=str(args.output / 'owner-workspace.png'), full_page=True)
-                    page.get_by_role('link', name='Approved works', exact=True).click()
-                    expect(page.get_by_label('Vehicle group', exact=True)).to_be_visible()
-                    assert page.get_by_label('Vehicle group', exact=True).locator('option').count() in (17, 18)
-                    assert page.locator('[data-work-code]').count() == 19
-                    page.get_by_label('Vehicle group', exact=True).select_option('VG01')
-                    expect(page.get_by_text('15 of 19 works available for this group', exact=True)).to_be_visible()
-                    assert page.locator('[data-work-code].unavailable').count() == 4
-                    page.get_by_label('Vehicle group', exact=True).select_option('VG02')
-                    expect(page.get_by_text('19 of 19 works available for this group', exact=True)).to_be_visible()
-                    assert page.locator('[data-work-code].unavailable').count() == 0
+                    expect(page.get_by_role('link', name='Approved works', exact=True)).to_have_count(0)
+                    page.evaluate("location.hash = '#catalogue'")
+                    expect(page.get_by_role('heading', name='Orders', exact=True)).to_be_visible()
                     page.get_by_role('link', name='Skip to content', exact=True).evaluate('link => link.click()')
-                    assert page.url.endswith('#catalogue'), page.url
-                    expect(page.get_by_role('link', name='Approved works', exact=True)).to_have_attribute('aria-current', 'page')
+                    expect(page.get_by_role('link', name='Orders', exact=True)).to_have_attribute('aria-current', 'page')
                     assert page.evaluate("document.activeElement.id === 'main-content'")
-                    page.screenshot(path=str(args.output / 'owner-catalogue.png'), full_page=True)
                     check_no_private_data(page)
                 else:
                     page.screenshot(path=str(args.output / 'mechanic-workspace.png'), full_page=True)
@@ -146,7 +138,7 @@ def run(args):
                 expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
                 expect(page.get_by_role('navigation')).to_have_count(0)
                 expect(page.get_by_text(name, exact=True)).to_have_count(0)
-                passed.append(role + ' role, route guard, catalogue/privacy and logout')
+                passed.append(role + ' role, route guard, workspace/privacy and logout')
                 context.close()
 
             # Sign-in uses a real form, prevents duplicate submits, and shows useful errors.
@@ -282,16 +274,16 @@ def run(args):
             page.goto(base + '/index.html')
             expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
             page.wait_for_function("navigator.serviceWorker.controller && new URL(navigator.serviceWorker.controller.scriptURL).pathname.endsWith('/sw.js')")
-            page.wait_for_function("caches.keys().then(keys => keys.includes('garage-log-v7') && !keys.includes('garage-log-v5'))")
+            page.wait_for_function("caches.keys().then(keys => keys.includes('garage-log-v8') && !keys.includes('garage-log-v5'))")
             keys = page.evaluate('caches.keys()')
             assert 'another-app-v1' in keys, keys
-            cache_urls = page.evaluate("caches.open('garage-log-v7').then(c => c.keys()).then(reqs => reqs.map(r => r.url))")
+            cache_urls = page.evaluate("caches.open('garage-log-v8').then(c => c.keys()).then(reqs => reqs.map(r => r.url))")
             assert not any('/account.html' in url or '/account.js' in url for url in cache_urls), cache_urls
             assert any('/styles.css' in url for url in cache_urls), cache_urls
             assert any('/src/' in url for url in cache_urls), cache_urls
             assert not errors, errors
             assert not live, live
-            passed.append('v5 to v7 service-worker upgrade, sibling-cache preservation and account exclusions')
+            passed.append('v5 to v8 service-worker upgrade, sibling-cache preservation and account exclusions')
             context.close()
             server.stub_config = False
         finally:

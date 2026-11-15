@@ -28,6 +28,7 @@ export function createClient() {
   // These records are synthetic fixtures, never copies of uploaded business data.
   const clone = value => JSON.parse(JSON.stringify(value));
   const orders = clone(fixture.orders || []);
+  const managerIntakes = clone(fixture.managerIntakes || []);
   const sheetSources = clone(fixture.sheetSources || []);
   const sheetReviews = clone(fixture.sheetReviews || {});
   const sheetReaderSecrets = new Map();
@@ -50,7 +51,7 @@ export function createClient() {
     const tasks = order.tasks.filter(taskVisible);
     return tasks.length ? [{ ...clone(order), tasks: clone(tasks) }] : [];
   });
-  globalThis.__garageOrderState = { orders, receipts, staff };
+  globalThis.__garageOrderState = { orders, receipts, staff, managerIntakes };
   globalThis.__garageSheetState = { sources: sheetSources };
 
   async function rpc(name, args = {}) {
@@ -115,10 +116,17 @@ export function createClient() {
       return { data: clone(source), error: null };
     }
     if (name === 'garage_list_orders') return { data: visibleOrders(), error: null };
+    if (name === 'garage_manager_intakes') return owner ? { data: clone(managerIntakes), error: null } : errorResult('Owner access required.', '42501');
     if (name === 'garage_staff') return owner ? { data: clone(staff), error: null } : errorResult('Owner access required.', '42501');
     if (name === 'garage_order_financials') {
       if (!owner) return errorResult('Owner access required.', '42501');
       return { data: clone(fixture.financials || { status: 'needs_pricing', currency: 'BYN', items: [], totals: null }), error: null };
+    }
+    if (name === 'garage_quote_order') {
+      if (!owner) return errorResult('Owner access required.', '42501');
+      const count = args.p_tasks?.length || 0;
+      return { data: clone(fixture.quote || { status: 'priced', currency: 'BYN', net_amount: count * 100, vat_amount: count * 20, gross_amount: count * 120,
+        items: (args.p_tasks || []).map(task => ({ task_id: task.id || null, work_code: task.work_code, status: 'priced', net_amount: 100, vat_amount: 20, gross_amount: 120 })) }), error: null };
     }
     const request = args.p_request_id;
     const fingerprint = JSON.stringify({ name, ...args });
@@ -127,7 +135,14 @@ export function createClient() {
       return receipt.fingerprint === fingerprint ? clone(receipt.result) : errorResult('Request ID was already used for another action.');
     }
     let result;
-    if (name === 'garage_create_order') {
+    let publishedIntake;
+    if (name === 'garage_publish_manager_intake') {
+      if (!owner) return errorResult('Owner access required.', '42501');
+      publishedIntake = managerIntakes.find(row => row.id === args.p_intake_id);
+      if (!publishedIntake || publishedIntake.version !== args.p_expected_version || publishedIntake.order_id) return errorResult('This request changed. Reopen it.', '40001');
+      args = { ...args, ...Object.fromEntries(Object.entries(args.p_order || {}).map(([key, value]) => ['p_' + key, value])), p_source: 'manager' };
+    }
+    if (name === 'garage_create_order' || name === 'garage_publish_manager_intake') {
       if (!owner) return errorResult('Owner access required.', '42501');
       if (!args.p_vehicle?.trim() || !args.p_tasks?.length) return errorResult('Vehicle and work are required.');
       if (args.p_source === 'owner' && args.p_tasks.some(task => !task.assigned_to)) return errorResult('Assign every task to a mechanic.');
@@ -152,6 +167,32 @@ export function createClient() {
         })),
       };
       orders.unshift(order);
+      if (publishedIntake) {
+        order.source_id = publishedIntake.source_id; order.source_name = publishedIntake.source_name;
+        order.source_row_number = publishedIntake.row_numbers[0];
+        publishedIntake.order_id = order.id; publishedIntake.status = 'owner_managed'; publishedIntake.owner_managed = true; publishedIntake.version += 1;
+      }
+      result = { data: clone(order), error: null };
+    } else if (name === 'garage_edit_order') {
+      if (!owner) return errorResult('Owner access required.', '42501');
+      const order = orders.find(row => row.id === args.p_order_id);
+      if (!order || order.version !== args.p_expected_version) return errorResult('This order changed. Reopen it.', '40001');
+      for (const task of order.tasks.filter(task => ['in_progress', 'blocked', 'completed'].includes(task.status))) {
+        const updated = args.p_tasks.find(item => item.id === task.id);
+        if (!updated || updated.work_code !== task.work_code || JSON.stringify(updated.options) !== JSON.stringify(task.options)) return errorResult('Recorded work must stay unchanged.');
+      }
+      Object.assign(order, args.p_order);
+      order.tasks = args.p_tasks.map((item, index) => {
+        const previous = order.tasks.find(task => task.id === item.id);
+        return previous ? { ...previous, ...item } : {
+          ...item, id: `bbbbbbbb-bbbb-4bbb-8bbb-${String(900000 + index).padStart(12, '0')}`,
+          work_name: workName(item.work_code), status: 'pending', working_mechanic_id: null, working_name: null,
+          assigned_name: staff.find(row => row.id === item.assigned_to)?.name || null, version: 1, blocker_reason: '', completed_at: null,
+        };
+      });
+      order.version += 1;
+      const intake = managerIntakes.find(row => row.order_id === order.id);
+      if (intake) { intake.owner_managed = true; intake.status = 'owner_managed'; intake.version += 1; }
       result = { data: clone(order), error: null };
     } else if (name === 'garage_task_action') {
       const order = orders.find(row => row.tasks.some(task => task.id === args.p_task_id));

@@ -9,7 +9,7 @@ type SourceRow = {
   tasks: { task_key: string; work_code: string; options: Record<string, unknown>; instructions: string }[];
   issues: string[];
 };
-type ParsedSheet = { rows: SourceRow[]; summary: Record<string, number>; parser_version?: number };
+type ParsedSheet = { rows: SourceRow[]; summary: Record<string, number>; parser_version?: string | number };
 type Accepted = { input_hash: string; revision: number; order_version: number; order_number: string; task_ids: Record<string, string> };
 type Pending = { input_hash: string; payload: Record<string, any>; task_ids: Record<string, string>; attempts: number };
 type Entry = {
@@ -17,6 +17,7 @@ type Entry = {
   origin: 'completed' | 'request'; external_order_id?: string; accepted?: Accepted; pending?: Pending;
   blocked?: { input_hash: string; code: string; permanent: boolean };
   candidate?: { input_hash: string; first_seen_at: number };
+  owner_managed?: true;
 };
 type PullState = { schema_version: 1; entries: Record<string, Entry> };
 type Feed = { source_id: string; spreadsheet_id: string; state?: unknown; version: number; [key: string]: unknown };
@@ -28,6 +29,8 @@ type Dependencies = {
   maxDeliveries?: number;
   now?: () => number;
   quietPeriodMs?: number;
+  ownerManagedKeys?: string[];
+  ownerManagedRows?: number[];
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PERMANENT = new Set(['ORDER_CHANGED', 'ORDER_CLOSED', 'REVISION_CONFLICT', 'TASK_ID_REUSED', 'SUBMISSION_ID_REUSED']);
@@ -45,6 +48,7 @@ function safeState(value: unknown): PullState {
         || (entry.accepted && (!UUID.test(entry.external_order_id || '') || !Number.isInteger(entry.accepted.revision)
           || entry.accepted.revision < 1 || !Number.isInteger(entry.accepted.order_version) || entry.accepted.order_version < 1
           || typeof entry.accepted.input_hash !== 'string' || !record(entry.accepted.task_ids)))
+        || (entry.owner_managed !== undefined && entry.owner_managed !== true)
         || (entry.candidate && (typeof entry.candidate.input_hash !== 'string'
           || !Number.isFinite(entry.candidate.first_seen_at) || entry.candidate.first_seen_at < 0))
         || (entry.pending && (!record(entry.pending.payload) || !UUID.test(entry.pending.payload.submission_id)
@@ -86,7 +90,10 @@ export async function runFeed(feed: Feed, parsed: ParsedSheet | null, dependenci
   if (!Number.isFinite(observedAt) || observedAt < 0 || !Number.isFinite(quietPeriodMs)) throw new Error('INVALID_STABILITY_CLOCK');
   const maxDeliveries = Math.max(0, Math.min(20, dependencies.maxDeliveries ?? 20));
   const state = safeState(feed.state);
+  const managedKeys = new Set(dependencies.ownerManagedKeys || []);
+  const managedRows = new Set(dependencies.ownerManagedRows || []);
   let version = feed.version, deliveries = 0, acceptedThisRun = 0;
+  let changed = false;
   const review: Review[] = [];
   const addReview = (row: SourceRow | Entry, reasons: string[]) => {
     const item = reviewRow(row, reasons);
@@ -130,6 +137,17 @@ export async function runFeed(feed: Feed, parsed: ParsedSheet | null, dependenci
   // Durable snapshots survive bad/missing/edited current rows and lost acks.
   // They were already captured as requests; replay is required to learn whether
   // the server accepted them before a connection failed.
+  // An authoritative Owner binding retires stale delivery snapshots before
+  // replay. Persist only the source key; row bindings last for this read only.
+  for (const entry of Object.values(state.entries)) {
+    if (!entry.owner_managed && !managedKeys.has(entry.source_key)) continue;
+    if (!entry.owner_managed || entry.pending || entry.candidate || entry.blocked) {
+      entry.owner_managed = true;
+      delete entry.pending; delete entry.candidate; delete entry.blocked;
+      changed = true;
+    }
+  }
+  if (changed) { await save(); changed = false; }
   const priorPending = Object.values(state.entries).filter(entry => entry.pending);
   for (const entry of priorPending) await deliver(entry);
 
@@ -142,7 +160,6 @@ export async function runFeed(feed: Feed, parsed: ParsedSheet | null, dependenci
   // new order. Distinct visits concurrently present in the source stay distinct.
   const priorEntries = Object.values(state.entries);
   const newEntries: Entry[] = [];
-  let changed = false;
   function clearCandidate(entry?: Entry) {
     if (entry?.candidate) { delete entry.candidate; changed = true; }
   }
@@ -150,6 +167,8 @@ export async function runFeed(feed: Feed, parsed: ParsedSheet | null, dependenci
   // read uses null and neither advances nor rewrites source observations.
   if (parsed) for (const entry of priorEntries) if (!currentKeys.has(entry.source_key)) clearCandidate(entry);
   for (const row of sourceRows) {
+    if (managedRows.has(row.row_number) || (row.source_key
+        && (managedKeys.has(row.source_key) || state.entries[row.source_key]?.owner_managed))) continue;
     if (!row.source_key) { if (row.state !== 'completed') addReview(row, row.issues.length ? row.issues : ['INVALID_SOURCE_IDENTITY']); continue; }
     if ((keyCounts.get(row.source_key) || 0) > 1) {
       // A completed occurrence still reserves historical identity even where a

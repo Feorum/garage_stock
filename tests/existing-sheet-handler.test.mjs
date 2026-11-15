@@ -24,6 +24,12 @@ function setup(options = {}) {
       if (String(url).startsWith('https://docs.google.com/')) return new Response(options.csv ?? HEADER, { headers: { 'Content-Type': 'text/csv; charset=utf-8' } });
       if (name === 'garage_acquire_sheet_pulls') return json(options.feeds ?? [feed()]);
       if (name === 'garage_acquire_sheet_reader') return options.authError ? json({ code: '42501', message: 'PRIVATE_DATABASE_TRACE' }, 403) : json(options.readerFeed === null ? null : options.readerFeed || feed());
+      if (name === 'garage_capture_manager_rows') {
+        const args = JSON.parse(init.body);
+        return options.captureError ? json({ message: 'PRIVATE_DATABASE_TRACE' }, 500)
+          : json({ version: args.p_expected_version, owner_managed_rows: [], owner_managed_keys: [],
+            owner_managed_observations: [], intakes_count: args.p_rows.length, ...options.captureBindings });
+      }
       if (name === 'garage_checkpoint_sheet_pull' || name === 'garage_commit_sheet_pull') return json({ version: JSON.parse(init.body).p_expected_version + 1 });
       throw new Error('Unexpected request ' + String(url));
     } });
@@ -115,6 +121,45 @@ test('the first valid private read records a candidate without publishing an unf
   assert.ok(!calls.some(call => call.url.endsWith('garage_ingest_sheet')));
   const result = JSON.parse(calls.find(call => call.url.endsWith('garage_commit_sheet_pull')).init.body);
   assert.equal(result.p_summary.awaiting_stability, 1);
+  assert.ok(calls.findIndex(call=>call.url.endsWith('garage_capture_manager_rows'))
+    < calls.findIndex(call=>call.url.endsWith('garage_checkpoint_sheet_pull')));
+});
+
+test('unfinished free writing is captured privately with missing identity and no approved tasks', async () => {
+  const csv=HEADER+'\r\n 23.11 ,, Synthetic manager ,,,,,Custom work,,FALSE,Private source note';
+  const {handler,calls}=setup();
+  const response=await handler(request({spreadsheet_id:SHEET,sheet_gid:'12345',csv},'/source',`${SOURCE}.${READER}`));
+  const body=await safe(response); assert.equal(response.status,200);
+  assert.ok(!JSON.stringify(body).includes('Private source note'));
+  const capture=JSON.parse(calls.find(call=>call.url.endsWith('garage_capture_manager_rows')).init.body);
+  assert.equal(capture.p_source_id,SOURCE); assert.equal(capture.p_lease_token,LEASE); assert.equal(capture.p_expected_version,1);
+  assert.equal(capture.p_rows.length,1); assert.equal(capture.p_rows[0].source_key,null);
+  assert.equal(capture.p_rows[0].raw.date,' 23.11 ');
+  assert.ok(capture.p_rows[0].issues.includes('NO_APPROVED_TASKS'));
+  assert.ok(!calls.some(call=>call.url.endsWith('garage_ingest_sheet')));
+});
+
+test('failed or mismatched intake capture prevents both new requests and prior pending replay', async () => {
+  const key='2026-11-13|TEST0000000000001', external='33333333-3333-4333-8333-333333333333';
+  const state={schema_version:1,entries:{[key]:{source_key:key,vin:'TEST0000000000001',planned_date:'2026-11-13',
+    vehicle:'S50',row_number:2,origin:'request',external_order_id:external,pending:{input_hash:'synthetic',task_ids:{},attempts:0,
+      payload:{external_order_id:external,submission_id:'44444444-4444-4444-8444-444444444444'}}}}};
+  const csv=HEADER+'\r\n13.11.2026,,Synthetic manager,S50,TEST0000000000001,Grey,W01,,FALSE,';
+  for (const options of [{captureError:true},{captureBindings:{version:99}}, {captureBindings:{owner_managed_rows:[88]}}]) {
+    const {handler,calls}=setup({...options,csv,feeds:[feed({state})]});
+    const response=await handler(request()); assert.equal(response.status,503); await safe(response);
+    assert.ok(!calls.some(call=>call.url.endsWith('garage_ingest_sheet')));
+    assert.ok(!calls.some(call=>call.url.endsWith('garage_checkpoint_sheet_pull')));
+  }
+});
+
+test('authoritative Owner keys from capture suppress the current automatic request', async () => {
+  const csv=HEADER+'\r\n13.11.2026,,Synthetic manager,S50,TEST0000000000001,Grey,W01,,FALSE,';
+  const {handler,calls}=setup({csv,captureBindings:{owner_managed_keys:['2026-11-13|TEST0000000000001'],owner_managed_rows:[2]}});
+  const response=await handler(request()); assert.equal(response.status,200); await safe(response);
+  assert.ok(calls.some(call=>call.url.endsWith('garage_capture_manager_rows')));
+  assert.ok(!calls.some(call=>call.url.endsWith('garage_ingest_sheet')));
+  assert.ok(!calls.some(call=>call.url.endsWith('garage_checkpoint_sheet_pull')));
 });
 test('CSV redirects are confined to HTTPS Google export infrastructure', async () => {
   for (const location of ['https://attacker.invalid/collect', 'http://docs.google.com/', 'https://docs.google.com.attacker.invalid/', 'https://user:pass@docs.google.com/']) {

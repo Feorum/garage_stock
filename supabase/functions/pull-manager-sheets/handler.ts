@@ -1,5 +1,6 @@
 import { parseExistingSheetCsv } from './parser.ts';
 import { runFeed } from './engine.ts';
+import { intakeRows, ownerBindings } from './intake.ts';
 
 type Dependencies = {
   supabaseUrl: string;
@@ -172,7 +173,14 @@ export function createPullHandler({ supabaseUrl, serviceRoleKey, schedulerSecret
           try { parsed = parseExistingSheetCsv(csv); }
           catch { errorCode = 'SHEET_FORMAT_CHANGED'; }
         }
+        // Capture free writing privately before any new or replayed delivery.
+        // These row bindings apply only to this exact parsed observation.
+        const bindings = parsed ? ownerBindings(await rpc('garage_capture_manager_rows', {
+          p_source_id: feed.source_id, p_lease_token: feed.lease_token,
+          p_expected_version: version, p_rows: intakeRows(parsed)
+        }), version, parsed) : {};
         const result = await runFeed(feed, parsed, {
+          ...bindings,
           checkpoint: async (state: unknown, expectedVersion: number) => {
             const saved = await rpc('garage_checkpoint_sheet_pull', {
               p_source_id: feed.source_id, p_lease_token: feed.lease_token,

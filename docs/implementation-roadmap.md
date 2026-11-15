@@ -30,8 +30,8 @@ copy in the existing table layout; the original remains untouched.
 | 2 — delivered | Additive order/task schema, RLS and transactional operations | Mandatory assignment, shared claims, private financial access and retry invariants have isolated database checks |
 | 3 — delivered | Owner creates, assigns and publishes an order; mechanic starts/blocks/completes | Another mechanic cannot access mandatory work; completion is recorded once |
 | 4 — delivered | Manager shared queue and concurrent task claiming | Two mechanics claiming one task produce one winner; Owner registers Manager requests |
-| 5 — private reader setup required | Existing-layout working copy, closed catalogue parsing, automatic eligible requests, private source identities/retries and Owner review | The original stays untouched; actual successful authorized reads, rather than connection creation, establish sync health |
-| 6 — partial | Owner operational reports and immutable rate snapshots | Snapshot reports are delivered; accounting, correction workflows and source-build automation remain later work |
+| 5 — delivered | Existing-layout working copy, catalogue parsing, automatic eligible requests, private source identities/retries and Owner review | The authorized private reader reports successful reads; source rows stay unchanged |
+| 6 — partial | Owner interpretation/editing, compact source-ordered rows, operational reports and immutable rate snapshots | Owner corrections and snapshot reports are delivered; accounting and source-build automation remain later work |
 | 7 | Pilot, legacy history, controlled cutover and installed-client update | Existing identities/job history reconcile; old clients cannot bypass ordered work |
 
 Use versioned migrations rather than rerunning `schema.sql`. Preserve the old
@@ -56,6 +56,11 @@ model/work text waits for Owner review. Work selections are moving to the closed
 catalogue inside that same layout. Planned date, deadline and actual completion
 timestamps remain distinct. Managers need neither app accounts nor a Submit step.
 Changes made to the original after copying are not automatically mirrored.
+
+Managers may keep writing free-form requests. The Owner interprets these in the
+application using the regular order form and catalogue. Original observations
+remain private, later polls preserve Owner decisions, and catalogue selection
+calculates the private amount. The catalogue has no separate navigation section.
 
 See [Manager API](manager-api.md) and [private reader setup](../integrations/existing-google-sheet/README.md).
 The reader is a standalone Owner-private Google project with read-only source
