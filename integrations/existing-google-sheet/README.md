@@ -18,6 +18,21 @@ private database; no additional control spreadsheet is created.
 4. The minute trigger reads the copy; actual successful reads appear in the
    app. Connecting a workbook alone does not authorize Google or start reading.
 
+The reader uses the Sheets REST read API because `SpreadsheetApp.openById`
+requires the broader spreadsheet edit scope. Keep the manifest's explicit
+read-only scope. Its Sheets v4 service dependency automatically enables the
+Sheets API for the default Google Cloud project created by Apps Script. If you
+associate a standard Cloud project instead, enable the Google Sheets API in
+that project as well. See Google's [advanced services setup](https://developers.google.com/apps-script/guides/services/advanced)
+and [read API authorization scopes](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/get).
+
+The configured tab's entire allocated grid must fit within 5000 rows and 26
+columns. A larger grid is rejected even when the extra rows or columns are
+empty; trim unused allocation manually before installing. The reader checks
+the whole supported grid, retains displayed text and native checkbox booleans,
+and omits trailing cells that have only formatting. It never truncates a larger
+tab into a partial import.
+
 The Google connector cannot install or authorize Apps Script triggers. The
 Owner must complete this one-time step in their Google account. Do not make a
 private operational copy public as a shortcut.

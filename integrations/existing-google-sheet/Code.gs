@@ -52,22 +52,83 @@ function readerConfig_() {
 }
 
 function readerSnapshot_(config) {
-  var workbook = SpreadsheetApp.openById(config.spreadsheetId);
-  var matches = workbook.getSheets().filter(function(sheet) { return String(sheet.getSheetId()) === config.sheetGid; });
-  if (matches.length !== 1) throw new Error('The configured copy tab is unavailable.');
-  var sheet = matches[0], rows = sheet.getLastRow(), columns = Math.max(10, sheet.getLastColumn());
-  if (rows < 1 || rows > 5000 || columns > 26) throw new Error('The operational copy has an unsupported size.');
-  var values = sheet.getRange(1, 1, rows, columns).getDisplayValues();
-  // Native checkbox booleans are locale-independent; weekday formulas remain
-  // cached display text and are intentionally ignored by the server parser.
-  var flags = rows > 1 ? sheet.getRange(2, 9, rows - 1, 1).getValues() : [];
-  flags.forEach(function(row, index) {
-    if (typeof row[0] === 'boolean') values[index + 1][8] = row[0] ? 'TRUE' : 'FALSE';
+  // SpreadsheetApp.openById requires edit access. The Sheets REST read API
+  // accepts the manifest's read-only scope, including for a standalone script.
+  var workbook = readerGoogleRead_(config, {
+    fields: 'sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))'
   });
+  var matches = (workbook.sheets || []).filter(function(sheet) { return String(sheet.properties.sheetId) === config.sheetGid; });
+  if (matches.length !== 1) throw new Error('The configured copy tab is unavailable.');
+  var sheet = matches[0].properties, grid = sheet.gridProperties || {};
+  // Bound the complete allocated grid before reading it. Rejecting oversized
+  // grids prevents silently ignoring content outside the supported rectangle.
+  if (!Number.isInteger(grid.rowCount) || grid.rowCount < 1 || grid.rowCount > 5000
+      || !Number.isInteger(grid.columnCount) || grid.columnCount < 1 || grid.columnCount > 26) {
+    throw new Error('The operational copy must have at most 5000 allocated rows and 26 allocated columns.');
+  }
+  var range = "'" + sheet.title.replace(/'/g, "''") + "'!A1:"
+    + String.fromCharCode(64 + grid.columnCount) + grid.rowCount;
+  var snapshot = readerGoogleRead_(config, {
+    ranges: range,
+    fields: 'sheets(properties(sheetId),data(startRow,startColumn,rowData(values(formattedValue,effectiveValue,userEnteredValue))))'
+  });
+  var selected = (snapshot.sheets || []).filter(function(item) { return String(item.properties.sheetId) === config.sheetGid; });
+  if (selected.length !== 1) throw new Error('The configured copy tab is unavailable.');
+  var blocks = selected[0].data || [];
+  if (blocks.length > 1 || (blocks[0] && (blocks[0].startRow || blocks[0].startColumn))) {
+    throw new Error('The configured copy tab could not be read.');
+  }
+  var data = blocks.length ? blocks[0].rowData || [] : [], rows = 0, columns = 10;
+  if (data.length > grid.rowCount) throw new Error('The operational copy has an unsupported size.');
+  data.forEach(function(row, rowIndex) {
+    var cells = row.values || [];
+    if (cells.length > grid.columnCount) throw new Error('The operational copy has an unsupported size.');
+    cells.forEach(function(cell, columnIndex) {
+      // Keep the used extent of empty-result formulas, hidden display values,
+      // and unchecked FALSE cells; formatting alone does not extend the CSV.
+      if (Object.keys(cell.userEnteredValue || {}).length || Object.keys(cell.effectiveValue || {}).length
+          || (typeof cell.formattedValue === 'string' && cell.formattedValue !== '')) {
+        rows = Math.max(rows, rowIndex + 1); columns = Math.max(columns, columnIndex + 1);
+      }
+    });
+  });
+  if (rows < 1) throw new Error('The operational copy has an unsupported size.');
+  var values = [];
+  for (var rowIndex = 0; rowIndex < rows; rowIndex++) {
+    var cells = data[rowIndex] && data[rowIndex].values || [], valuesRow = [];
+    for (var columnIndex = 0; columnIndex < columns; columnIndex++) {
+      var cell = cells[columnIndex] || {}, value = cell.formattedValue || '';
+      // Native checkbox booleans are locale-independent; weekday formulas stay
+      // cached display text and are intentionally ignored by the server parser.
+      if (rowIndex > 0 && columnIndex === 8 && typeof (cell.effectiveValue || {}).boolValue === 'boolean') {
+        value = cell.effectiveValue.boolValue ? 'TRUE' : 'FALSE';
+      }
+      valuesRow.push(value);
+    }
+    values.push(valuesRow);
+  }
   return values.map(function(row) {
     return row.map(function(value) {
       var text = String(value);
       return /[,"\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
     }).join(',');
   }).join('\r\n');
+}
+
+function readerGoogleRead_(config, parameters) {
+  try {
+    var query = Object.keys(parameters).map(function(key) {
+      return encodeURIComponent(key) + '=' + encodeURIComponent(parameters[key]);
+    }).join('&');
+    var response = UrlFetchApp.fetch('https://sheets.googleapis.com/v4/spreadsheets/'
+      + encodeURIComponent(config.spreadsheetId) + '?' + query, {
+      method: 'get', followRedirects: false, muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }
+    });
+    if (response.getResponseCode() !== 200) throw new Error('READ_NOT_CONFIRMED');
+    return JSON.parse(response.getContentText());
+  } catch (_) {
+    // This also protects install(), which runs before a trigger is created.
+    throw new Error('The configured copy could not be read. Check read-only Google authorization and the Sheets API service.');
+  }
 }
