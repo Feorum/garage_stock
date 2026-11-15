@@ -49,7 +49,8 @@ def rpc_calls(page, name):
 def task_card(page, task_id):
     card = page.locator(f'[data-task-id="{task_id}"]')
     details = card.locator('xpath=ancestor::details[contains(@class,"compact-order")][1]')
-    if details.count() and details.get_attribute('open') is None:
+    expect(details).to_have_count(1)
+    if details.get_attribute('open') is None:
         details.locator(':scope > summary').click()
     return card
 
@@ -204,6 +205,7 @@ def run(args):
             shared = order(3, 'manager', [task(3, 'W13', assigned=None)])
             context, page, errors, live = smoke.new_page(browser, {
                 'profile': {'name': 'Test Mechanic', 'role': 'mechanic'}, 'orders': [assigned, other, shared],
+                'rpcDelays': {'garage_list_orders': 150},
             }, {'width': 390, 'height': 844})
             page.goto(base + '/index.html')
             smoke.ready(page, 'Test Mechanic')
