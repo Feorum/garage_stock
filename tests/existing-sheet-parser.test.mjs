@@ -71,6 +71,46 @@ test('normalizes canonical labels/codes and exact vehicle-group literal members 
   assertReview(parse(row({ 6: 'капот 35' })).rows[0], 'UNKNOWN_WRAPPING_WORK');
 });
 
+test('recognized Manager shorthand publishes the same closed catalogue work', () => {
+  const wrapping = 'капот 45 см, полоса над лобовым';
+  const item = parse(row({ 3: 'EX5', 6: wrapping })).rows[0];
+  assert.equal(item.state, 'ready');
+  assert.equal(item.order.vehicle_group_code, 'VG15');
+  assert.deepEqual(item.tasks.map(task => task.task_key), ['W03', 'W09']);
+  assert.equal(item.source.wrapping, wrapping);
+  const headlights = parse(row({ 3: 'EX2', 6: 'Фары' })).rows[0];
+  assert.equal(headlights.state, 'ready');
+  assert.deepEqual(headlights.tasks, [{ task_key: 'W07', work_code: 'W07', options: {}, instructions: '' }]);
+});
+
+test('service abbreviations keep package identity and deduplicate canonical mentions', () => {
+  const item = parse(row({ 6: 'частично капот 25 см, часть крыльев, стойки А, полоса над лобовым стеклом, зона маникюра, канты дверей 4шт., пороги внутр 4 шт, W10' })).rows[0];
+  assert.equal(item.state, 'ready');
+  assert.deepEqual(item.tasks.map(task => task.task_key), ['W04', 'W06', 'W10', 'W09', 'W11', 'W16', 'W17']);
+  const fullWings = parse(row({ 6: 'полоса капота 45см, крылья целиком, стойки лобового стекла' })).rows[0];
+  assert.equal(fullWings.state, 'ready');
+  assert.deepEqual(fullWings.tasks.map(task => task.task_key), ['W03', 'W05', 'W10']);
+});
+
+test('shorthand never discards a changed dimension, quantity, unknown scope or trailing text', () => {
+  for (const scope of ['капот 40 см', 'часть капота 25', 'полоса над лобовым стеклом 20 см',
+    'стойки', 'пороги 4шт.', 'канты дверей', 'зона погрузки багажника',
+    'крылья целиком 1шт', 'часть крыльев 1шт', 'зона маникюра 2шт',
+    'Фары задние', 'Фары 1шт', 'зона маникюра - Synthetic person',
+    'антиманикюр (Сертификат)', 'W03 — капот 40 см']) {
+    const item = parse(row({ 6: 'W01, ' + scope })).rows[0];
+    assertReview(item, 'UNKNOWN_WRAPPING_WORK');
+    assert.equal(item.source.wrapping, 'W01, ' + scope);
+  }
+});
+
+test('recognized wrapping does not bypass unknown tint or previous execution', () => {
+  const wrapping = 'капот 45 см, полоса над лобовым, частично крылья, стойки лобового, зона маникюра';
+  assertReview(parse(row({ 6: wrapping, 7: 'тонировка 5%' })).rows[0], 'UNKNOWN_TINT_WORK');
+  assertReview(parse(row({ 6: wrapping, 9: 'М (подг капот)' })).rows[0], 'SOURCE_PROGRESS_REQUIRES_REVIEW');
+  assertReview(parse(row({ 6: '(капот 45 см, полоса над лобовым' })).rows[0], 'MALFORMED_WORK_LIST');
+});
+
 test('comma splitting preserves the parentheses in a closed-list package name', () => {
   const item = parse(row({ 6: 'W01,крылья целиком (2шт),Зона над лобовым' })).rows[0];
   assert.equal(item.state, 'ready');

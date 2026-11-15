@@ -1,8 +1,8 @@
 // Read-only parser for the existing Managers' sheet. No source edits, prices,
-// guessed work aliases, row-number identities, or spreadsheet formula evaluation.
+// guessed scope, row-number identities, or spreadsheet formula evaluation.
 import { WORKS, VEHICLE_GROUPS, AVAILABLE_WORKS } from './catalogue.ts';
 
-export const PARSER_VERSION = 'alfort-closed-list-v2';
+export const PARSER_VERSION = 'alfort-closed-list-v3';
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_ROWS = 5000;
 const MAX_COLUMNS = 26;
@@ -128,6 +128,29 @@ function canonicalTint(name: string): number | null {
   const match = /^тонировка задней полусферы\s*\(?\s*(5|15)\s*%\s*\)?$/.exec(normalized(name));
   return match ? Number(match[1]) : null;
 }
+// Recognized shorthand for existing catalogue packages only. Match the entire
+// fragment: dimensions, quantities and trailing details must never be discarded.
+// Generic pillars/sills, custom sizes, model names and tint scope need review.
+const WORK_ALIASES: Record<string, string> = {
+  'крылья целиком': 'W05',
+  'часть крыльев': 'W06',
+  'частично крылья': 'W06',
+  'фары': 'W07',
+  'полоса над лобовым': 'W09',
+  'полоса над лобовым стеклом': 'W09',
+  'стойки а': 'W10',
+  'стойки лобового': 'W10',
+  'стойки лобового стекла': 'W10',
+  'зона маникюра': 'W11',
+};
+function recognizedWorkCode(name: string): string | null {
+  if (Object.hasOwn(WORK_ALIASES, name)) return WORK_ALIASES[name];
+  if (/^(?:капот|полоса капота|полоса капот)\s*45\s*см\.?$/.test(name)) return 'W03';
+  if (/^(?:частично капот|часть капота|узкая полоса капот)\s*25\s*см\.?$/.test(name)) return 'W04';
+  if (/^канты дверей 4\s*шт\.?$/.test(name)) return 'W16';
+  if (/^пороги (?:внутр\.?|внутренние) 4\s*шт\.?$/.test(name)) return 'W17';
+  return null;
+}
 function workTask(value: string): ParsedTask | null {
   const name = normalized(value);
   const tintCode = /^w19:(5|15)(?:\s*[—–-]\s*(.+))?$/.exec(name);
@@ -140,9 +163,10 @@ function workTask(value: string): ParsedTask | null {
   const tintPercent = canonicalTint(name);
   if (tintPercent !== null) return { task_key: `W19:${tintPercent}`, work_code: 'W19', options: { tint_percent: tintPercent }, instructions: '' };
   const codeLabel = /^(w\d{2})(?:\s*[—–-]\s*(.+))?$/.exec(name);
+  const alias = recognizedWorkCode(name);
   const work = codeLabel
     ? WORKS.find(work => normalized(work.code) === codeLabel[1] && (!codeLabel[2] || normalized(work.name) === codeLabel[2]))
-    : WORKS.find(work => normalized(work.name) === name);
+    : WORKS.find(work => normalized(work.name) === name || work.code === alias);
   if (!work || work.code === 'W19') return null;
   return { task_key: work.code, work_code: work.code, options: {}, instructions: '' };
 }

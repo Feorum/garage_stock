@@ -48,6 +48,17 @@ width, tint scope or missing percentage. Duplicate mentions of the same approved
 work are normalized without adding another task. Notes that indicate partial
 execution do not create fresh pending work automatically.
 
+The parser recognizes a bounded set of older service spellings as the same
+catalogue packages: explicit 45 cm hood strips and partial 25 cm hood strips;
+`крылья целиком`, `часть крыльев` / `частично крылья`; `Фары` (front headlights);
+`полоса над лобовым [стеклом]`; `стойки А` / `стойки лобового [стекла]`;
+`зона маникюра`; and door-edge / inner-sill abbreviations that explicitly say
+four pieces. These shortened service names retain the catalogue package scope.
+Matching consumes the entire description. Generic `стойки` or `пороги`, a
+different quantity, a 20 cm above-windshield strip, a hood size without its unit,
+unknown suffixes and tint without an explicit rear-hemisphere scope still need
+Owner confirmation. Source descriptions remain unchanged in the snapshot.
+
 Additional instructions can refer to a selected task with `[W01] instruction`
 on its own line in J. Untagged text remains order instructions. A note that
 changes dimensions or the chosen package, such as a custom 40 cm hood strip,
