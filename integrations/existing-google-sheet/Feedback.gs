@@ -86,7 +86,7 @@ function feedbackBinding_(config, item, rowIndex) {
     // only our own anchor, after finding one exact current source observation.
     if (previousRange.startIndex !== rowIndex) {
       var previousValues = feedbackBoundRow_(config, previous.metadataId);
-      if (!previousValues || feedbackHash_(previousValues) !== item.observation_hash) {
+      if (!previousValues || feedbackHash_(previousValues.values) !== item.observation_hash) {
         feedbackGoogle_(config, ':batchUpdate', { requests: [{ deleteDeveloperMetadata: {
           dataFilter: { developerMetadataLookup: { metadataId: previous.metadataId } }
         } }] });
@@ -123,7 +123,7 @@ function feedbackBoundRow_(config, metadataId) {
   var cells = rows[0].values || [];
   if ((cells[8] && cells[8].userEnteredValue || {}).formulaValue
       || (cells[9] && cells[9].userEnteredValue || {}).formulaValue) return null;
-  return feedbackValues_(cells);
+  return { values: feedbackValues_(cells), rowIndex: blocks[0].startRow };
 }
 
 function feedbackApply_(config, result) {
@@ -152,7 +152,7 @@ function feedbackApply_(config, result) {
     var metadataId = feedbackBinding_(config, item, matches[0]);
     if (metadataId === null) { deferred++; return; }
     var current = feedbackBoundRow_(config, metadataId);
-    if (!current || feedbackHash_(current) !== item.observation_hash) { deferred++; return; }
+    if (!current || feedbackHash_(current.values) !== item.observation_hash) { deferred++; return; }
     var values = Array.from({ length: 8 }, function() { return null; }).concat([item.complete, notes]);
     var saved = feedbackGoogle_(config, '/values:batchUpdateByDataFilter', {
       valueInputOption: 'RAW', data: [{ dataFilter: { developerMetadataLookup: { metadataId: metadataId } },
@@ -162,9 +162,13 @@ function feedbackApply_(config, result) {
       throw new Error('FEEDBACK_NOT_CONFIRMED');
     }
     var confirmed = feedbackBoundRow_(config, metadataId);
-    if (!confirmed || confirmed[8] !== (item.complete ? 'TRUE' : 'FALSE') || confirmed[9] !== notes) {
+    if (!confirmed || confirmed.values[8] !== (item.complete ? 'TRUE' : 'FALSE') || confirmed.values[9] !== notes) {
       throw new Error('FEEDBACK_NOT_CONFIRMED');
     }
+    // Expand only the changed row so existing fixed heights cannot hide results.
+    feedbackGoogle_(config, ':batchUpdate', { requests: [{ autoResizeDimensions: { dimensions: {
+      sheetId: Number(config.sheetGid), dimension: 'ROWS', startIndex: confirmed.rowIndex, endIndex: confirmed.rowIndex + 1
+    } } }] });
     updated++;
   });
   return { updated: updated, deferred: deferred };

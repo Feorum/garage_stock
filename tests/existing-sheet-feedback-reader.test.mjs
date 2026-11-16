@@ -80,6 +80,9 @@ test('completion writes exactly I/J, preserves old notes and confirms saved valu
   assert.equal(state.rows[1][8], 'TRUE');
   assert.equal(state.rows[1][9], original[9] + '\n\n' + block);
   assert.equal(writes(state).length, 1);
+  const resize = state.calls.map(call => call.request.payload ? JSON.parse(call.request.payload) : {})
+    .flatMap(payload => payload.requests || []).find(request => request.autoResizeDimensions);
+  assert.deepEqual(resize.autoResizeDimensions.dimensions, { sheetId: 12345, dimension: 'ROWS', startIndex: 1, endIndex: 2 });
 });
 test('retries replace known output without duplicate blocks and skip already saved output', () => {
   const old = '[Garage G-000015]\nA-pillars — in_progress\n[/Garage]';

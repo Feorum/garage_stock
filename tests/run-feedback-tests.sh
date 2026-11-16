@@ -31,10 +31,12 @@ supabase/migrations/20261115022416_owner_intake_identity_guards.sql|garage-owner
 supabase/migrations/20261116203155_manager_comment_channel.sql|garage-manager-comments.sql
 supabase/migrations/20261116203249_sheet_completion_feedback.sql|garage-sheet-feedback.sql
 supabase/migrations/20261116203339_omitted_completed_work.sql|garage-omitted-work.sql
+supabase/migrations/20261116210237_readable_sheet_completion_notes.sql|garage-readable-feedback.sql
 tests/manager-submissions.sql|manager-test.sql
 tests/existing-sheet-pull.sql|pull-test.sql
 tests/owner-manager-edit.sql|owner-edit-test.sql
 tests/owner-intake-guards.sql|owner-guards-test.sql
 tests/sheet-completion-feedback.sql|feedback-test.sql
+tests/feedback-readable-output.sql|readable-feedback-test.sql
 GARAGE_FILES
-garage_docker exec "$garage_container" psql -X -U postgres -v ON_ERROR_STOP=1 -f /tmp/feedback-test.sql
+garage_docker exec "$garage_container" psql -X -U postgres -v ON_ERROR_STOP=1 -f /tmp/readable-feedback-test.sql

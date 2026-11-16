@@ -75,6 +75,8 @@ operational work/mechanic results, never prices. A checked result requires at
 least one completion and no remaining pending, active or blocked task; cancelled
 tasks are identified separately and cancellation alone cannot mean completed.
 Partial completions update J while leaving I unchecked.
+The displayed summary uses work names, readable statuses and mechanic names;
+exact timestamps remain in the app. Changed rows expand to fit the result.
 
 Only exact previously issued, source-bound output blocks are removed before
 parsing. This prevents a generated completion summary from becoming another

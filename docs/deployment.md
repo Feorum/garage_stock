@@ -59,6 +59,11 @@ Verify the next two reads: first writes matched I/J output, second confirms it
 without a new request, task, completion or source-progress conflict. Never
 place the reader's source key or private backup in the published artifact.
 
+Migration `20261116210237` shortens only the displayed completion text. It keeps
+the completion timestamps in the database and retains earlier issued blocks so
+the next sync safely replaces the old display. The current writer expands only
+rows whose completion Notes changed; unrelated row heights remain untouched.
+
 ## Cache and release identity
 
 The builder's `--release` option takes a full 40-character commit SHA. The workflow
