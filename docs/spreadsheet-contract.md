@@ -29,8 +29,9 @@ The operational copy uses these columns on its existing order tab:
 | J | Completion notes | Protected app output with work/mechanic results; existing notes are preserved |
 
 The importer checks the exact headers before reading orders. It ignores blank
-checkbox templates and non-order notices. It never writes UUIDs, Submit flags,
-feedback columns, prices or protection rules into either spreadsheet.
+checkbox templates and non-order notices. The upgraded sync uses existing I/J
+for execution feedback and protects J. It never adds Submit/feedback columns
+or writes UUIDs or prices into cells; the original workbook stays untouched.
 
 ## Authoritative catalogue and manager comments
 

@@ -166,7 +166,11 @@ function feedbackApply_(config, result) {
       throw new Error('FEEDBACK_NOT_CONFIRMED');
     }
     // Expand only the changed row so existing fixed heights cannot hide results.
-    feedbackGoogle_(config, ':batchUpdate', { requests: [{ autoResizeDimensions: { dimensions: {
+    feedbackGoogle_(config, ':batchUpdate', { requests: [{ repeatCell: {
+      range: { sheetId: Number(config.sheetGid), startRowIndex: confirmed.rowIndex, endRowIndex: confirmed.rowIndex + 1,
+        startColumnIndex: 9, endColumnIndex: 10 }, cell: { userEnteredFormat: { wrapStrategy: 'WRAP' } },
+      fields: 'userEnteredFormat.wrapStrategy'
+    } }, { autoResizeDimensions: { dimensions: {
       sheetId: Number(config.sheetGid), dimension: 'ROWS', startIndex: confirmed.rowIndex, endIndex: confirmed.rowIndex + 1
     } } }] });
     updated++;
