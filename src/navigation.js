@@ -1,6 +1,7 @@
 const OWNER = [
   { id: 'orders', label: 'Orders', icon: 'orders', description: 'Client assignments and manager orders in one place.' },
   { id: 'reports', label: 'Reports', icon: 'reports', description: 'A clear record of the work performed by your team.' },
+  { id: 'ledger', label: 'Business ledger', icon: 'catalogue', description: 'Review and edit your private business workbook, with source references and change history.' },
   { id: 'sheets', label: 'Sheet connections', icon: 'catalogue', description: 'Manage the workbooks that submit Manager orders.' }
 ];
 

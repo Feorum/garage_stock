@@ -113,7 +113,7 @@ def run(args):
         try:
             # Both roles load only their own workspace navigation.
             for role, name, expected_links, forbidden in [
-                ('admin', 'Test Owner', ['Orders', 'Reports', 'Sheet connections'], 'Assigned by Owner'),
+                ('admin', 'Test Owner', ['Orders', 'Reports', 'Business ledger', 'Sheet connections'], 'Assigned by Owner'),
                 ('mechanic', 'Test Mechanic', ['Assigned by Owner', 'Manager orders', 'My work'], 'Reports'),
             ]:
                 viewport = {'width': 390, 'height': 844} if role == 'mechanic' else None

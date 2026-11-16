@@ -4,10 +4,12 @@ const CACHE_PREFIX = 'garage-log-';
 const RELEASE = 'v8';
 const CACHE = `${CACHE_PREFIX}${RELEASE}`;
 const SHELL = [
-  './', './index.html', './styles.css', './app.js',
+  './', './index.html', './styles.css', './ledger.css', './app.js',
   './src/supabase.js', './src/auth.js', './src/ui.js',
   './src/navigation.js', './src/views.js', './src/orders.js', './src/order-editor.js', './src/order-list.js',
   './src/order-shared.js', './src/order-tasks.js', './src/order-completion.js', './src/sheets.js', './src/catalogue.js',
+  './src/ledger.js', './src/ledger-table.js', './src/ledger-editor.js', './src/ledger-history.js', './src/ledger-shared.js',
+  './src/ledger-calculations.js', './src/ledger-formula-parser.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png',
 ];
 const SHELL_URLS = new Set(SHELL.map(path => new URL(path, self.registration.scope).href));

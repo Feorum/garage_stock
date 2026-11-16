@@ -1,0 +1,8 @@
+{
+  "name": "garage-ledger-test-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.16"
+  }
+}

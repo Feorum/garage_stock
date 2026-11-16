@@ -1,6 +1,7 @@
 // Browser-test fixture only. The public build does not include this module.
 export function createClient() {
   const fixture = globalThis.__garageTest || {};
+  const ledgerRpc = globalThis.__garageCreateLedgerFake?.(fixture);
   const calls = globalThis.__garageCalls = [];
   const listeners = new Set();
   const user = { id: fixture.userId || '11111111-1111-4111-8111-111111111111' };
@@ -70,6 +71,7 @@ export function createClient() {
     }
     if (!session && !(fixture.allowLateRpcResponse && authenticatedAtRequest)) return errorResult('Sign in to continue.', '42501');
     const owner = currentRole() === 'admin';
+    if (name.startsWith('garage_ledger_') && ledgerRpc) return ledgerRpc(name, args, owner);
     if (['garage_sheet_pull_sources', 'garage_connect_sheet_pull', 'garage_sheet_pull_reviews', 'garage_prepare_sheet_reader', 'garage_set_sheet_active'].includes(name)) {
       if (!owner) return errorResult('Owner access required.', '42501');
       if (name === 'garage_sheet_pull_sources') return { data: frozenSheetList || clone(sheetSources), error: null };
