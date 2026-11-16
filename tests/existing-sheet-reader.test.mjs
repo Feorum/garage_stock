@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const script = fs.readFileSync(new URL('../integrations/existing-google-sheet/Code.gs', import.meta.url), 'utf8');
+const script = ['Code.gs', 'Feedback.gs'].map(name => fs.readFileSync(new URL(`../integrations/existing-google-sheet/${name}`, import.meta.url), 'utf8')).join('\n');
 const manifest = JSON.parse(fs.readFileSync(new URL('../integrations/existing-google-sheet/appsscript.json', import.meta.url), 'utf8'));
 const googleToken = 'synthetic_google_oauth_token';
 function setup(overrides = {}) {
@@ -31,13 +31,13 @@ function setup(overrides = {}) {
     LockService: { getScriptLock: () => ({ tryLock: () => overrides.locked !== true, releaseLock: () => calls.push({ name: 'releaseLock' }) }) },
     UrlFetchApp: { fetch: (url, options) => { calls.push({ name: 'fetch', url, options });
       if (new URL(url).hostname === 'sheets.googleapis.com') {
-        const body = new URL(url).searchParams.has('ranges') ? snapshot : metadata;
+        const body = options.method === 'post' ? { replies: [{}] } : new URL(url).searchParams.has('ranges') ? snapshot : metadata;
         if (overrides.googleException) throw new Error(overrides.googleException);
         return { getResponseCode: () => overrides.googleHttp ?? 200,
           getContentText: () => overrides.googleBody ?? JSON.stringify(body) };
       }
       return { getResponseCode: () => overrides.http ?? 200,
-        getContentText: () => overrides.body ?? '{"status":"checked","checked":1,"failed":0}' }; } }
+        getContentText: () => overrides.body ?? '{"status":"checked","checked":1,"failed":0,"protocol":"feedback_v1","feedback":[]}' }; } }
   });
   vm.runInContext(script, context);
   return { context, calls, triggers, properties };
@@ -45,21 +45,22 @@ function setup(overrides = {}) {
 const requests = calls => calls.filter(call => call.name === 'fetch');
 const upload = calls => requests(calls).find(call => call.url.startsWith('https://example.supabase.co/'));
 
-test('manifest keeps read-only Sheets scope and enables the API for default Apps Script projects', () => {
-  assert.deepEqual(manifest.oauthScopes, ['https://www.googleapis.com/auth/spreadsheets.readonly',
+test('manifest requests Sheets editing for configured-copy feedback and enables its API', () => {
+  assert.deepEqual(manifest.oauthScopes, ['https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/script.external_request', 'https://www.googleapis.com/auth/script.scriptapp']);
   assert.deepEqual(manifest.dependencies.enabledAdvancedServices, [{ userSymbol: 'Sheets', version: 'v4', serviceId: 'sheets' }]);
 });
 
-test('installation reads only the configured tab and replaces only its own minute trigger', () => {
+test('installation checks the configured tab, protects Notes and replaces only its own minute trigger', () => {
   const { context, calls, triggers, properties } = setup();
   assert.equal(context.install().installed, true);
   assert.deepEqual(triggers, [{ handler: 'syncManagerOrders', minutes: 1 }]);
   assert.deepEqual(calls.filter(call => call.name === 'deleteTrigger').map(call => call.handler), ['syncManagerOrders']);
-  assert.equal(upload(calls), undefined);
+  assert.equal(JSON.parse(upload(calls).options.payload).protocol, 'feedback_v1');
   const google = requests(calls);
-  assert.equal(google.length, 2);
-  for (const request of google) {
+  const reads = google.filter(request => request.options.method === 'get');
+  assert.equal(reads.length, 5);
+  for (const request of reads) {
     const url = new URL(request.url);
     assert.equal(url.hostname, 'sheets.googleapis.com');
     assert.equal(url.pathname, `/v4/spreadsheets/${properties.SPREADSHEET_ID}`);
@@ -69,9 +70,13 @@ test('installation reads only the configured tab and replaces only its own minut
     assert.equal(request.options.headers.Authorization, `Bearer ${googleToken}`);
     assert.ok(!JSON.stringify(request).includes(properties.INTEGRATION_SECRET));
   }
-  assert.equal(new URL(google[0].url).searchParams.has('ranges'), false);
-  assert.equal(new URL(google[1].url).searchParams.get('ranges'), "'Оклейка O''Brien'!A1:Z978");
-  assert.match(new URL(google[1].url).searchParams.get('fields'), /formattedValue,effectiveValue,userEnteredValue/);
+  assert.equal(new URL(reads[0].url).searchParams.has('ranges'), false);
+  assert.equal(new URL(reads[1].url).searchParams.get('ranges'), "'Оклейка O''Brien'!A1:Z978");
+  assert.match(new URL(reads[1].url).searchParams.get('fields'), /formattedValue,effectiveValue,userEnteredValue/);
+  const protectedRequest = google.find(request => request.url.endsWith(':batchUpdate'));
+  const protection = JSON.parse(protectedRequest.options.payload).requests[0].addProtectedRange.protectedRange;
+  assert.deepEqual(protection.range, { sheetId: 12345, startRowIndex: 1, startColumnIndex: 9, endColumnIndex: 10 });
+  assert.equal(protection.warningOnly, false);
 });
 
 test('private reader preserves displayed CSV, native completion and credential destinations', () => {
@@ -83,7 +88,7 @@ test('private reader preserves displayed CSV, native completion and credential d
   assert.equal(request.options.headers.Authorization, `Bearer ${properties.INTEGRATION_ID}.${properties.INTEGRATION_SECRET}`);
   assert.ok(!JSON.stringify(request).includes(googleToken));
   const payload = JSON.parse(request.options.payload);
-  assert.deepEqual(Object.keys(payload).sort(), ['csv', 'sheet_gid', 'spreadsheet_id']);
+  assert.deepEqual(Object.keys(payload).sort(), ['csv', 'protocol', 'sheet_gid', 'spreadsheet_id']);
   assert.equal(payload.sheet_gid, properties.SHEET_GID);
   assert.equal(payload.spreadsheet_id, properties.SPREADSHEET_ID);
   assert.ok(payload.csv.includes('13.11.2026,#REF!,'));
@@ -145,7 +150,7 @@ test('out-of-bounds or shifted API snapshots fail closed instead of truncating d
 
 test('reader rejects an arbitrary upload host before any Google or upload request', () => {
   const { context, calls } = setup({ properties: { API_URL: 'https://attacker.invalid/collect' } });
-  assert.throws(() => context.syncManagerOrders(), /spreadsheet read could not be confirmed/);
+  assert.throws(() => context.syncManagerOrders(), /spreadsheet sync could not be confirmed/);
   assert.equal(requests(calls).length, 0);
 });
 
@@ -156,7 +161,7 @@ test('Google authorization failures are safe during install and never create tri
     assert.throws(() => context.install(), error => {
       assert.ok(!error.message.includes(properties.INTEGRATION_SECRET));
       assert.ok(!error.message.includes(googleToken)); assert.ok(!error.message.includes('TRACE'));
-      return /Check read-only Google authorization and the Sheets API service/.test(error.message);
+      return /Check Google authorization and the Sheets API service/.test(error.message);
     });
     assert.equal(triggers.length, 0);
     assert.equal(upload(calls), undefined);

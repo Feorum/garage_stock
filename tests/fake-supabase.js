@@ -42,9 +42,10 @@ export function createClient() {
   let lostCreateResponse = false;
   let lostSheetRegisterResponse = false;
   let lostSheetReaderResponse = false;
+  let lostCompletionResponse = false;
   const currentRole = () => (fixture.profile === undefined ? 'admin' : fixture.profile?.role);
   const errorResult = (message, code = 'P0001') => ({ data: null, error: { message, code } });
-  const workName = code => ({ W01: 'капот полностью', W02: 'Бампер', W13: 'Зеркала', W19: 'тонировка задней полусферы (5%,15%)' }[code] || code);
+  const workName = code => ({ W01: 'капот полностью', W02: 'Бампер', W10: 'Стойки лобового (2шт)', W13: 'Зеркала', W19: 'тонировка задней полусферы (5%,15%)' }[code] || code);
   const taskVisible = task => task.assigned_to === user.id || task.working_mechanic_id === user.id;
   const visibleOrders = () => orders.flatMap(order => {
     if (currentRole() === 'admin' || order.source === 'manager') return [clone(order)];
@@ -194,6 +195,20 @@ export function createClient() {
       const intake = managerIntakes.find(row => row.order_id === order.id);
       if (intake) { intake.owner_managed = true; intake.status = 'owner_managed'; intake.version += 1; }
       result = { data: clone(order), error: null };
+    } else if (name === 'garage_record_omitted_completion') {
+      if (!owner) return errorResult('Owner access required.', '42501');
+      const order = orders.find(row => row.id === args.p_order_id);
+      if (!order || order.version !== args.p_expected_version) return errorResult('This order changed. Reopen it.', '40001');
+      if (order.status === 'cancelled' || !args.p_note?.trim() || !args.p_completed_at || !staff.some(row => row.id === args.p_mechanic_id)) return errorResult('Confirm the completed work and the mechanic.');
+      if (order.tasks.some(task => task.status !== 'cancelled' && task.work_code === args.p_work_code && JSON.stringify(task.options || {}) === JSON.stringify(args.p_options || {}))) return errorResult('This work is already recorded.');
+      serial += 1;
+      const taskId = `bbbbbbbb-bbbb-4bbb-8bbb-${String(800000 + serial).padStart(12, '0')}`;
+      order.tasks.push({ id: taskId, work_code: args.p_work_code, work_name: workName(args.p_work_code),
+        options: args.p_options || {}, instructions: '', status: 'completed', assigned_to: null, assigned_name: null,
+        working_mechanic_id: args.p_mechanic_id, working_name: staff.find(row => row.id === args.p_mechanic_id).name,
+        completed_at: args.p_completed_at, blocker_reason: '', version: 1 });
+      order.version += 1;
+      result = { data: { order_id: order.id, order_number: order.order_number, order_version: order.version, task_id: taskId }, error: null };
     } else if (name === 'garage_task_action') {
       const order = orders.find(row => row.tasks.some(task => task.id === args.p_task_id));
       const task = order?.tasks.find(row => row.id === args.p_task_id);
@@ -244,6 +259,10 @@ export function createClient() {
     if (request) receipts.set(request, { fingerprint, result: clone(result) });
     if (name === 'garage_create_order' && fixture.loseCreateResponseOnce && !lostCreateResponse) {
       lostCreateResponse = true;
+      return errorResult('Network response was lost. Retry the same request.', 'NETWORK');
+    }
+    if (name === 'garage_record_omitted_completion' && fixture.loseCompletionResponseOnce && !lostCompletionResponse) {
+      lostCompletionResponse = true;
       return errorResult('Network response was lost. Retry the same request.', 'NETWORK');
     }
     return result;

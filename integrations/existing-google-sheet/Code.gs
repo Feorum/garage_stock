@@ -1,14 +1,16 @@
-/* Private standalone Owner project. Reads ONLY the configured operational copy.
+/* Private standalone Owner project. Uses ONLY the configured operational copy.
  * Never share this project or paste its credential into a Manager spreadsheet.
- * It does not modify any source cell, rule, comment, sharing permission or price. */
+ * Manager inputs remain unchanged; verified execution results use I/J only. */
 function install() {
   var config = readerConfig_();
   readerSnapshot_(config);
+  feedbackPrepare_(config);
+  syncManagerOrders();
   ScriptApp.getProjectTriggers().forEach(function(trigger) {
     if (trigger.getHandlerFunction() === 'syncManagerOrders') ScriptApp.deleteTrigger(trigger);
   });
   ScriptApp.newTrigger('syncManagerOrders').timeBased().everyMinutes(1).create();
-  return { installed: true, note: 'The next successful read confirms the connection in the application.' };
+  return { installed: true, note: 'The working copy and completion feedback have been checked.' };
 }
 
 function syncManagerOrders() {
@@ -21,15 +23,17 @@ function syncManagerOrders() {
       method: 'post', contentType: 'application/json', followRedirects: false,
       muteHttpExceptions: true,
       headers: { Authorization: 'Bearer ' + config.sourceId + '.' + config.secret },
-      payload: JSON.stringify({ spreadsheet_id: config.spreadsheetId, sheet_gid: config.sheetGid, csv: csv })
+      payload: JSON.stringify({ spreadsheet_id: config.spreadsheetId, sheet_gid: config.sheetGid,
+        csv: csv, protocol: 'feedback_v1' })
     });
     if (response.getResponseCode() !== 200) throw new Error('READ_NOT_CONFIRMED');
     var result = JSON.parse(response.getContentText());
     if (['checked', 'busy'].indexOf(result.status) < 0) throw new Error('READ_NOT_CONFIRMED');
-    return { status: result.status };
+    var feedback = result.status === 'checked' ? feedbackApply_(config, result) : { updated: 0, deferred: 0 };
+    return { status: result.status, updated: feedback.updated, deferred: feedback.deferred };
   } catch (_) {
     // No source content, credentials or raw server errors enter execution logs.
-    throw new Error('The spreadsheet read could not be confirmed. Check the Owner connection; the next trigger retries.');
+    throw new Error('The spreadsheet sync could not be confirmed. Check the Owner connection and Google authorization; the next trigger retries.');
   } finally { lock.releaseLock(); }
 }
 
@@ -52,8 +56,12 @@ function readerConfig_() {
 }
 
 function readerSnapshot_(config) {
-  // SpreadsheetApp.openById requires edit access. The Sheets REST read API
-  // accepts the manifest's read-only scope, including for a standalone script.
+  return readerSnapshotData_(config).csv;
+}
+
+function readerSnapshotData_(config) {
+  // REST preserves displayed inputs and native checkbox values without loading
+  // any other sheet. Feedback uses the same bounded snapshot for verification.
   var workbook = readerGoogleRead_(config, {
     fields: 'sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))'
   });
@@ -107,12 +115,13 @@ function readerSnapshot_(config) {
     }
     values.push(valuesRow);
   }
-  return values.map(function(row) {
+  var csv = values.map(function(row) {
     return row.map(function(value) {
       var text = String(value);
       return /[,"\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
     }).join(',');
   }).join('\r\n');
+  return { csv: csv, values: values, sheet: sheet };
 }
 
 function readerGoogleRead_(config, parameters) {
@@ -129,6 +138,6 @@ function readerGoogleRead_(config, parameters) {
     return JSON.parse(response.getContentText());
   } catch (_) {
     // This also protects install(), which runs before a trigger is created.
-    throw new Error('The configured copy could not be read. Check read-only Google authorization and the Sheets API service.');
+    throw new Error('The configured copy could not be read. Check Google authorization and the Sheets API service.');
   }
 }

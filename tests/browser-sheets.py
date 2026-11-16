@@ -171,7 +171,7 @@ def run(args):
             finish(context, errors, live)
 
             context, page, errors, live = open_sheets(browser, base, {
-                'sheetSources': [source(last_success_at='2026-11-13T11:00:00Z', review_count=2, summary={'awaiting_stability': 1})],
+                'sheetSources': [source(last_success_at='2026-11-13T11:00:00Z', review_count=2, summary={'awaiting_stability': 1, 'feedback_confirmed': 2, 'feedback_pending': 1})],
                 'sheetReviews': {SOURCE_ID: [
                     {'row_number': 23, 'vehicle': 'Synthetic vehicle <img src=x onerror=alert(1)>', 'planned_date': '2026-11-13',
                      'reason_codes': ['TINT_PERCENTAGE_REQUIRED', 'UNRECOGNIZED_SCOPE_FRAGMENT']},
@@ -180,6 +180,7 @@ def run(args):
             })
             expect(page.get_by_text('Has synchronized', exact=True)).to_be_visible()
             expect(page.get_by_text('2 spreadsheet rows need Owner review.', exact=True)).to_be_visible()
+            expect(page.get_by_text('Completion feedback: 2 confirmed · 1 waiting.', exact=True)).to_be_visible()
             expect(page.get_by_text('1 request is waiting for a second unchanged read, at least one minute apart, before publication.', exact=True)).to_be_visible()
             page.get_by_role('button', name='Review rows', exact=True).click()
             expect(page.get_by_role('heading', name='Rows for Owner review', exact=True)).to_be_visible()
@@ -243,6 +244,8 @@ def run(args):
             expect(page.get_by_text('Waiting for private reader', exact=True)).to_be_visible()
             page.get_by_role('button', name='Set up private reader', exact=True).click()
             secret = setup_secret(page)
+            expect(page.get_by_text('Copy Code.gs, Feedback.gs and the manifest from the instructions, then add the setup function below.', exact=True)).to_be_visible()
+            expect(page.get_by_text('Google asks for permission to edit spreadsheets.', exact=False)).to_be_visible()
             submitted = calls(page, 'garage_prepare_sheet_reader')
             assert len(submitted) == 1 and submitted[0]['args']['p_expected_version'] == 1
             assert submitted[0]['args']['p_secret'] == secret

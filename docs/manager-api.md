@@ -19,16 +19,36 @@ copy in its existing A:J layout; it does not require the separate template.
 - `garage_set_sheet_active` pauses/resumes the existing source. Pausing or
   deactivating the Owner blocks delivery.
 
-The read-only Google worker sends `{spreadsheet_id,sheet_gid,csv}` to
+Legacy read-only Google workers send `{spreadsheet_id,sheet_gid,csv}` to
 `POST /functions/v1/pull-manager-sheets/source`, using
 `Authorization: Bearer <source UUID>.<scoped key>`. The handler authenticates
 and leases precisely that source with service-only `garage_acquire_sheet_reader`.
 The server parses the full snapshot, reserves history/visit identities and
 persists exact immutable submission payloads before using `garage_ingest_sheet`.
-No source cell, validation, comment or sharing setting is written by the reader.
+The upgraded worker also sends `protocol: "feedback_v1"`. Its response includes
+safe completion feedback uniquely bound to current source rows. The worker
+preserves existing J notes, writes I/J through a verified row metadata binding
+and protects J as application output. Manager input values and sharing stay
+unchanged. New Manager comments belong on a separate `Comment:` line in G.
 The Google connector cannot install the reader's trigger; one-time Owner Google
 authorization is still required. A private copy must not be made public as a
 shortcut.
+
+Service-only `garage_sheet_feedback(source_id,lease_token,expected_version)`
+returns approved task status, completion attribution, retained source aliases
+and previously issued output blocks. The Edge handler removes only exact
+source-bound known suffixes before parsing. Forged markers, manual completed
+flags and duplicate identities remain review input. Public reader feedback
+omits private scope, rates and raw historical notes, and includes an SHA-256
+observation hash of the original ten source cells. The next observed snapshot
+confirms actual output through `feedback_confirmed` / `feedback_pending` counts.
+
+Service-only `garage_sync_manager_comments` uses the same live source lease and
+separately refreshes sanitized comments, including for Owner-managed and closed
+orders. It cannot amend tasks, Owner instructions, snapshots or completion.
+Financial text remains private. Both roles see safe Manager comments and their
+updated timestamp; an instruction-origin flag avoids reviving obsolete source
+comments through the old generic instructions field.
 
 Service-only `garage_checkpoint_sheet_pull` and `garage_commit_sheet_pull` use
 lease-token and state-version checks. An expired worker cannot overwrite a new

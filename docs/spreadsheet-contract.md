@@ -23,10 +23,10 @@ The operational copy uses these columns on its existing order tab:
 | D | Vehicle | Approved vehicle group, with ambiguous variants held for review |
 | E | VIN | Vehicle identity; repeated visits remain separate |
 | F | Colour | Operational description |
-| G | Wrapping | Requested works from the closed catalogue |
+| G | Wrapping | Catalogue selections and free-written Manager comments |
 | H | Tinting | Approved rear-hemisphere service with explicit 5% or 15% option |
-| I | `Готовность` | Checked means completed, so historical rows are excluded |
-| J | Manager comments | Order context and optional per-work details; comments do not create tasks or record completion |
+| I | `Готовность` | Completed checkbox; upgraded sync reflects verified app task completion |
+| J | Completion notes | Protected app output with work/mechanic results; existing notes are preserved |
 
 The importer checks the exact headers before reading orders. It ignores blank
 checkbox templates and non-order notices. It never writes UUIDs, Submit flags,
@@ -76,9 +76,11 @@ and tint without an explicit rear-hemisphere scope remain comments rather than
 silently selecting a catalogue task. Source descriptions remain unchanged in
 the snapshot.
 
-Additional instructions may refer to a selected task with `[W01] instruction`
-on its own line in J. Untagged or unplaceable text remains an order comment, so
-Managers do not need to use task codes. Custom dimensions stay visible as
+New Manager details belong in G on a separate `Comment:` line. Managers may
+mention a selected work by name without using task codes. Comments refresh in
+their own channel for Owner and Mechanics, without replacing Owner instructions
+or amending tasks, prices or completion. Confidential text stays Owner-only.
+Legacy `[W01] instruction` lines in J remain understood. Custom dimensions stay visible as
 details without changing the selected package. An explicit contradiction of a
 selected package still needs clarification. Preparation notes stay visible;
 they do not mark work completed. Comments never silently turn a custom 40 cm
@@ -112,9 +114,11 @@ require Owner reconciliation rather than a source text correction alone.
 The Owner connects the working copy once and uses **Set up private reader**.
 The app produces a one-time source key and copy/tab settings for a standalone
 Owner-private Google Apps Script project. The reader uses the Owner's authorized
-Google access, reads only A:J of the configured tab and sends snapshots to the
-server. It never changes source cells, comments, validation, protection, sharing
-permissions or the original spreadsheet. No extra control workbook is needed.
+Google access and sends the configured tab's snapshots to the server. The
+upgraded script writes only verified execution results to I/J, protects J as
+application output and retains its existing notes. It needs one-time edit
+authorization when upgrading from read-only mode. It never changes the original
+spreadsheet or sharing. No extra control workbook is needed.
 
 Keep the copy private. Registration is not proof that the reader is running;
 **Waiting for private reader** remains until an actual successful request. The

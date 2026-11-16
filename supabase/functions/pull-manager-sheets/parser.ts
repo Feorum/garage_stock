@@ -3,7 +3,7 @@
 import { WORKS, VEHICLE_GROUPS, AVAILABLE_WORKS } from './catalogue.ts';
 import { rawSource, type RawSource } from './intake.ts';
 
-export const PARSER_VERSION = 'alfort-owner-intake-v5';
+export const PARSER_VERSION = 'alfort-manager-comments-v6';
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_ROWS = 5000;
 const MAX_COLUMNS = 26;
@@ -30,6 +30,7 @@ export type ParsedRow = {
     manager_label: string; instructions: string;
   } | null;
   tasks: ParsedTask[];
+  manager_comment: string;
   issues: string[];
 };
 export type ParsedSheet = {
@@ -127,6 +128,16 @@ function scopeParts(value: string): { parts: string[]; malformed: boolean } {
   const tail = value.slice(start).trim();
   if (tail) parts.push(tail);
   return { parts, malformed: malformed || depth !== 0 };
+}
+function explicitComments(value: string): { selections: string; comments: string[] } {
+  const selections: string[] = [], comments: string[] = [];
+  for (const line of value.split(/\r?\n/u)) {
+    // A dedicated comment line can contain commas, catalogue names or unmatched
+    // parentheses without changing the independently selected dropdown works.
+    if (/^\s*(?:comment|комментарий|уточнение)\s*:/iu.test(line)) comments.push(line.trim());
+    else selections.push(line);
+  }
+  return { selections: selections.join('\n'), comments };
 }
 function canonicalTint(name: string): number | null {
   const match = /^тонировка задней полусферы\s*\(?\s*(5|15)\s*%\s*\)?$/.exec(normalized(name));
@@ -298,7 +309,7 @@ export function parseExistingSheetRows(input: unknown[][]): ParsedSheet {
     };
     const sourceKey = source.planned_date && VIN.test(source.vin) ? `${source.planned_date}|${source.vin}` : null;
     const item: ParsedRow = { row_number: index + 1, source_key: sourceKey, source, raw: rawSource(input[index]), suggested_order: null,
-      state: source.completed === true ? 'completed' : 'review', order: null, tasks: [], issues: [] };
+      state: source.completed === true ? 'completed' : 'review', order: null, tasks: [], manager_comment: '', issues: [] };
     rows.push(item);
     if (source.completed === true) continue;
     const issues: string[] = [];
@@ -317,11 +328,12 @@ export function parseExistingSheetRows(input: unknown[][]): ParsedSheet {
     for (const field of ['wrapping', 'tint'] as const) {
       const scope = source[field];
       if (!scope) continue;
-      const fragments = scopeParts(scope);
-      const unmatched: string[] = [];
+      const explicit = explicitComments(scope);
+      const fragments = scopeParts(explicit.selections);
+      const unmatched: string[] = [...explicit.comments];
       // Unbalanced free text cannot be split into reliable task selections.
       // Preserve that whole cell as a comment; the other column is independent.
-      if (fragments.malformed) unmatched.push(scope);
+      if (fragments.malformed) unmatched.push(explicit.selections);
       for (const fragment of fragments.malformed ? [] : fragments.parts) {
         const selected = workSelection(fragment), task = selected.task;
         if (selected.comment) unmatched.push(selected.comment);
@@ -345,6 +357,7 @@ export function parseExistingSheetRows(input: unknown[][]): ParsedSheet {
     if (instructions.length > 4000) issues.push('FIELD_TOO_LONG');
     item.tasks = tasks;
     item.issues = unique(issues);
+    item.manager_comment = item.issues.includes('CONFIDENTIAL_NOTE_REQUIRES_REVIEW') ? '' : instructions;
     item.suggested_order = { vehicle: source.vehicle, vin: source.vin, colour: source.colour,
       vehicle_group_code: group, planned_date: source.planned_date, due_date: null,
       priority: 'normal', manager_label: source.manager_label,

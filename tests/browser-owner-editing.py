@@ -253,6 +253,95 @@ def run(args):
             expect(page.get_by_role('button', name='Edit order', exact=True)).to_have_count(0)
             passed.append('mechanics never fetch Manager intake text or Owner quote and cannot edit orders')
             finish(context, errors, live)
+
+            # Correct an omission without reopening or replacing completed work.
+            for lost_response in [False, True]:
+                existing = order(168, tasks=[task(status='completed'), task('W19', status='completed', number=2)])
+                existing['status'] = 'closed'
+                original_tasks = json.loads(json.dumps(existing['tasks']))
+                context, page, errors, live = smoke.new_page(browser, {'orders': [existing], 'loseCompletionResponseOnce': lost_response})
+                page.goto(base + '/index.html')
+                smoke.ready(page, 'Test Owner')
+                page.get_by_label('Order status', exact=True).select_option('all')
+                card = expand(page, f'[data-order-id="{existing["id"]}"]')
+                card.get_by_role('button', name='Record omitted completed work', exact=True).click()
+                expect(page.locator('.completion-form')).to_be_visible()
+                assert page.locator('#completion-work option[value="W01"]').is_disabled()
+                assert page.locator('#completion-work option[value="W19"]').is_disabled()
+                page.get_by_label('Omitted catalogue work', exact=True).select_option('W10')
+                page.get_by_label('Performed by', exact=True).select_option(ME)
+                page.get_by_label('Recorded completion date and time', exact=True).fill('2026-11-12T13:45')
+                page.get_by_label('Reason for the correction', exact=True).fill('Owner confirmed omitted completed A-pillar work.')
+                expect(page.locator('.completion-form').get_by_text('BYN 120.00', exact=True)).to_be_visible()
+                if not lost_response:
+                    page.screenshot(path=str(args.output / 'owner-omitted-completion-desktop.png'), full_page=True)
+                    page.set_viewport_size({'width': 390, 'height': 844})
+                    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+                    page.screenshot(path=str(args.output / 'owner-omitted-completion-mobile.png'), full_page=True)
+                save = page.get_by_role('button', name='Record completed work', exact=True)
+                save.click()
+                if lost_response:
+                    expect(page.get_by_text('Change not confirmed', exact=True)).to_be_visible()
+                    save.click()
+                expect(page.get_by_text('The omitted completion was added. Existing task history is preserved.', exact=True)).to_be_visible()
+                expect(page.locator('.completion-form')).to_have_count(0)
+                submitted = calls(page, 'garage_record_omitted_completion')
+                assert len(submitted) == (2 if lost_response else 1)
+                assert submitted[0]['args']['p_work_code'] == 'W10'
+                assert submitted[0]['args']['p_mechanic_id'] == ME
+                assert submitted[0]['args']['p_note'] == 'Owner confirmed omitted completed A-pillar work.'
+                assert not any(key in submitted[0]['args'] for key in ['price', 'net_amount', 'gross_amount'])
+                if lost_response:
+                    assert submitted[0]['args']['p_request_id'] == submitted[1]['args']['p_request_id']
+                saved = page.evaluate('__garageOrderState.orders[0]')
+                assert saved['status'] == 'closed' and len(saved['tasks']) == 3
+                assert saved['tasks'][:2] == original_tasks
+                assert saved['tasks'][2]['status'] == 'completed'
+                passed.append('omitted completion preserves closed order/history' + (' after an idempotent lost-response retry' if lost_response else ' with explicit mechanic, time and reason'))
+                finish(context, errors, live)
+
+            # Manager comments refresh separately from the Owner's instructions.
+            for role in ['admin', 'mechanic']:
+                current = order(168)
+                current['manager_comment'] = 'Call the Manager before starting. <b>Plain text</b>'
+                current['manager_comment_updated_at'] = '2026-11-15T12:00:00Z'
+                context, page, errors, live = smoke.new_page(browser, {'orders': [current],
+                    'profile': {'name': 'Test Owner' if role == 'admin' else 'Test Mechanic', 'role': role}}, {'width': 390, 'height': 844})
+                page.goto(base + ('/index.html' if role == 'admin' else '/index.html#manager-orders'))
+                smoke.ready(page, 'Test Owner' if role == 'admin' else 'Test Mechanic')
+                expect(page.locator('[data-order-id]')).to_have_count(1)
+                card = expand(page, f'[data-order-id="{current["id"]}"]')
+                expect(card.get_by_label('Manager comment', exact=True)).to_contain_text(current['manager_comment'])
+                assert card.locator('.order-manager-comment b').count() == 0
+                page.evaluate("__garageOrderState.orders[0].manager_comment = 'New Manager detail after Owner review'; __garageOrderState.orders[0].manager_comment_updated_at = '2026-11-15T12:15:00Z'")
+                page.get_by_role('button', name='Refresh', exact=True).click()
+                expect(card.get_by_text('New Manager detail after Owner review', exact=True)).to_be_visible()
+                expect(card.get_by_text('Operational notes', exact=True)).to_be_visible()
+                page.screenshot(path=str(args.output / f'{role}-manager-comment-mobile.png'), full_page=True)
+                if role == 'mechanic':
+                    assert not calls(page, 'garage_staff') and not calls(page, 'garage_quote_order')
+                    assert 'BYN' not in page.locator('body').inner_text()
+                    expect(page.get_by_role('button', name='Record omitted completed work', exact=True)).to_have_count(0)
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+                passed.append(f'{role} sees refreshed plain-text Manager comments without replacing Owner instructions or leaking amounts')
+                finish(context, errors, live)
+
+            current = order(168)
+            current.update({'instructions': 'Outdated automatic Manager text', 'instructions_from_manager': True,
+                            'manager_comment': 'Current Manager text', 'manager_comment_updated_at': '2026-11-15T12:00:00Z'})
+            context, page, errors, live = smoke.new_page(browser, {'orders': [current], 'profile': {'name': 'Test Mechanic', 'role': 'mechanic'}})
+            page.goto(base + '/index.html#manager-orders')
+            smoke.ready(page, 'Test Mechanic')
+            expect(page.locator('[data-order-id]')).to_have_count(1)
+            card = expand(page, f'[data-order-id="{current["id"]}"]')
+            expect(card.get_by_text('Current Manager text', exact=True)).to_be_visible()
+            expect(card.get_by_text('Outdated automatic Manager text', exact=True)).to_have_count(0)
+            page.evaluate("__garageOrderState.orders[0].manager_comment = ''; __garageOrderState.orders[0].manager_comment_updated_at = '2026-11-15T12:15:00Z'")
+            page.get_by_role('button', name='Refresh', exact=True).click()
+            expect(card.get_by_label('Manager comment', exact=True)).to_have_count(0)
+            expect(card.get_by_text('Outdated automatic Manager text', exact=True)).to_have_count(0)
+            passed.append('replaced or deleted Manager comments do not resurrect earlier automatic instructions')
+            finish(context, errors, live)
         finally:
             browser.close(); server.shutdown(); server.server_close()
     result = {'passed':passed,'count':len(passed),'layouts':layouts,'live_database_requests':0}

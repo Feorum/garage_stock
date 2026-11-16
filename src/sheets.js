@@ -128,8 +128,8 @@ export function mountSheets({ profile, client }) {
   const form = element('form', { class: 'sheet-registration', onsubmit: connectSource }, connectionFields);
   const refreshButton = actionButton('Refresh status', () => refresh(), 'button');
   root.append(element('div', { class: 'sheet-introduction' },
-    element('p', {}, 'The importer reads a working copy of the Manager spreadsheet in its existing layout and sends valid unfinished requests to the shared mechanic queue.'),
-    element('p', { class: 'muted' }, 'The original stays untouched. Completed rows are excluded; unclear selections wait for Owner review. Private copies need a one-time Owner Google reader setup. Managers need no app account or Submit step.')),
+    element('p', {}, 'The connection imports Manager requests and returns completed work and mechanic names to the same working copy.'),
+    element('p', { class: 'muted' }, 'The original stays untouched. Managers can select catalogue works and type extra comments in Wrapping (G). The app updates Status (I) and Notes (J). Unclear selections wait for Owner review. Managers need no app account or Submit step.')),
     feedback, setupArea, form, element('div', { class: 'sheet-list-heading' }, element('h2', {}, 'Connected spreadsheets'), refreshButton), sourceList, reviewArea);
 
   function actionButton(text, onclick, className = 'button button-small') {
@@ -165,11 +165,15 @@ export function mountSheets({ profile, client }) {
           : checked ? `Last successful check: ${formatTime(source.last_success_at)}` : source.reader_only ? 'Connected. Set up the private Google reader once; the copy stays private.' : 'Connected. Waiting for the scheduled server check.';
       const count = Number(source.review_count) || 0;
       const settling = Number(source.summary?.awaiting_stability) || 0;
+      const feedbackConfirmed = source.summary?.feedback_confirmed, feedbackPending = source.summary?.feedback_pending;
+      const hasFeedbackStatus = Number.isSafeInteger(feedbackConfirmed) && feedbackConfirmed >= 0
+        && Number.isSafeInteger(feedbackPending) && feedbackPending >= 0;
       return element('article', { class: 'sheet-source-card', 'data-source-id': source.id || source.source_id },
         element('div', { class: 'sheet-source-heading' }, element('h3', {}, source.name), element('span', { class: 'tag tag-neutral' }, status)),
         element('p', { class: 'sheet-source-detail' }, detail),
         element('p', { class: 'sheet-source-detail' }, count ? `${count} spreadsheet ${count === 1 ? 'row needs' : 'rows need'} Owner review.` : checked ? 'No rows are currently waiting for review.' : 'Review results appear after the first successful read.'),
         settling ? element('p', { class: 'sheet-source-detail' }, `${settling} ${settling === 1 ? 'request is' : 'requests are'} waiting for a second unchanged read, at least one minute apart, before publication.`) : null,
+        hasFeedbackStatus ? element('p', { class: 'sheet-source-detail' }, `Completion feedback: ${feedbackConfirmed} confirmed · ${feedbackPending} waiting.`) : null,
         element('div', { class: 'sheet-source-actions' },
           url ? element('a', { class: 'button button-small', href: url, target: '_blank', rel: 'noopener noreferrer' }, 'Open working copy') : null,
           actionButton(source.active ? 'Pause imports' : 'Resume imports', () => setActive(source)), actionButton('Review rows', () => showReviews(source)),
@@ -202,11 +206,12 @@ export function mountSheets({ profile, client }) {
     });
     setupArea.replaceChildren(element('section', { class: 'sheet-setup', 'aria-label': 'Private reader setup' },
       element('div', { class: 'sheet-source-heading' }, element('h2', {}, 'Private reader setup'), element('span', { class: 'tag' }, 'Owner only')),
-      element('p', {}, 'The reader uses your Google access to read only the configured working copy. It does not edit either spreadsheet or make the copy public.'),
+      element('p', {}, 'The private connection reads the configured working copy and writes completion results only to its Status (I) and Notes (J) columns. The original stays untouched and the copy stays private.'),
+      element('p', { class: 'field-hint' }, 'Google asks for permission to edit spreadsheets. The script limits changes to the configured working copy. An existing read-only installation must be updated and authorized again before completion results can be written.'),
       element('ol', { class: 'sheet-setup-steps' },
         element('li', {}, 'Create a standalone Google Apps Script project that only you can edit.'),
-        element('li', {}, 'Copy the reader code and manifest from the instructions, then add the setup function below.'),
-        element('li', {}, 'Run setupConnection once and complete Google authorization. It installs a reader trigger that checks the copy every minute.'),
+        element('li', {}, 'Copy Code.gs, Feedback.gs and the manifest from the instructions, then add the setup function below.'),
+        element('li', {}, 'Run setupConnection once and complete Google authorization, including spreadsheet editing. It installs a trigger that imports requests and returns completion results every minute.'),
         element('li', {}, 'Delete the temporary setupConnection function afterward. Keep the reader project private.')),
       element('div', { class: 'sheet-setup-links' }, element('a', { href: READER_GUIDE, target: '_blank', rel: 'noopener noreferrer' }, 'Open reader code and instructions')),
       element('div', { class: 'sheet-setup-properties' }, ...fields),

@@ -109,7 +109,7 @@ Migration `202611130001` reads the existing layout from the approved operational
 copy, reserves checked history and keeps ambiguous rows in Owner review. Its
 private reader needs one-time Owner Google authorization before the minute
 trigger runs. Valid closed-catalogue scope publishes only after two unchanged
-reads at least one minute apart. Completion corrections, full accounting/payroll
+reads at least one minute apart. General completion reversals, full accounting/payroll
 and customer invoicing remain later increments. Checked historical rows never
 become active tasks, and copy-only work does not edit or connect the original.
 
@@ -164,6 +164,28 @@ submission from overwriting or duplicating that order, even with a new external
 ID. Previously recorded receipts remain exactly replayable. Source polls update
 the private latest observation without changing Owner decisions. Missing source
 rows never cancel application work.
+
+## Omitted completed work and Manager comments
+
+The `20261116203155`, `20261116203249` and `20261116203339` migrations add an
+independent sanitized Manager comment channel, source-bound completion feedback
+and audited recording of omitted, already-performed work. Apply them in order
+before the corresponding Edge and frontend release.
+
+Owner-only `garage_record_omitted_completion(order_id,expected_version,work_code,
+options,mechanic_id,completed_at,note,request_id)` adds one available catalogue
+task and completion to an open or closed order. A reason and recorded time are
+required. When exact physical time is unknown, use the Owner confirmation time
+and say so in the reason. Existing tasks, completions, close time and snapshots
+remain unchanged. The added work receives a new snapshot at the current approved
+rate; this does not recreate an unproven historical price. The source Owner,
+version and retry checks prevent unauthorized or duplicate corrections.
+
+Manager comments update independently without incrementing the operational
+order version. The existing permission-filtered order list exposes only safe
+comments and their timestamp. Issued sheet feedback blocks remain in a private,
+RLS-enabled table inaccessible to either browser role or direct service access;
+the lease-scoped function is the only feedback interface.
 
 Ordinary order JSON contains only safe source name/ID/row metadata for table
 ordering. Private original text and quote amounts require Owner authorization;

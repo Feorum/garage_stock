@@ -1,6 +1,7 @@
 import { parseExistingSheetCsv } from './parser.ts';
 import { runFeed } from './engine.ts';
 import { intakeRows, ownerBindings } from './intake.ts';
+import { feedbackRows, feedbackSummary, managerComments, normalizeFeedbackCsv, publicFeedback, unchangedScopeKeys } from './feedback.ts';
 
 type Dependencies = {
   supabaseUrl: string;
@@ -135,7 +136,8 @@ export function createPullHandler({ supabaseUrl, serviceRoleKey, schedulerSecret
       }
       input = body.trim() ? JSON.parse(body) : {};
       if (typeof input !== 'object' || input === null || Array.isArray(input)
-          || (readerRoute ? Object.keys(input).length !== 3 || Object.keys(input).some(key => !['spreadsheet_id', 'sheet_gid', 'csv'].includes(key))
+          || (readerRoute ? ![3, 4].includes(Object.keys(input).length) || Object.keys(input).some(key => !['spreadsheet_id', 'sheet_gid', 'csv', 'protocol'].includes(key))
+            || ('protocol' in input && input.protocol !== 'feedback_v1')
             || !/^[A-Za-z0-9_-]{10,200}$/.test(input.spreadsheet_id) || typeof input.csv !== 'string'
             || typeof input.sheet_gid !== 'string' || !/^\d{1,20}$/.test(input.sheet_gid)
             || new TextEncoder().encode(input.csv).length > MAX_CSV_BYTES : Object.keys(input).length !== 0)) {
@@ -155,6 +157,8 @@ export function createPullHandler({ supabaseUrl, serviceRoleKey, schedulerSecret
     } catch { return reply({ status: readerRoute ? 'source_unavailable' : 'retry' }, readerRoute ? 401 : 503); }
 
     let checked = 0, failed = 0;
+    let feedback: Awaited<ReturnType<typeof publicFeedback>> = [];
+    const feedbackEnabled = readerRoute && input.protocol === 'feedback_v1';
     for (const feed of feeds) {
       if (!feed || !UUID.test(feed.source_id) || !UUID.test(feed.lease_token)
           || !Number.isInteger(feed.version) || feed.version < 1 || feed.adapter !== 'alfort_v1'
@@ -165,12 +169,16 @@ export function createPullHandler({ supabaseUrl, serviceRoleKey, schedulerSecret
       let errorCode: string | null = null;
       let durableState = feed.state;
       let version = feed.version;
+      let feedbackHealth: Record<string, number> = {};
       try {
         let csv: string | null = null;
         try { csv = readerRoute ? input.csv : await readGoogleCsv(feed.spreadsheet_id, feed.sheet_gid, fetchImpl); }
         catch { errorCode = 'SHEET_FETCH_UNAVAILABLE'; }
+        const issued = feedbackEnabled ? feedbackRows(await rpc('garage_sheet_feedback', {
+          p_source_id: feed.source_id, p_lease_token: feed.lease_token, p_expected_version: version
+        }), version) : [];
         if (csv !== null) {
-          try { parsed = parseExistingSheetCsv(csv); }
+          try { parsed = feedbackEnabled ? normalizeFeedbackCsv(csv, issued) : parseExistingSheetCsv(csv); }
           catch { errorCode = 'SHEET_FORMAT_CHANGED'; }
         }
         // Capture free writing privately before any new or replayed delivery.
@@ -181,6 +189,7 @@ export function createPullHandler({ supabaseUrl, serviceRoleKey, schedulerSecret
         }), version, parsed) : {};
         const result = await runFeed(feed, parsed, {
           ...bindings,
+          unchangedScopeKeys: parsed && feedbackEnabled ? unchangedScopeKeys(parsed, issued) : [],
           checkpoint: async (state: unknown, expectedVersion: number) => {
             const saved = await rpc('garage_checkpoint_sheet_pull', {
               p_source_id: feed.source_id, p_lease_token: feed.lease_token,
@@ -197,9 +206,21 @@ export function createPullHandler({ supabaseUrl, serviceRoleKey, schedulerSecret
         });
         version = result.version;
         durableState = result.state;
+        if (parsed && feedbackEnabled) {
+          const synced = await rpc('garage_sync_manager_comments', {
+            p_source_id: feed.source_id, p_lease_token: feed.lease_token,
+            p_expected_version: version, p_comments: managerComments(parsed, issued)
+          });
+          if (synced?.version !== version) throw new Error('Unconfirmed Manager comments');
+          const latest = feedbackRows(await rpc('garage_sheet_feedback', {
+            p_source_id: feed.source_id, p_lease_token: feed.lease_token, p_expected_version: version
+          }), version);
+          feedback = await publicFeedback(csv!, latest);
+          feedbackHealth = feedbackSummary(csv!, feedback);
+        }
         const committed = await rpc('garage_commit_sheet_pull', {
           p_source_id: feed.source_id, p_lease_token: feed.lease_token, p_expected_version: version,
-          p_state: durableState, p_summary: parsed ? result.summary : { ...(feed.summary || {}), ...result.summary },
+          p_state: durableState, p_summary: parsed ? { ...result.summary, ...feedbackHealth } : { ...(feed.summary || {}), ...result.summary },
           p_review: parsed ? result.review : mergedReviews(feed.review || [], result.review), p_error_code: errorCode
         });
         if (!Number.isInteger(committed?.version) || committed.version <= version) throw new Error('Unconfirmed result');
@@ -214,6 +235,7 @@ export function createPullHandler({ supabaseUrl, serviceRoleKey, schedulerSecret
         failed++;
       }
     }
-    return reply({ status: failed ? 'attention' : 'checked', checked, failed }, failed && !checked ? 503 : 200);
+    return reply({ status: failed ? 'attention' : 'checked', checked, failed,
+      ...(feedbackEnabled && !failed ? { protocol: 'feedback_v1', feedback } : {}) }, failed && !checked ? 503 : 200);
   };
 }

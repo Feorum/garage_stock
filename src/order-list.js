@@ -141,6 +141,7 @@ export function renderOrderList({ owner, profile, section, orders, intakes, need
     if (owner) {
       if (section === 'orders' && order.status === 'published') actions.append(button('Edit order', () => openEditor('edit', order)));
       actions.append(button('View Owner amounts', () => loadFinancials(order, financial)));
+      if (order.status !== 'cancelled') actions.append(button('Record omitted completed work', () => openEditor('completion', order)));
       if (order.status === 'published') {
         if ((order.tasks || []).some(task => task.status === 'completed') && (order.tasks || []).every(task => TERMINAL_TASKS.has(task.status))) {
           actions.append(button('Close order', () => mutate('garage_order_action', {
@@ -171,7 +172,12 @@ export function renderOrderList({ owner, profile, section, orders, intakes, need
         ? 'This row is no longer in the connected table. The saved order is kept.'
         : intake?.owner_managed || order.owner_managed ? 'The table text changed after Owner review. Your saved work selection is preserved.'
           : 'The Manager table text changed. Review the latest request before editing this order.') : null,
-      order.instructions ? element('p', { class: 'order-instructions' }, order.instructions) : null,
+      order.instructions && !(order.instructions_from_manager === true && order.manager_comment_updated_at)
+        ? element('p', { class: 'order-instructions' }, order.instructions) : null,
+      order.manager_comment ? element('section', { class: 'order-manager-comment', 'aria-label': 'Manager comment' },
+        element('h4', {}, 'Manager comment'), element('p', { class: 'order-instructions' }, order.manager_comment),
+        order.manager_comment_updated_at && Number.isFinite(new Date(order.manager_comment_updated_at).getTime())
+          ? element('p', { class: 'order-meta' }, `Updated ${new Date(order.manager_comment_updated_at).toLocaleString()}`) : null) : null,
       managerReference(intake), element('div', { class: 'order-tasks' }, tasks.map(task => taskRow(order, task))), actions, actionForm, financial));
     if (owner && financialViews.has(order.id)) financial.append(financialSummary(financialViews.get(order.id)));
     return card;

@@ -30,7 +30,7 @@ copy in the existing table layout; the original remains untouched.
 | 2 — delivered | Additive order/task schema, RLS and transactional operations | Mandatory assignment, shared claims, private financial access and retry invariants have isolated database checks |
 | 3 — delivered | Owner creates, assigns and publishes an order; mechanic starts/blocks/completes | Another mechanic cannot access mandatory work; completion is recorded once |
 | 4 — delivered | Manager shared queue and concurrent task claiming | Two mechanics claiming one task produce one winner; Owner registers Manager requests |
-| 5 — delivered | Existing-layout working copy, catalogue parsing, automatic eligible requests, private source identities/retries and Owner review | The authorized private reader reports successful reads; source rows stay unchanged |
+| 5 — delivered | Existing-layout working copy, catalogue parsing, automatic requests, private identities/retries, Owner review and completion feedback | Manager input stays unchanged; upgraded authorized sync writes verified results to I/J |
 | 6 — partial | Owner interpretation/editing, compact source-ordered rows, operational reports, immutable rate snapshots and automatic website deployment | Owner corrections, snapshot reports and tested releases from main are delivered; accounting remains later work |
 | 7 | Pilot, legacy history, controlled cutover and installed-client update | Existing identities/job history reconcile; old clients cannot bypass ordered work |
 
@@ -39,13 +39,11 @@ sample catalogue IDs for legacy job references; do not repurpose them as the
 approved list. Existing job rows have no proved historical price snapshot or
 order boundary, so keep them explicitly as legacy until Owner-confirmed mapping.
 
-When replacing the old direct job-entry workflow, close its write policies as
-part of the coordinated database cutover. A new interface cannot by itself stop
-an old cached client from using old database permissions. Keep rollback capable
+Legacy direct job writes are revoked by the order migration and tested. A new
+interface alone cannot stop an old cached client using old permissions. Keep rollback capable
 of preserving new orders/completions rather than deleting them.
 
-Decisions for the affected steps include whole-order versus per-task assignment,
-workshop timezone, exact vehicle identification, commercial meaning of the source
+Remaining decisions include workshop reporting timezone, commercial meaning of the source
 rates, and any promotion/dependency rules. Actual rates and the source financial
 workbook remain in restricted project notes, outside this public repository.
 
@@ -63,8 +61,9 @@ remain private, later polls preserve Owner decisions, and catalogue selection
 calculates the private amount. The catalogue has no separate navigation section.
 
 See [Manager API](manager-api.md) and [private reader setup](../integrations/existing-google-sheet/README.md).
-The reader is a standalone Owner-private Google project with read-only source
-access; it never changes either spreadsheet or makes the working copy public.
+The sync script is a standalone Owner-private Google project. The upgraded
+version needs edit authorization to return completion results to I/J of the
+working copy; it never changes the original or makes either workbook public.
 The Google connector cannot deploy or authorize Apps Script triggers, so one-time
 Owner authorization remains required. The app distinguishes a connected source
 from its first successful read. Row deletion does not cancel work and a source

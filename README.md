@@ -14,6 +14,8 @@ Live app: https://feorum.github.io/garage_stock/.
   can block/resume/complete work and return shared tasks to the queue.
 - Owner can transfer or cancel work with a reason and close finished orders.
   Transferring active Manager work preserves its shared origin.
+- Owner can append omitted, already-performed catalogue work with the mechanic,
+  recorded completion time and a reason. Existing completions stay unchanged.
 - Owner can interpret free-written Manager requests and edit open orders with
   the same form used to create an order. Catalogue selections preview private
   amounts; saved tasks use server-calculated, immutable rate snapshots.
@@ -41,11 +43,15 @@ the Owner. After the Owner interprets or edits a linked order, spreadsheet
 polling retains provenance but cannot replace those operational changes or
 publish a second order for its reserved source identity. Removed or replaced
 pending tasks are cancelled with history retained; started and completed tasks
-remain unchanged. Owner corrections are saved in the application and are not
-written back to the Manager spreadsheet.
+remain unchanged. Owner work selections stay in the application. The upgraded
+private sync writes operational completion results to the working copy's I/J:
+the completed checkbox and a task-by-task mechanic summary. Existing Notes text
+is retained; new Manager comments belong in G and refresh independently of work.
 
-Private copies stay private. An Owner-private standalone Google reader uses
-read-only spreadsheet access; the Owner authorizes it once. The application
+Private copies stay private. An Owner-private standalone Google script needs
+spreadsheet editing authorization for completion feedback; code restricts it
+to the configured copy. Existing read-only workers continue importing until
+upgraded and reauthorized. The application
 keeps durable delivery state in its private database. Connecting a workbook
 alone does not install a Google trigger. Use **Sheet connections** for private
 reader setup, pause and review. Never put its credential in the shared workbook.

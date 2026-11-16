@@ -414,6 +414,9 @@ details[open] > .order-summary > .disclosure-chevron { transform: rotate(180deg)
 .order-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .order-expanded .order-meta { font-size: 12px; }
 .order-expanded .order-instructions { margin-top: 12px; padding: 8px 12px; }
+.order-manager-comment { margin-top: 12px; }
+.order-manager-comment h4 { margin: 0; font-size: 12px; }
+.order-expanded .order-manager-comment .order-instructions { margin-top: 6px; overflow-wrap: anywhere; }
 .order-expanded .order-tasks { margin-top: 12px; }
 .order-expanded .task-row { padding: 12px 0; }
 .order-expanded .order-actions { padding-top: 12px; }

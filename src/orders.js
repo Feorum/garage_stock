@@ -1,6 +1,7 @@
 import { element, renderNotice } from './ui.js';
 import { button, actionError, financialSummary } from './order-shared.js';
 import { createOrderEditor } from './order-editor.js';
+import { createCompletionEditor } from './order-completion.js';
 import { renderOrderList } from './order-list.js';
 
 // Every mount owns its pending requests and private responses. Navigation/logout
@@ -84,7 +85,7 @@ export function mountOrders({ role, profile, section, client }) {
       if (active) {
         // Keep the same request ID for an ambiguous retry of this exact action.
         await refresh(false);
-        const editorConflict = ['garage_edit_order', 'garage_publish_manager_intake'].includes(name)
+        const editorConflict = ['garage_edit_order', 'garage_publish_manager_intake', 'garage_record_omitted_completion'].includes(name)
           && (error?.code === '40001' || /version|changed|conflict/i.test(error?.message || ''));
         tell(creating ? 'Order not confirmed' : 'Change not confirmed', editorConflict
           ? 'This order or Manager request changed. Your edits are kept. Close this form and reopen Edit order to check the latest version.'
@@ -111,7 +112,9 @@ export function mountOrders({ role, profile, section, client }) {
   function openEditor(mode, record = {}) {
     if (!owner || pending || !staffReady) return;
     closeEditor();
-    editor = createOrderEditor({ mode, record, intakes, staff, rpc, mutate, isActive: () => active, closeEditor });
+    editor = mode === 'completion'
+      ? createCompletionEditor({ record, staff, rpc, mutate, isActive: () => active, closeEditor })
+      : createOrderEditor({ mode, record, intakes, staff, rpc, mutate, isActive: () => active, closeEditor });
     formOpen = true; formArea.hidden = false;
     formArea.replaceChildren(editor.element);
     newButton?.setAttribute('aria-expanded', String(mode === 'new'));

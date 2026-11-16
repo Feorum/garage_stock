@@ -31,6 +31,7 @@ type Dependencies = {
   quietPeriodMs?: number;
   ownerManagedKeys?: string[];
   ownerManagedRows?: number[];
+  unchangedScopeKeys?: string[];
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PERMANENT = new Set(['ORDER_CHANGED', 'ORDER_CLOSED', 'REVISION_CONFLICT', 'TASK_ID_REUSED', 'SUBMISSION_ID_REUSED']);
@@ -92,6 +93,7 @@ export async function runFeed(feed: Feed, parsed: ParsedSheet | null, dependenci
   const state = safeState(feed.state);
   const managedKeys = new Set(dependencies.ownerManagedKeys || []);
   const managedRows = new Set(dependencies.ownerManagedRows || []);
+  const unchangedScopes = new Set(dependencies.unchangedScopeKeys || []);
   let version = feed.version, deliveries = 0, acceptedThisRun = 0;
   let changed = false;
   const review: Review[] = [];
@@ -217,6 +219,11 @@ export async function runFeed(feed: Feed, parsed: ParsedSheet | null, dependenci
     if (entry.blocked?.permanent) { clearCandidate(entry); addReview(row, [entry.blocked.code]); continue; }
     const tasks = [...row.tasks].sort((a, b) => a.task_key.localeCompare(b.task_key));
     const inputHash = await hash({ order: row.order, tasks });
+    if (entry.accepted && unchangedScopes.has(row.source_key)) {
+      clearCandidate(entry);
+      if (entry.accepted.input_hash !== inputHash) { entry.accepted.input_hash = inputHash; changed = true; }
+      continue;
+    }
     if (entry.accepted?.input_hash === inputHash) { clearCandidate(entry); continue; }
     if (entry.blocked?.input_hash === inputHash) { clearCandidate(entry); addReview(row, [entry.blocked.code]); continue; }
     if (quietPeriodMs > 0) {

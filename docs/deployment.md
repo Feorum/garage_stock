@@ -49,6 +49,16 @@ separately. Coordinate compatible backend changes before a dependent frontend
 release. Pushing SQL or Edge source through this workflow does not apply it to
 production.
 
+For completion-feedback releases, apply migrations `20261116203155`,
+`20261116203249` and `20261116203339` in order after preserving a verified
+private snapshot. Deploy all `pull-manager-sheets` dependencies, including
+`feedback.ts`, before the frontend. Existing read-only workers remain compatible.
+Then update the private Google project's `Code.gs`, `Feedback.gs` and manifest,
+and run `install()` with the Owner's one-time Google edit authorization.
+Verify the next two reads: first writes matched I/J output, second confirms it
+without a new request, task, completion or source-progress conflict. Never
+place the reader's source key or private backup in the published artifact.
+
 ## Cache and release identity
 
 The builder's `--release` option takes a full 40-character commit SHA. The workflow
