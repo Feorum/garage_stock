@@ -9,21 +9,21 @@ export function createTaskViews({ owner, profile, mutate, getStaff }) {
     if (order.status === 'published') {
       if (!owner) {
         if (task.status === 'pending' && ((order.source === 'owner' && task.assigned_to === profile.id) || (order.source === 'manager' && !task.working_mechanic_id))) {
-          controls.append(taskButton('Start task', 'start'));
+          controls.append(taskButton('Начать работу', 'start'));
         }
         if (ownWork && task.status === 'in_progress') {
-          controls.append(button('Block task', () => reasonForm(inline, 'Block task', 'Save reason', note => performTask('block', note))),
-            taskButton('Complete task', 'complete'));
+          controls.append(button('Приостановить работу', () => reasonForm(inline, 'Приостановить работу', 'Сохранить причину', note => performTask('block', note))),
+            taskButton('Завершить работу', 'complete'));
         }
-        if (ownWork && task.status === 'blocked') controls.append(taskButton('Resume task', 'resume'));
+        if (ownWork && task.status === 'blocked') controls.append(taskButton('Продолжить работу', 'resume'));
         if (ownWork && order.source === 'manager' && ['in_progress', 'blocked'].includes(task.status)) {
-          controls.append(button('Return to queue', () => reasonForm(inline, 'Return to queue', 'Confirm return', note => performTask('release', note))));
+          controls.append(button('Вернуть в очередь', () => reasonForm(inline, 'Вернуть в очередь', 'Подтвердить возврат', note => performTask('release', note))));
         }
       } else if (!TERMINAL_TASKS.has(task.status)) {
         if (getStaff().length && (order.source === 'owner' || (task.working_mechanic_id && ['in_progress', 'blocked'].includes(task.status)))) {
-          controls.append(button('Reassign', () => reassignmentForm(inline, task, assignee => note => performTask('reassign', note, assignee))));
+          controls.append(button('Переназначить', () => reassignmentForm(inline, task, assignee => note => performTask('reassign', note, assignee))));
         }
-        controls.append(button('Cancel task', () => reasonForm(inline, 'Cancel task', 'Confirm cancellation', note => performTask('cancel', note))));
+        controls.append(button('Отменить работу', () => reasonForm(inline, 'Отменить работу', 'Подтвердить отмену', note => performTask('cancel', note))));
       }
     }
 
@@ -34,27 +34,27 @@ export function createTaskViews({ owner, profile, mutate, getStaff }) {
     function performTask(action, note = '', assignee = null) {
       return mutate('garage_task_action', {
         p_task_id: task.id, p_action: action, p_expected_version: task.version, p_note: note, p_assignee: assignee
-      }, action === 'complete' ? 'The completed work has been recorded.' : 'The task has been updated.');
+      }, action === 'complete' ? 'Выполненная работа записана.' : 'Работа обновлена.');
     }
 
     const tint = task.work_code === 'W19' && [5, 15].includes(Number(task.options?.tint_percent)) ? ` · ${task.options.tint_percent}%` : '';
     return element('div', { class: 'task-row', 'data-task-id': task.id },
       element('div', { class: 'task-detail' }, element('div', { class: 'task-title-line' },
         element('h3', { lang: 'ru' }, `${task.work_name}${tint}`), statusBadge(task.status)),
-        element('p', { class: 'task-owner' }, task.working_name ? `Working mechanic: ${task.working_name}`
-          : task.assigned_name ? `Assigned to ${task.assigned_name}` : 'Available in the shared queue'),
+        element('p', { class: 'task-owner' }, task.working_name ? `Механик: ${task.working_name}`
+          : task.assigned_name ? `Назначено: ${task.assigned_name}` : 'Доступно в общей очереди'),
         task.instructions ? element('p', { class: 'task-instructions' }, task.instructions) : null,
-        task.blocker_reason && task.status === 'blocked' ? element('p', { class: 'task-blocker' }, `Blocked: ${task.blocker_reason}`) : null,
-        task.completed_at ? element('p', { class: 'task-owner' }, `Completed ${displayDate(task.completed_at)}`) : null), controls, inline);
+        task.blocker_reason && task.status === 'blocked' ? element('p', { class: 'task-blocker' }, `Приостановлено: ${task.blocker_reason}`) : null,
+        task.completed_at ? element('p', { class: 'task-owner' }, `Выполнено: ${displayDate(task.completed_at)}`) : null), controls, inline);
   }
 
   function reasonForm(target, heading, submitLabel, submit, explanation = '') {
     const reason = element('textarea', { id: `reason-${crypto.randomUUID()}`, rows: '2', maxlength: '1000', required: true });
     const fields = element('fieldset', { 'data-mutation-fields': '' }, element('legend', {}, heading),
       explanation ? element('p', { class: 'field-hint' }, explanation) : null,
-      field('Reason', reason), element('div', { class: 'button-row inline-buttons' },
+      field('Причина', reason), element('div', { class: 'button-row inline-buttons' },
         element('button', { class: 'button button-small button-primary', type: 'submit', 'data-order-action': '' }, submitLabel),
-        button('Keep current state', () => target.replaceChildren())));
+        button('Оставить без изменений', () => target.replaceChildren())));
     target.replaceChildren(element('form', { onsubmit: async event => {
       event.preventDefault();
       if (!reason.value.trim()) return reason.focus();
@@ -65,16 +65,16 @@ export function createTaskViews({ owner, profile, mutate, getStaff }) {
 
   function reassignmentForm(target, task, createSubmit) {
     const next = element('select', { id: `assignee-${task.id}`, required: true },
-      element('option', { value: '' }, 'Choose mechanic'), getStaff().map(member => element('option', { value: member.id }, member.name)));
+      element('option', { value: '' }, 'Выберите механика'), getStaff().map(member => element('option', { value: member.id }, member.name)));
     const reason = element('textarea', { id: `transfer-reason-${task.id}`, rows: '2', maxlength: '1000', required: true });
     target.replaceChildren(element('form', { onsubmit: async event => {
       event.preventDefault();
       if (!next.value || !reason.value.trim()) return;
       await createSubmit(next.value)(reason.value.trim());
-    } }, element('fieldset', { 'data-mutation-fields': '' }, element('legend', {}, 'Reassign work'),
-      field('New mechanic', next), field('Reason', reason), element('div', { class: 'button-row inline-buttons' },
-        element('button', { class: 'button button-small button-primary', type: 'submit', 'data-order-action': '' }, 'Confirm reassignment'),
-        button('Keep current assignment', () => target.replaceChildren())))));
+    } }, element('fieldset', { 'data-mutation-fields': '' }, element('legend', {}, 'Переназначение работы'),
+      field('Новый механик', next), field('Причина', reason), element('div', { class: 'button-row inline-buttons' },
+        element('button', { class: 'button button-small button-primary', type: 'submit', 'data-order-action': '' }, 'Подтвердить переназначение'),
+        button('Оставить назначение', () => target.replaceChildren())))));
     next.focus();
   }
 

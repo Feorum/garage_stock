@@ -327,9 +327,9 @@ textarea:focus-visible { outline: 3px solid #71a998; outline-offset: 3px; border
 }
 
 @media (max-width: 650px) {
-  .workspace-nav[aria-label="Owner workspace"] { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .workspace-nav[aria-label="Owner workspace"] .nav-link { min-width: 0; padding: 12px 4px; font-size: 10px; }
-  .workspace-nav[aria-label="Owner workspace"] .nav-link > .icon { display: none; }
+  .workspace-nav[data-workspace-role="admin"] { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .workspace-nav[data-workspace-role="admin"] .nav-link { min-width: 0; padding: 12px 4px; font-size: 10px; }
+  .workspace-nav[data-workspace-role="admin"] .nav-link > .icon { display: none; }
   .order-toolbar { gap: 12px; }
   .order-search-controls { width: 100%; flex-basis: 100%; }
   .order-search-controls select { width: 130px; min-width: 0; padding: 10px 8px; }

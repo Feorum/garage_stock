@@ -8,17 +8,17 @@ export function createLedgerCalculator(context = {}) {
   function getCell(sheet, column, row) {
     const key = `${sheet}\u0000${column}${row}`;
     if (cache.has(key)) return cache.get(key);
-    if (visiting.has(key)) return { status: 'error', value: null, error: 'The calculation contains a circular reference.' };
-    if (!sheets.has(sheet)) return { status: 'error', value: null, error: `The referenced sheet is unavailable: ${sheet}` };
+    if (visiting.has(key)) return { status: 'error', value: null, error: 'В расчёте обнаружена циклическая ссылка.' };
+    if (!sheets.has(sheet)) return { status: 'error', value: null, error: `Указанный лист недоступен: ${sheet}` };
     const source = sheets.get(sheet).get(Number(row));
     const cell = source?.cells?.[column];
     if (!source || source.archived || !cell) return { status: 'blank', value: null };
     if (cell.override) return { status: 'override', value: cell.value, formula: cell.formula };
     if (!cell.formula) {
-      if (cell.type === 'error') return { status: 'error', value: null, error: String(cell.value || 'Source error') };
+      if (cell.type === 'error') return { status: 'error', value: null, error: String(cell.value || 'Ошибка в источнике') };
       return { status: cell.value == null || cell.value === '' ? 'blank' : 'ok', value: cell.value };
     }
-    if (visiting.size > 250) return { status: 'error', value: null, error: 'The dependency chain needs review.' };
+    if (visiting.size > 250) return { status: 'error', value: null, error: 'Цепочку зависимостей нужно проверить.' };
     visiting.add(key);
     let result;
     try {
@@ -38,7 +38,7 @@ export function createLedgerCalculator(context = {}) {
     return Object.fromEntries(Object.entries(row.cells || {}).map(([column, cell]) => [column,
       row.source_row == null
         ? cell.formula && !cell.override
-          ? { status: 'error', value: null, error: 'New entries need explicit values; they have no source formula address.' }
+          ? { status: 'error', value: null, error: 'Для новой записи введите значения: у неё нет адреса в исходной формуле.' }
           : { status: cell.override ? 'override' : cell.type === 'error' ? 'error' : cell.value == null ? 'blank' : 'ok', value: cell.type === 'error' ? null : cell.value }
         : getCell(sheet, column, row.source_row)
     ]));

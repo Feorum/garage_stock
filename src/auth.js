@@ -1,5 +1,14 @@
 const ROLES = new Set(['admin', 'mechanic']);
 
+export function authErrorMessage(error = {}) {
+  const code = error.code || '';
+  if (code === 'email_not_confirmed') return 'Подтвердите адрес электронной почты по ссылке из письма.';
+  if (code === 'user_banned') return 'Доступ к учётной записи ограничен. Обратитесь к владельцу.';
+  if (error.status === 429 || code.startsWith('over_')) return 'Слишком много попыток. Подождите немного и повторите вход.';
+  if (code === 'invalid_credentials' || /invalid login credentials/i.test(error.message || '')) return 'Неверный адрес электронной почты или пароль.';
+  return 'Не удалось войти. Проверьте адрес электронной почты, пароль и подключение.';
+}
+
 // Profile requests may finish after logout or a new session. Only the latest request may render.
 export function createAuthController(client, { onChange }) {
   let revision = 0;
@@ -34,7 +43,7 @@ export function createAuthController(client, { onChange }) {
       const session = await client.auth.getSession();
       if (!current()) return;
       if (session.error) {
-        emit({ status: 'error', message: 'We couldn’t check your session. Check your connection and try again.' });
+        emit({ status: 'error', message: 'Не удалось проверить сеанс. Проверьте подключение и повторите попытку.' });
         return;
       }
       if (!session.data.session) return signedOut();
@@ -43,9 +52,9 @@ export function createAuthController(client, { onChange }) {
       if (!current()) return;
       if (verified.error || !verified.data.user) {
         if (!verified.data.user && (!verified.error || [401, 403].includes(verified.error.status))) {
-          return signedOut('Your session has ended. Sign in again to continue.');
+          return signedOut('Сеанс завершён. Войдите снова, чтобы продолжить.');
         }
-        emit({ status: 'error', message: 'We couldn’t verify your account. Check your connection and try again.' });
+        emit({ status: 'error', message: 'Не удалось подтвердить учётную запись. Проверьте подключение и повторите попытку.' });
         return;
       }
 
@@ -53,20 +62,20 @@ export function createAuthController(client, { onChange }) {
       const result = await client.from('profiles').select('id,name,role,active').eq('id', user.id).single();
       if (!current()) return;
       if (result.error || !result.data) {
-        emit({ status: 'error', message: 'Your account profile is unavailable. Try again, or ask the Owner to check your access.' });
+        emit({ status: 'error', message: 'Профиль недоступен. Повторите попытку или попросите владельца проверить доступ.' });
         return;
       }
       if (!ROLES.has(result.data.role)) {
-        emit({ status: 'error', message: 'This account does not have a supported workspace role. Ask the Owner to check your access.' });
+        emit({ status: 'error', message: 'Для учётной записи не настроена подходящая роль. Попросите владельца проверить доступ.' });
         return;
       }
       if (result.data.active === false) {
-        emit({ status: 'error', message: 'Your workspace access is inactive. Ask the Owner to check your account.' });
+        emit({ status: 'error', message: 'Доступ отключён. Попросите владельца проверить учётную запись.' });
         return;
       }
       emit({ status: 'ready', user, profile: { id: user.id, name: String(result.data.name || ''), role: result.data.role } });
     } catch {
-      if (current()) emit({ status: 'error', message: 'We couldn’t open your account. Check your connection and try again.' });
+      if (current()) emit({ status: 'error', message: 'Не удалось открыть учётную запись. Проверьте подключение и повторите попытку.' });
     }
   }
 
@@ -94,11 +103,11 @@ export function createAuthController(client, { onChange }) {
       signingIn = true;
       try {
         const result = await client.auth.signInWithPassword({ email, password });
-        if (result.error) return { error: result.error.message || 'Sign-in failed. Check your email and password.' };
+        if (result.error) return { error: authErrorMessage(result.error) };
         await refresh();
         return {};
       } catch {
-        return { error: 'We couldn’t sign you in. Check your connection and try again.' };
+        return { error: 'Не удалось войти. Проверьте подключение и повторите попытку.' };
       } finally {
         signingIn = false;
       }
@@ -108,16 +117,16 @@ export function createAuthController(client, { onChange }) {
       signingOut = true;
       revision += 1;
       cancelScheduled();
-      emit({ status: 'loading', message: 'Signing out…' });
+      emit({ status: 'loading', message: 'Выполняется выход…' });
       try {
         const result = await client.auth.signOut({ scope: 'local' });
         if (result.error) {
-          emit({ status: 'error', message: 'We couldn’t sign you out. Try again before leaving this device.' });
+          emit({ status: 'error', message: 'Не удалось выйти. Повторите попытку, прежде чем оставить это устройство.' });
           return;
         }
         signedOut();
       } catch {
-        emit({ status: 'error', message: 'We couldn’t sign you out. Check your connection and try again.' });
+        emit({ status: 'error', message: 'Не удалось выйти. Проверьте подключение и повторите попытку.' });
       } finally {
         signingOut = false;
       }

@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#1f6feb">
-<title>Set your password · Garage Daily Log</title>
+<title>Создание пароля · Garage</title>
 <style>
 :root{color-scheme:light dark;font:16px/1.5 system-ui,Arial,sans-serif}
 body{margin:0;background:#f4f6f9;color:#1c2430}
@@ -25,17 +25,17 @@ button:disabled{opacity:.6;cursor:wait}a{color:#1f6feb}
 <body>
 <main>
   <div class="card">
-    <h1 id="title">Set your password</h1>
-    <p id="intro">Checking your account link…</p>
+    <h1 id="title">Создайте пароль</h1>
+    <p id="intro">Проверяем ссылку на учётную запись…</p>
     <form id="password-form" hidden>
-      <label for="password">New password</label>
+      <label for="password">Новый пароль</label>
       <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required>
-      <label for="confirm-password">Confirm new password</label>
+      <label for="confirm-password">Повторите новый пароль</label>
       <input id="confirm-password" name="confirm-password" type="password" autocomplete="new-password" minlength="12" required>
-      <button id="save-password" type="submit">Save password</button>
+      <button id="save-password" type="submit">Сохранить пароль</button>
     </form>
     <p id="message" role="status" aria-live="polite"></p>
-    <a id="open-app" href="index.html" hidden>Open Garage Daily Log</a>
+    <a id="open-app" href="index.html" hidden>Открыть Garage</a>
   </div>
 </main>
 <script type="module" src="account.js"></script>

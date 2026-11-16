@@ -9,30 +9,30 @@ export function createOrderEditor({ mode, record, intakes, staff, rpc, mutate, i
   const protectedTasks = editing ? originalTasks.filter(task => PROTECTED_TASKS.has(task.status) || task.working_mechanic_id) : [];
   const reference = resolving ? record : editing ? intakes.find(item => item.order_id === record.id) : null;
   let quoteVersion = 0, disposed = false;
-  const vehicle = element('input', { id: 'new-vehicle', name: 'vehicle', required: true, maxlength: '200', placeholder: 'Vehicle model / plate', value: seed.vehicle || '' });
+  const vehicle = element('input', { id: 'new-vehicle', name: 'vehicle', required: true, maxlength: '200', placeholder: 'Модель / госномер автомобиля', value: seed.vehicle || '' });
   const vin = element('input', { id: 'new-vin', name: 'vin', maxlength: '64', required: resolving, value: seed.vin || '' });
   const colour = element('input', { id: 'new-colour', name: 'colour', maxlength: '80', value: seed.colour || '' });
-  const group = element('select', { id: 'new-group', required: true, onchange: drawChoices }, element('option', { value: '' }, 'Choose vehicle group'),
+  const group = element('select', { id: 'new-group', required: true, onchange: drawChoices }, element('option', { value: '' }, 'Выберите группу автомобилей'),
     VEHICLE_GROUPS.map(item => element('option', { value: item.code }, item.name)));
-  const source = element('select', { id: 'new-source', onchange: updateSource }, element('option', { value: 'owner' }, 'Owner assignment'), element('option', { value: 'manager' }, 'Manager shared queue'));
-  const assigned = element('select', { id: 'new-assigned', required: true }, element('option', { value: '' }, 'Choose mechanic'),
+  const source = element('select', { id: 'new-source', onchange: updateSource }, element('option', { value: 'owner' }, 'Назначение владельца'), element('option', { value: 'manager' }, 'Общая очередь менеджеров'));
+  const assigned = element('select', { id: 'new-assigned', required: true }, element('option', { value: '' }, 'Выберите механика'),
     staff.map(member => element('option', { value: member.id }, member.name)));
   const manager = element('input', { id: 'new-manager', maxlength: '120', required: resolving, value: seed.manager_label || '' });
   const planned = element('input', { id: 'new-planned', type: 'date', required: resolving, value: seed.planned_date || '' });
   const due = element('input', { id: 'new-due', type: 'date', value: seed.due_date || '' });
-  const priority = element('select', { id: 'new-priority' }, element('option', { value: 'normal' }, 'Normal'), element('option', { value: 'high' }, 'High'), element('option', { value: 'urgent' }, 'Urgent'));
+  const priority = element('select', { id: 'new-priority' }, element('option', { value: 'normal' }, 'Обычный'), element('option', { value: 'high' }, 'Высокий'), element('option', { value: 'urgent' }, 'Срочный'));
   const instructions = element('textarea', { id: 'new-instructions', rows: '3', maxlength: '4000', value: seed.instructions || '' });
-  const assignmentField = field(editing ? 'Mechanic for new works' : 'Assign mechanic', assigned,
-    editing ? 'Existing assignments stay unchanged. This mechanic receives any newly added works.' : 'This mechanic receives every selected task as a mandatory assignment.');
-  const managerField = field(resolving ? 'Manager reference' : 'Manager label (optional)', manager, 'A source reference; it does not verify the person who submitted the request.');
+  const assignmentField = field(editing ? 'Механик для новых работ' : 'Назначить механика', assigned,
+    editing ? 'Текущие назначения сохранятся. Новые работы будут назначены этому механику.' : 'Все выбранные работы будут назначены этому механику.');
+  const managerField = field(resolving ? 'Менеджер' : 'Менеджер (необязательно)', manager, 'Имя из исходной заявки. Оно не подтверждает личность отправителя.');
   const choices = element('div', { class: 'work-choices' });
   const selected = new Set(originalTasks.map(task => task.work_code));
-  const tint = element('select', { id: 'new-tint', disabled: true }, element('option', { value: '' }, 'Choose tint level'),
+  const tint = element('select', { id: 'new-tint', disabled: true }, element('option', { value: '' }, 'Выберите светопропускание'),
     element('option', { value: '5' }, '5%'), element('option', { value: '15' }, '15%'));
-  const tintField = field('Tint level', tint);
+  const tintField = field('Светопропускание', tint);
   tintField.hidden = true;
   const formFeedback = element('p', { class: 'form-feedback', role: 'status' });
-  const quoteArea = element('div', { class: 'order-price-preview', 'aria-live': 'polite', 'aria-label': 'Owner work amounts' });
+  const quoteArea = element('div', { class: 'order-price-preview', 'aria-live': 'polite', 'aria-label': 'Стоимость работ для владельца' });
   group.value = seed.vehicle_group_code || '';
   group.disabled = protectedTasks.length > 0;
   source.value = seed.source || 'owner'; source.disabled = mode !== 'new';
@@ -53,16 +53,16 @@ export function createOrderEditor({ mode, record, intakes, staff, rpc, mutate, i
   async function quote() {
     const version = ++quoteVersion;
     if (!group.value || !selected.size || (selected.has('W19') && !['5', '15'].includes(tint.value))) {
-      quoteArea.replaceChildren(element('p', { class: 'field-hint' }, 'Select works to calculate Owner amounts.')); return;
+      quoteArea.replaceChildren(element('p', { class: 'field-hint' }, 'Выберите работы для расчёта стоимости.')); return;
     }
-    quoteArea.replaceChildren(element('p', { class: 'field-hint' }, 'Calculating selected works…'));
+    quoteArea.replaceChildren(element('p', { class: 'field-hint' }, 'Рассчитываем выбранные работы…'));
     try {
       const result = await rpc('garage_quote_order', { p_vehicle_group_code: group.value, p_tasks: taskPayload(), p_order_id: editing ? record.id : null });
       if (isActive() && !disposed && version === quoteVersion) quoteArea.replaceChildren(financialSummary(result, true));
     } catch {
       if (isActive() && !disposed && version === quoteVersion) quoteArea.replaceChildren(
-        renderNotice('Amounts unavailable', 'Your selections are kept. Amounts could not be calculated; retry before saving.', 'error'),
-        button('Retry calculation', quote));
+        renderNotice('Стоимость недоступна', 'Выбранные работы сохранены. Не удалось рассчитать стоимость. Повторите расчёт перед сохранением.', 'error'),
+        button('Повторить расчёт', quote));
     }
   }
 
@@ -101,7 +101,7 @@ export function createOrderEditor({ mode, record, intakes, staff, rpc, mutate, i
         quote();
       } });
       return element('label', { class: `work-choice ${allowed ? '' : 'is-unavailable'}`, for: checkbox.id }, checkbox,
-        element('span', { lang: 'ru' }, work.name), protectedTask ? element('small', {}, 'Recorded work · preserved') : !allowed && group.value ? element('small', {}, 'Unavailable') : null);
+        element('span', { lang: 'ru' }, work.name), protectedTask ? element('small', {}, 'Учтённая работа · сохранится') : !allowed && group.value ? element('small', {}, 'Недоступно') : null);
     }));
     updateTint();
   }
@@ -111,34 +111,34 @@ export function createOrderEditor({ mode, record, intakes, staff, rpc, mutate, i
   tint.value = originalTasks.find(task => task.work_code === 'W19')?.options?.tint_percent ? String(originalTasks.find(task => task.work_code === 'W19').options.tint_percent) : '';
   group.addEventListener('change', quote); tint.addEventListener('change', quote);
   const fields = element('fieldset', { 'data-mutation-fields': '', class: 'order-form-fields' },
-    element('legend', {}, mode === 'new' ? 'New vehicle order' : resolving ? 'Review Manager order' : `Edit ${record.order_number}`),
+    element('legend', {}, mode === 'new' ? 'Новый заказ' : resolving ? 'Проверка заявки менеджера' : `Изменение ${record.order_number}`),
     managerReference(reference),
-    protectedTasks.length ? element('p', { class: 'field-hint editor-protection' }, 'Work already started or completed stays recorded. Its package, assignment and rate are preserved.') : null,
-    element('div', { class: 'form-grid' }, field('Vehicle', vehicle), field('Vehicle group', group), field(resolving ? 'VIN' : 'VIN (optional)', vin), field('Colour (optional)', colour),
-      field('Order source', source), assignmentField, managerField, field(resolving ? 'Planned date' : 'Planned date (optional)', planned), field('Due date (optional)', due), field('Priority', priority)),
-    element('fieldset', { class: 'ordered-works' }, element('legend', {}, 'Ordered works'), element('p', { class: 'field-hint' }, 'Select one or more works. Choose one hood coverage and an explicit tint level when needed.'), choices, tintField),
-    field('Instructions (optional)', instructions, 'Visible to mechanics. Keep private commercial notes out of this field.'),
+    protectedTasks.length ? element('p', { class: 'field-hint editor-protection' }, 'Начатые и выполненные работы сохранятся вместе с составом, назначением и расценками.') : null,
+    element('div', { class: 'form-grid' }, field('Автомобиль', vehicle), field('Группа автомобилей', group), field(resolving ? 'VIN' : 'VIN (необязательно)', vin), field('Цвет (необязательно)', colour),
+      field('Источник заказа', source), assignmentField, managerField, field(resolving ? 'Плановая дата' : 'Плановая дата (необязательно)', planned), field('Срок выполнения (необязательно)', due), field('Приоритет', priority)),
+    element('fieldset', { class: 'ordered-works' }, element('legend', {}, 'Состав работ'), element('p', { class: 'field-hint' }, 'Выберите одну или несколько работ. Для капота выберите один вариант оклейки, для тонировки — светопропускание.'), choices, tintField),
+    field('Указания (необязательно)', instructions, 'Указания видны механикам. Не добавляйте сюда закрытую финансовую информацию.'),
     quoteArea,
-    element('div', { class: 'button-row form-actions' }, element('button', { type: 'submit', class: 'button button-primary', 'data-order-action': '' }, resolving ? 'Publish order' : editing ? 'Save changes' : 'Send order'),
-      button('Close form', closeEditor)), formFeedback);
+    element('div', { class: 'button-row form-actions' }, element('button', { type: 'submit', class: 'button button-primary', 'data-order-action': '' }, resolving ? 'Опубликовать заказ' : editing ? 'Сохранить изменения' : 'Отправить заказ'),
+      button('Закрыть форму', closeEditor)), formFeedback);
   const form = element('form', { class: 'new-order-form', onsubmit: async event => {
     event.preventDefault();
-    if (!selected.size) { formFeedback.textContent = 'Select at least one available work.'; return; }
-    if (!vehicle.value.trim()) { formFeedback.textContent = 'Enter the vehicle.'; return vehicle.focus(); }
-    if (source.value === 'owner' && ((!editing && !assigned.value) || taskPayload().some(task => !task.assigned_to))) { formFeedback.textContent = 'Choose the mechanic who will receive new work.'; return assigned.focus(); }
-    if (selected.has('W19') && !['5', '15'].includes(tint.value)) { formFeedback.textContent = 'Choose 5% or 15% for the tinting task.'; return tint.focus(); }
+    if (!selected.size) { formFeedback.textContent = 'Выберите хотя бы одну доступную работу.'; return; }
+    if (!vehicle.value.trim()) { formFeedback.textContent = 'Укажите автомобиль.'; return vehicle.focus(); }
+    if (source.value === 'owner' && ((!editing && !assigned.value) || taskPayload().some(task => !task.assigned_to))) { formFeedback.textContent = 'Выберите механика для новых работ.'; return assigned.focus(); }
+    if (selected.has('W19') && !['5', '15'].includes(tint.value)) { formFeedback.textContent = 'Выберите светопропускание 5% или 15%.'; return tint.focus(); }
     formFeedback.textContent = '';
     const orderFields = { vehicle: vehicle.value.trim(), vin: vin.value.trim(), colour: colour.value.trim(), vehicle_group_code: group.value,
       manager_label: source.value === 'manager' ? manager.value.trim() : '', instructions: instructions.value.trim(), due_date: due.value || null,
       priority: priority.value, planned_date: planned.value || null };
     const sent = mode !== 'new' ? await mutate(resolving ? 'garage_publish_manager_intake' : 'garage_edit_order', {
       ...(resolving ? { p_intake_id: record.id } : { p_order_id: record.id }), p_expected_version: record.version, p_order: orderFields, p_tasks: taskPayload()
-    }, resolving ? 'The selected works were published to the Manager queue.' : 'The order was updated. Your work selection is preserved against later table changes.') : await mutate('garage_create_order', {
+    }, resolving ? 'Выбранные работы опубликованы в общей очереди менеджеров.' : 'Заказ обновлён. Выбранные работы сохранятся при последующих изменениях таблицы.') : await mutate('garage_create_order', {
       p_vehicle: vehicle.value.trim(), p_vin: vin.value.trim(), p_colour: colour.value.trim(), p_vehicle_group_code: group.value,
       p_source: source.value, p_manager_label: source.value === 'manager' ? manager.value.trim() : '',
       p_tasks: taskPayload(),
       p_instructions: instructions.value.trim(), p_due_date: due.value || null, p_priority: priority.value, p_planned_date: planned.value || null
-    }, source.value === 'owner' ? 'The order was sent to the assigned mechanic.' : 'The order was published to the Manager queue.', true);
+    }, source.value === 'owner' ? 'Заказ отправлен назначенному механику.' : 'Заказ опубликован в общей очереди менеджеров.', true);
     if (sent && isActive()) {
       closeEditor();
     }

@@ -13,23 +13,23 @@ export function columnName(value) {
 
 function numeric(value) {
   if (value === null || value === '') return 0;
-  if (Array.isArray(value)) throw new Error('A range needs a supported function.');
+  if (Array.isArray(value)) throw new Error('Для диапазона нужна поддерживаемая функция.');
   if (typeof value === 'string') {
     value = value.trim();
     // This workbook uses decimal-comma text in several exchange-rate inputs.
     if (/^[+-]?(?:\d+(?:,\d+)?|,\d+)$/.test(value)) value = value.replace(',', '.');
     if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?$/.test(value)) {
-      throw new Error('A referenced value is not numeric.');
+      throw new Error('Значение по ссылке не является числом.');
     }
   }
   const result = Number(value);
-  if (!Number.isFinite(result)) throw new Error('A referenced value is not numeric.');
+  if (!Number.isFinite(result)) throw new Error('Значение по ссылке не является числом.');
   return result;
 }
 
 export function readLedgerFormula(formula, sheet, lookup) {
   if (typeof formula !== 'string' || formula.length > 20000 || !formula.startsWith('=')) {
-    throw new Error('This formula needs Owner review.');
+    throw new Error('Владельцу нужно проверить эту формулу.');
   }
   let index = 1, steps = 0;
   const space = () => { while (/\s/.test(formula[index] || '') && index < formula.length) index++; };
@@ -48,14 +48,14 @@ export function readLedgerFormula(formula, sheet, lookup) {
     const match = formula.slice(index).match(COLUMN);
     if (!match) { index = start; return null; }
     const column = match[1].toUpperCase(), row = Number(match[2]);
-    if (columnNumber(column) > 16384 || row > 1048576) throw new Error('The cell reference is outside the workbook.');
+    if (columnNumber(column) > 16384 || row > 1048576) throw new Error('Ссылка на ячейку выходит за пределы книги.');
     index += match[0].length;
     return { sheet: target, column, row };
   }
   function primary() {
-    if (++steps > 20000) throw new Error('The formula is too complex to calculate here.');
+    if (++steps > 20000) throw new Error('Эта формула слишком сложна для расчёта здесь.');
     space();
-    if (consume('(')) { const value = expression(); if (!consume(')')) throw new Error('Unclosed formula.'); return value; }
+    if (consume('(')) { const value = expression(); if (!consume(')')) throw new Error('В формуле не закрыта скобка.'); return value; }
     const number = formula.slice(index).match(/^(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?/);
     if (number) { index += number[0].length; return Number(number[0]); }
     const fn = formula.slice(index).match(/^(SUM|MIN|AVERAGE)\s*\(/i);
@@ -64,30 +64,30 @@ export function readLedgerFormula(formula, sheet, lookup) {
       const args = [];
       if (!consume(')')) {
         do { args.push(expression()); } while (consume(','));
-        if (!consume(')')) throw new Error('This function needs review.');
+        if (!consume(')')) throw new Error('Эту функцию нужно проверить.');
       }
       const numbers = args.flat().filter(value => typeof value === 'number');
       if (fn[1].toUpperCase() === 'SUM') return numbers.reduce((sum, value) => sum + value, 0);
       if (fn[1].toUpperCase() === 'MIN') return numbers.length ? Math.min(...numbers) : 0;
-      if (!numbers.length) throw new Error('An average has no numeric inputs.');
+      if (!numbers.length) throw new Error('Для среднего значения нет числовых данных.');
       return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
     }
     const from = reference(sheet);
     if (from) {
       if (!consume(':')) return lookup(from.sheet, from.column, from.row);
       const to = reference(from.sheet);
-      if (!to || to.sheet !== from.sheet) throw new Error('This range needs review.');
+      if (!to || to.sheet !== from.sheet) throw new Error('Этот диапазон нужно проверить.');
       const left = Math.min(columnNumber(from.column), columnNumber(to.column));
       const right = Math.max(columnNumber(from.column), columnNumber(to.column));
       const top = Math.min(from.row, to.row), bottom = Math.max(from.row, to.row);
-      if ((right - left + 1) * (bottom - top + 1) > 100000) throw new Error('The range is too large.');
+      if ((right - left + 1) * (bottom - top + 1) > 100000) throw new Error('Диапазон слишком большой.');
       const values = [];
       for (let row = top; row <= bottom; row++) {
         for (let col = left; col <= right; col++) values.push(lookup(from.sheet, columnName(col), row));
       }
       return values;
     }
-    throw new Error(formula.includes('#REF!') ? 'The source contains a broken reference.' : 'This formula needs Owner review.');
+    throw new Error(formula.includes('#REF!') ? 'В источнике обнаружена повреждённая ссылка.' : 'Владельцу нужно проверить эту формулу.');
   }
   function unary() {
     if (consume('+')) return numeric(unary());
@@ -107,7 +107,7 @@ export function readLedgerFormula(formula, sheet, lookup) {
       if (consume('*')) value = numeric(value) * numeric(power());
       else if (consume('/')) {
         const divisor = numeric(power());
-        if (divisor === 0) throw new Error('Division by zero needs review.');
+        if (divisor === 0) throw new Error('Деление на ноль: проверьте исходные значения.');
         value = numeric(value) / divisor;
       } else return value;
     }
@@ -122,7 +122,7 @@ export function readLedgerFormula(formula, sheet, lookup) {
   }
   const value = expression();
   space();
-  if (index !== formula.length || Array.isArray(value)) throw new Error('This formula needs Owner review.');
-  if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('The result is not a finite number.');
+  if (index !== formula.length || Array.isArray(value)) throw new Error('Владельцу нужно проверить эту формулу.');
+  if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Результат не является конечным числом.');
   return value;
 }

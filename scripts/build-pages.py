@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 FILES = (
     'index.html', 'styles.css', 'ledger.css', 'app.js', 'account.html', 'account.js', 'sw.js',
-    'src/supabase.js', 'src/auth.js', 'src/ui.js', 'src/navigation.js',
+    'src/supabase.js', 'src/auth.js', 'src/ui.js', 'src/navigation.js', 'src/locale.js',
     'src/views.js', 'src/orders.js', 'src/order-editor.js', 'src/order-list.js',
     'src/ledger.js', 'src/ledger-table.js', 'src/ledger-editor.js', 'src/ledger-history.js', 'src/ledger-shared.js',
     'src/ledger-calculations.js', 'src/ledger-formula-parser.js',

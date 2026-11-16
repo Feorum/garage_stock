@@ -1,4 +1,7 @@
 import { sb } from './src/supabase.js';
+import { installRussianValidation } from './src/locale.js';
+
+installRussianValidation();
 
 const callback = new URL(location.href);
 const fragment = new URLSearchParams(callback.hash.slice(1));
@@ -21,8 +24,8 @@ const tell = (text, error = false) => {
 };
 const invalidLink = () => {
   form.hidden = true;
-  intro.textContent = 'This account link is missing, expired, or invalid.';
-  tell('Setup links work only once. If you already chose a password, open the garage log to sign in. Otherwise, ask your administrator for a new setup email.', true);
+  intro.textContent = 'Ссылка отсутствует, недействительна или срок её действия истёк.';
+  tell('Ссылка действует один раз. Если пароль уже задан, откройте Garage и войдите. Иначе попросите владельца прислать новую ссылку.', true);
   openApp.hidden = false;
 };
 
@@ -35,7 +38,7 @@ async function initialize() {
     // Verify the session with the server before allowing a password change.
     const { data: verified, error: verificationError } = await sb.auth.getUser();
     if (verificationError || !verified.user) return invalidLink();
-    intro.textContent = 'Choose a password with at least 12 characters.';
+    intro.textContent = 'Придумайте пароль длиной не менее 12 символов.';
     form.hidden = false;
   } catch {
     invalidLink();
@@ -47,23 +50,23 @@ async function initialize() {
 form.addEventListener('submit', async event => {
   event.preventDefault();
   if (save.disabled) return;
-  if (password.value.length < 12) return tell('Use at least 12 characters.', true);
-  if (password.value !== confirmation.value) return tell('The passwords do not match.', true);
+  if (password.value.length < 12) return tell('Используйте не менее 12 символов.', true);
+  if (password.value !== confirmation.value) return tell('Пароли не совпадают.', true);
   save.disabled = true;
-  tell('Saving your password…');
+  tell('Сохраняем пароль…');
   try {
     const { error } = await sb.auth.updateUser({ password: password.value });
     if (error) {
-      tell('Your password could not be saved. Try again, or ask for a fresh setup email.', true);
+      tell('Не удалось сохранить пароль. Повторите попытку или запросите новую ссылку.', true);
       return;
     }
-    document.getElementById('title').textContent = 'Password saved';
-    intro.textContent = 'Your account is ready. You can open the garage log now.';
-    tell('Use your email address and new password when you sign in again.');
+    document.getElementById('title').textContent = 'Пароль сохранён';
+    intro.textContent = 'Учётная запись готова. Можно открыть Garage.';
+    tell('При следующем входе используйте адрес электронной почты и новый пароль.');
     form.hidden = true;
     openApp.hidden = false;
   } catch {
-    tell('Could not reach the account service. Check your connection and try again.', true);
+    tell('Сервис учётных записей недоступен. Проверьте подключение и повторите попытку.', true);
   } finally {
     password.value = '';
     confirmation.value = '';

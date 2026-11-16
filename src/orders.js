@@ -8,7 +8,7 @@ import { renderOrderList } from './order-list.js';
 // must call dispose so a late response cannot restore a previous workspace.
 export function mountOrders({ role, profile, section, client }) {
   const owner = role === 'admin';
-  const root = element('section', { class: 'orders-workspace', 'aria-label': owner ? 'Order workspace' : 'Your vehicle orders' });
+  const root = element('section', { class: 'orders-workspace', 'aria-label': owner ? 'Рабочее место заказов' : 'Ваши заказы' });
   const abort = new AbortController();
   const requestIds = new Map();
   const financialViews = new Map();
@@ -29,14 +29,14 @@ export function mountOrders({ role, profile, section, client }) {
   const intakeFeedback = element('div', { class: 'orders-feedback', 'aria-live': 'polite' });
   const list = element('div', { class: 'order-list' });
   const formArea = element('div', { hidden: true });
-  const filter = element('select', { id: 'order-filter', 'aria-label': 'Order status', onchange: drawOrders },
-    element('option', { value: 'open' }, 'Open orders'),
-    element('option', { value: 'all' }, 'All orders'),
-    element('option', { value: 'review' }, 'Needs Owner review'),
-    element('option', { value: 'closed' }, 'Closed orders'));
-  const search = element('input', { id: 'order-search', type: 'search', placeholder: 'Vehicle, VIN or order number', 'aria-label': 'Search orders', oninput: drawOrders });
-  const refreshButton = button('Refresh', () => initialize(), 'button');
-  const newButton = owner && section === 'orders' ? button('New order', () => {
+  const filter = element('select', { id: 'order-filter', 'aria-label': 'Статус заказа', onchange: drawOrders },
+    element('option', { value: 'open' }, 'Открытые заказы'),
+    element('option', { value: 'all' }, 'Все заказы'),
+    element('option', { value: 'review' }, 'На проверке владельца'),
+    element('option', { value: 'closed' }, 'Закрытые заказы'));
+  const search = element('input', { id: 'order-search', type: 'search', placeholder: 'Автомобиль, VIN или номер заказа', 'aria-label': 'Поиск заказов', oninput: drawOrders });
+  const refreshButton = button('Обновить', () => initialize(), 'button');
+  const newButton = owner && section === 'orders' ? button('Новый заказ', () => {
     if (formOpen && editor?.mode === 'new') closeEditor();
     else openEditor('new');
   }, 'button button-primary') : null;
@@ -79,7 +79,7 @@ export function mountOrders({ role, profile, section, client }) {
       requestIds.delete(fingerprint);
       financialViews.clear();
       await refresh(false);
-      tell('Saved', success);
+      tell('Сохранено', success);
       return true;
     } catch (error) {
       if (active) {
@@ -87,8 +87,8 @@ export function mountOrders({ role, profile, section, client }) {
         await refresh(false);
         const editorConflict = ['garage_edit_order', 'garage_publish_manager_intake', 'garage_record_omitted_completion'].includes(name)
           && (error?.code === '40001' || /version|changed|conflict/i.test(error?.message || ''));
-        tell(creating ? 'Order not confirmed' : 'Change not confirmed', editorConflict
-          ? 'This order or Manager request changed. Your edits are kept. Close this form and reopen Edit order to check the latest version.'
+        tell(creating ? 'Заказ не подтверждён' : 'Изменение не подтверждено', editorConflict
+          ? 'Заказ или заявка менеджера изменились. Ваши правки сохранены в форме. Закройте форму и снова нажмите «Изменить заказ», чтобы проверить актуальную версию.'
           : actionError(error, creating), true);
       }
       return false;
@@ -99,7 +99,7 @@ export function mountOrders({ role, profile, section, client }) {
 
   function drawOrders() {
     if (!active || !hasLoaded) return;
-    renderOrderList({ owner, profile, section, orders, intakes, needle: search.value.trim().toLocaleLowerCase(), statusFilter: filter.value,
+    renderOrderList({ owner, profile, section, orders, intakes, needle: search.value.trim().toLocaleLowerCase('ru-RU'), statusFilter: filter.value,
       list, expanded, openEditor, mutate, loadFinancials, financialViews, staff });
   }
 
@@ -125,21 +125,21 @@ export function mountOrders({ role, profile, section, client }) {
 
   async function loadFinancials(order, target) {
     if (!owner || pending || !active) return;
-    target.replaceChildren(element('p', { class: 'muted' }, 'Loading Owner amounts…'));
+    target.replaceChildren(element('p', { class: 'muted' }, 'Загружаем стоимость работ…'));
     try {
       const values = await rpc('garage_order_financials', { p_order_id: order.id });
       if (!active || !target.isConnected) return;
       financialViews.set(order.id, values);
       target.replaceChildren(financialSummary(values));
     } catch {
-      if (active && target.isConnected) target.replaceChildren(renderNotice('Amounts unavailable', 'The private amounts could not be loaded. Please try again.', 'error'));
+      if (active && target.isConnected) target.replaceChildren(renderNotice('Стоимость недоступна', 'Не удалось загрузить стоимость работ. Повторите попытку.', 'error'));
     }
   }
 
   async function refresh(showLoading = true) {
     if (!active) return;
     const version = ++loadingVersion;
-    if (showLoading && !hasLoaded) list.replaceChildren(element('p', { class: 'orders-loading', role: 'status' }, 'Loading vehicle orders…'));
+    if (showLoading && !hasLoaded) list.replaceChildren(element('p', { class: 'orders-loading', role: 'status' }, 'Загружаем заказы…'));
     if (showLoading) refreshButton.disabled = true;
     try {
       const [data, draftResult] = await Promise.all([rpc('garage_list_orders'), owner && section === 'orders'
@@ -155,7 +155,7 @@ export function mountOrders({ role, profile, section, client }) {
       if (draftResult) {
         intakeError = Boolean(draftResult.error) || !Array.isArray(draftResult.data);
         if (!intakeError) intakes = draftResult.data;
-        intakeFeedback.replaceChildren(...(intakeError ? [renderNotice('Manager requests unavailable', 'Orders are still available. Refresh to load the requests waiting for your review.', 'error')] : []));
+        intakeFeedback.replaceChildren(...(intakeError ? [renderNotice('Заявки менеджеров недоступны', 'Заказы доступны. Обновите список, чтобы загрузить заявки на проверку.', 'error')] : []));
       }
       hasLoaded = true;
       drawOrders();
@@ -163,10 +163,10 @@ export function mountOrders({ role, profile, section, client }) {
     } catch (error) {
       if (!active || version !== loadingVersion) return;
       if (!hasLoaded) list.replaceChildren();
-      tell('Orders could not be loaded', ['PGRST202', '42883', '42P01'].includes(error?.code)
-        ? 'The order workspace is not available yet. Ask the Owner to finish setup, then retry.'
-        : hasLoaded ? 'Your last loaded work is still shown. Check your connection and refresh before making changes.' : 'Check your connection and retry. Your orders have not been changed.', true);
-      if (!hasLoaded) list.append(button('Retry', () => refresh()));
+      tell('Не удалось загрузить заказы', ['PGRST202', '42883', '42P01'].includes(error?.code)
+        ? 'Раздел заказов ещё не настроен. Попросите владельца завершить настройку и повторите попытку.'
+        : hasLoaded ? 'Показаны последние загруженные данные. Проверьте подключение и обновите список перед изменениями.' : 'Проверьте подключение и повторите попытку. Заказы не изменены.', true);
+      if (!hasLoaded) list.append(button('Повторить', () => refresh()));
     } finally {
       if (active && version === loadingVersion) refreshButton.disabled = pending;
     }
@@ -196,7 +196,7 @@ export function mountOrders({ role, profile, section, client }) {
       } catch { /* Reports remain usable without reassignment controls. */ }
     }
     await refresh();
-    if (staffError) tell('Mechanics could not be loaded', 'Refresh to load the mechanic list before creating an order.', true);
+    if (staffError) tell('Не удалось загрузить механиков', 'Обновите список механиков перед созданием заказа.', true);
   }
 
   function refreshOnReturn() {

@@ -1,5 +1,6 @@
 {
-  "name": "Garage Work Orders",
+  "name": "Garage — Заказы и работы",
+  "lang": "ru",
   "short_name": "Garage",
   "start_url": "./index.html",
   "scope": "./",

@@ -8,7 +8,7 @@ export function createSectionView(role, section, profile, client) {
   // A hash is navigation input, never authority to render another role's section.
   if (!getSections(role).some(item => item.id === section)) return { element: element('div'), dispose() {} };
   if (!profile || !client) {
-    return { element: element('p', { class: 'muted' }, 'Sign in to load your vehicle orders.'), dispose() {} };
+    return { element: element('p', { class: 'muted' }, 'Войдите, чтобы открыть заказы.'), dispose() {} };
   }
   if (role === 'admin' && section === 'sheets') return mountSheets({ profile, client });
   if (role === 'admin' && section === 'ledger') return mountLedger({ profile, client });

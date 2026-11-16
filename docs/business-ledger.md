@@ -6,7 +6,10 @@ task prices. Editing historical allocations does not change those records.
 
 ## Working with the page
 
-Open **Business ledger** in the Owner navigation. Choose a workbook version,
+Open **Учёт бизнеса** in the Owner navigation. The application interface is
+Russian-only, including validation and account setup messages. Dates and numbers
+use Russian formatting; original source text and user entries retain their wording.
+Choose a workbook version,
 worksheet and section. The newest explicitly dated month opens by default.
 Records retain source order, with search, pagination and expandable details.
 Hidden source worksheets are included.

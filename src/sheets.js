@@ -30,69 +30,69 @@ export function parseSheetGid(value) {
 }
 
 function feedbackMessage(error) {
-  if (['PGRST202', '42883', '42P01'].includes(error?.code)) return 'Sheet connections are not available yet. Refresh after setup is finished.';
-  if (error?.code === '42501') return 'Your account cannot manage this connection. Sign in as the Owner and retry.';
-  if (error?.code === '40001' || /version|changed|conflict/i.test(error?.message || '')) return 'The connection changed. Refresh its current settings before retrying.';
-  if (error?.code === '23505' || /already registered|already exists/i.test(error?.message || '')) return 'This spreadsheet is already connected. Find its connection below.';
-  if (!error?.code || /fetch|network|timeout/i.test(error?.message || '')) return 'The change could not be confirmed. Keep this page open and retry the same action.';
-  return 'The connection could not be updated. Check its name, spreadsheet link and tab ID, then retry.';
+  if (['PGRST202', '42883', '42P01'].includes(error?.code)) return 'Подключения таблиц пока недоступны. Обновите страницу после завершения настройки.';
+  if (error?.code === '42501') return 'У вашей учётной записи нет доступа к управлению подключением. Войдите как владелец и повторите попытку.';
+  if (error?.code === '40001' || /version|changed|conflict/i.test(error?.message || '')) return 'Подключение изменилось. Обновите его настройки и повторите попытку.';
+  if (error?.code === '23505' || /already registered|already exists/i.test(error?.message || '')) return 'Эта таблица уже подключена. Найдите её подключение ниже.';
+  if (!error?.code || /fetch|network|timeout/i.test(error?.message || '')) return 'Не удалось подтвердить изменение. Оставьте страницу открытой и повторите то же действие.';
+  return 'Не удалось обновить подключение. Проверьте название, ссылку на таблицу и идентификатор листа, затем повторите попытку.';
 }
 
 const REVIEW_MESSAGES = {
-  NONSTANDARD_TASK_DETAIL: 'The additional instructions change the selected scope or dimensions. The Owner must clarify the request; it will not be treated as full, 25 cm or 45 cm hood coverage automatically.',
-  UNKNOWN_WRAPPING_WORK: 'Choose wrapping work from the approved closed list.',
-  UNKNOWN_TINT_WORK: 'Choose an approved rear-hemisphere tint package with an explicit 5% or 15% option.',
-  INVALID_PLANNED_DATE: 'Enter a valid requested date.',
-  INVALID_VIN: 'Enter a valid vehicle VIN.',
-  INVALID_COMPLETION_FLAG: 'Restore the completed checkbox to a valid checked or unchecked value.',
-  INVALID_MANAGER: 'Enter a Manager label within the supported length.',
-  INVALID_VEHICLE: 'Enter a vehicle description within the supported length.',
-  FIELD_TOO_LONG: 'Shorten the vehicle, work or instruction text to the supported length.',
-  NO_APPROVED_TASKS: 'Select at least one approved work item.',
-  WORK_UNAVAILABLE_FOR_VEHICLE: 'This work is unavailable for the selected vehicle model.',
-  SOURCE_PROGRESS_REQUIRES_REVIEW: 'The notes indicate work may already have been performed. The Owner must reconcile it.',
-  CONFIDENTIAL_NOTE_REQUIRES_REVIEW: 'The note may contain confidential financial information. The Owner must review it before sharing the request with Mechanics.',
-  CONFLICTING_HOOD_SCOPE: 'Select one hood coverage option for this request.',
-  CONFLICTING_TINT_OPTIONS: 'Select one tint percentage for this request.',
-  MALFORMED_WORK_LIST: 'Check the selected work list and its separators.',
-  TASK_DETAIL_TARGET_MISSING: 'An additional instruction refers to a work item that is not selected.',
-  AMBIGUOUS_TASK_DETAIL_TAG: 'Clarify which selected work item the additional instruction belongs to.',
-  INVALID_TASK_DETAIL_TAG: 'Use a valid approved work reference for the additional instruction.',
-  DUPLICATE_TASK_DETAIL_TAG: 'Combine the additional instructions for the same work item into one entry.',
-  EMPTY_TASK_DETAIL: 'Add text to the selected work instruction or remove its empty reference.',
-  TASK_DETAIL_TOO_LONG: 'Shorten the additional work instruction.',
-  SOURCE_IDENTITY_CHANGED: 'The vehicle visit identity changed or is ambiguous. The Owner must reconcile it.',
-  COMPLETED_HISTORY_REOPENED: 'This visit was already completed in the source history. The Owner must review it before any new work is created.',
-  SOURCE_MARKED_COMPLETED: 'The source now marks an imported visit completed. The Owner must reconcile it with the app; the checkbox does not complete app tasks.',
-  DUPLICATE_SOURCE_IDENTITY: 'More than one row describes this vehicle visit. The Owner must reconcile them.',
-  DUPLICATE_SOURCE_KEY: 'More than one row describes this vehicle visit. The Owner must reconcile them.',
-  DELIVERY_PENDING: 'Delivery is awaiting confirmation and will retry automatically.',
+  NONSTANDARD_TASK_DETAIL: 'Дополнительные указания меняют выбранный объём или размеры работы. Владельцу нужно уточнить запрос: он не будет автоматически считаться полной оклейкой капота или полосой 25 либо 45 см.',
+  UNKNOWN_WRAPPING_WORK: 'Выберите работу по оклейке из утверждённого списка.',
+  UNKNOWN_TINT_WORK: 'Выберите утверждённую тонировку задней полусферы и явно укажите 5% или 15%.',
+  INVALID_PLANNED_DATE: 'Укажите корректную планируемую дату.',
+  INVALID_VIN: 'Укажите корректный идентификационный номер автомобиля.',
+  INVALID_COMPLETION_FLAG: 'Установите или снимите отметку о выполнении в соответствующей ячейке.',
+  INVALID_MANAGER: 'Сократите имя менеджера до допустимой длины.',
+  INVALID_VEHICLE: 'Сократите описание автомобиля до допустимой длины.',
+  FIELD_TOO_LONG: 'Сократите описание автомобиля, работы или указания до допустимой длины.',
+  NO_APPROVED_TASKS: 'Выберите хотя бы одну работу из утверждённого списка.',
+  WORK_UNAVAILABLE_FOR_VEHICLE: 'Эта работа недоступна для выбранной модели автомобиля.',
+  SOURCE_PROGRESS_REQUIRES_REVIEW: 'В примечаниях указано, что работы могли быть выполнены. Владельцу нужно проверить их состояние.',
+  CONFIDENTIAL_NOTE_REQUIRES_REVIEW: 'Примечание может содержать закрытые финансовые данные. Владельцу нужно проверить его перед передачей запроса механикам.',
+  CONFLICTING_HOOD_SCOPE: 'Выберите один вариант оклейки капота для этого запроса.',
+  CONFLICTING_TINT_OPTIONS: 'Выберите один процент тонировки для этого запроса.',
+  MALFORMED_WORK_LIST: 'Проверьте выбранные работы и разделители в списке.',
+  TASK_DETAIL_TARGET_MISSING: 'Дополнительное указание относится к работе, которая не выбрана.',
+  AMBIGUOUS_TASK_DETAIL_TAG: 'Уточните, к какой выбранной работе относится дополнительное указание.',
+  INVALID_TASK_DETAIL_TAG: 'Укажите корректную ссылку на утверждённую работу для дополнительного указания.',
+  DUPLICATE_TASK_DETAIL_TAG: 'Объедините дополнительные указания к одной работе в одну запись.',
+  EMPTY_TASK_DETAIL: 'Добавьте текст указания к выбранной работе или удалите пустую ссылку.',
+  TASK_DETAIL_TOO_LONG: 'Сократите дополнительное указание к работе.',
+  SOURCE_IDENTITY_CHANGED: 'Данные о визите автомобиля изменились или неоднозначны. Владельцу нужно проверить их.',
+  COMPLETED_HISTORY_REOPENED: 'Этот визит уже завершён в исходной истории. Перед созданием новых работ его должен проверить владелец.',
+  SOURCE_MARKED_COMPLETED: 'В исходной таблице импортированный визит отмечен как завершённый. Владельцу нужно сверить его с приложением: отметка в таблице не завершает задачи в приложении.',
+  DUPLICATE_SOURCE_IDENTITY: 'Несколько строк описывают один визит автомобиля. Владельцу нужно сверить их.',
+  DUPLICATE_SOURCE_KEY: 'Несколько строк описывают один визит автомобиля. Владельцу нужно сверить их.',
+  DELIVERY_PENDING: 'Ожидается подтверждение передачи. Повторная попытка будет выполнена автоматически.',
 
-  invalid_or_missing_vin: 'Enter a valid vehicle VIN.',
-  date_missing_or_ambiguous: 'Clarify the requested date.',
-  missing_vehicle_group: 'Select the vehicle model from the approved list.',
-  unknown_vehicle_group: 'Select the vehicle model from the approved list.',
-  ambiguous_atlas_group: 'Select the exact Atlas model from the approved list.',
-  model_alias_requires_confirmation: 'Clarify the vehicle model using the approved list.',
-  unapproved_finish_variant: 'The requested film finish needs Owner review.',
-  unrecognized_scope_fragment: 'Clarify the requested work using the closed work list.',
-  work_alias_requires_confirmation: 'Clarify the requested work using the closed work list.',
-  unsupported_hood_width: 'Select an approved hood coverage option.',
-  unsupported_tint_percentage: 'Select an approved tint option: 5% or 15%.',
-  tint_percentage_required: 'Select the tint percentage: 5% or 15%.',
-  tint_scope_requires_confirmation: 'Clarify the tint package using the approved list.',
-  unavailable_work: 'This work is unavailable for the selected vehicle model.',
-  work_unavailable_for_model: 'This work is unavailable for the selected vehicle model.',
-  partial_completion_in_notes: 'The notes indicate work may already have been performed. Review it with the Owner.',
-  partial_work_in_notes: 'The notes indicate work may already have been performed. Review it with the Owner.',
-  duplicate_source_identity: 'More than one row describes this vehicle visit. The Owner must reconcile them.',
-  ambiguous_source_identity: 'The vehicle visit identity changed or is ambiguous. The Owner must reconcile it.',
-  missing_requested_work: 'Select at least one work item from the approved list.',
-  no_tasks: 'Select at least one work item from the approved list.',
-  formula_or_error_in_input: 'Replace the formula or error in the order input with a valid selection.',
-  ORDER_CHANGED: 'The order has changed in the app. The Owner must review the requested amendment.',
-  ORDER_CLOSED: 'The order is closed in the app. The Owner must review this row.',
-  VALIDATION_FAILED: 'Check the vehicle model and approved work selections.',
+  invalid_or_missing_vin: 'Укажите корректный идентификационный номер автомобиля.',
+  date_missing_or_ambiguous: 'Уточните планируемую дату.',
+  missing_vehicle_group: 'Выберите модель автомобиля из утверждённого списка.',
+  unknown_vehicle_group: 'Выберите модель автомобиля из утверждённого списка.',
+  ambiguous_atlas_group: 'Выберите точную модель автомобиля из утверждённого списка.',
+  model_alias_requires_confirmation: 'Уточните модель автомобиля по утверждённому списку.',
+  unapproved_finish_variant: 'Запрошенный вариант плёнки должен проверить владелец.',
+  unrecognized_scope_fragment: 'Уточните запрошенную работу по утверждённому списку.',
+  work_alias_requires_confirmation: 'Уточните запрошенную работу по утверждённому списку.',
+  unsupported_hood_width: 'Выберите утверждённый вариант оклейки капота.',
+  unsupported_tint_percentage: 'Выберите утверждённый процент тонировки: 5% или 15%.',
+  tint_percentage_required: 'Выберите процент тонировки: 5% или 15%.',
+  tint_scope_requires_confirmation: 'Уточните вариант тонировки по утверждённому списку.',
+  unavailable_work: 'Эта работа недоступна для выбранной модели автомобиля.',
+  work_unavailable_for_model: 'Эта работа недоступна для выбранной модели автомобиля.',
+  partial_completion_in_notes: 'В примечаниях указано, что работы могли быть выполнены. Проверьте их вместе с владельцем.',
+  partial_work_in_notes: 'В примечаниях указано, что работы могли быть выполнены. Проверьте их вместе с владельцем.',
+  duplicate_source_identity: 'Несколько строк описывают один визит автомобиля. Владельцу нужно сверить их.',
+  ambiguous_source_identity: 'Данные о визите автомобиля изменились или неоднозначны. Владельцу нужно проверить их.',
+  missing_requested_work: 'Выберите хотя бы одну работу из утверждённого списка.',
+  no_tasks: 'Выберите хотя бы одну работу из утверждённого списка.',
+  formula_or_error_in_input: 'Замените формулу или ошибку в данных заказа корректным выбором.',
+  ORDER_CHANGED: 'Заказ изменился в приложении. Владельцу нужно проверить запрошенное изменение.',
+  ORDER_CLOSED: 'Заказ закрыт в приложении. Владельцу нужно проверить эту строку.',
+  VALIDATION_FAILED: 'Проверьте модель автомобиля и выбранные работы из утверждённого списка.',
 };
 
 function connectionUrl(source, row) {
@@ -106,7 +106,7 @@ function connectionUrl(source, row) {
 
 export function mountSheets({ profile, client }) {
   if (profile?.role !== 'admin' || !client) return { element: element('div'), dispose() {} };
-  const root = element('section', { class: 'sheets-workspace', 'aria-label': 'Sheet connections' });
+  const root = element('section', { class: 'sheets-workspace', 'aria-label': 'Подключения таблиц' });
   const abort = new AbortController();
   let active = true, pending = false, loadVersion = 0, reviewVersion = 0, sources = [];
   let setup = null, readerAttempt = null;
@@ -114,23 +114,23 @@ export function mountSheets({ profile, client }) {
   const sourceList = element('div', { class: 'sheet-source-list' });
   const setupArea = element('div', { class: 'sheet-setup-area' });
   const reviewArea = element('div', { class: 'sheet-review-area sheet-source-list', 'aria-live': 'polite' });
-  const sourceName = element('input', { id: 'sheet-name', type: 'text', required: true, maxlength: '120', autocomplete: 'off', placeholder: 'Working copy of Manager orders' });
-  const spreadsheet = element('input', { id: 'sheet-url', type: 'text', required: true, autocomplete: 'off', spellcheck: 'false', placeholder: 'Paste the link to the existing order tab' });
-  const tab = element('input', { id: 'sheet-tab', type: 'text', inputmode: 'numeric', required: true, pattern: '[0-9]{1,10}', autocomplete: 'off', placeholder: 'The gid number in the tab link' });
-  spreadsheet.addEventListener('input', () => { const gid = parseSheetGid(spreadsheet.value); if (gid !== null) tab.value = String(gid); });
-  const connect = actionButton('Connect working copy', () => {}, 'button button-primary');
+  const sourceName = element('input', { id: 'sheet-name', type: 'text', required: true, maxlength: '120', autocomplete: 'off', placeholder: 'Рабочая копия заказов менеджеров' });
+  const spreadsheet = element('input', { id: 'sheet-url', type: 'text', required: true, autocomplete: 'off', spellcheck: 'false', placeholder: 'Вставьте ссылку на существующий лист заказов' });
+  const tab = element('input', { id: 'sheet-tab', type: 'text', inputmode: 'numeric', required: true, pattern: '[0-9]{1,10}', autocomplete: 'off', placeholder: 'Номер листа из ссылки' });
+  spreadsheet.addEventListener('input', () => { const gid = parseSheetGid(spreadsheet.value); if (gid !== null) { tab.value = String(gid); tab.setCustomValidity(''); } });
+  const connect = actionButton('Подключить рабочую копию', () => {}, 'button button-primary');
   connect.type = 'submit';
   const connectionFields = element('fieldset', { class: 'sheet-registration-fields' },
-    element('legend', {}, 'Connect a working copy'),
-    element('div', { class: 'form-grid' }, field('Connection name', sourceName), field('Spreadsheet link or ID', spreadsheet), field('Order tab ID (gid)', tab)),
-    element('p', { class: 'field-hint' }, 'Use a full working copy of the existing Manager spreadsheet. Pasting its tab link fills the tab ID automatically. The original is not connected or modified.'),
+    element('legend', {}, 'Подключение рабочей копии'),
+    element('div', { class: 'form-grid' }, field('Название подключения', sourceName), field('Ссылка или идентификатор таблицы', spreadsheet), field('Идентификатор листа заказов', tab)),
+    element('p', { class: 'field-hint' }, 'Используйте полную рабочую копию существующей таблицы менеджеров. При вставке ссылки идентификатор листа заполнится автоматически. Исходная таблица не подключается и не изменяется.'),
     element('div', { class: 'button-row form-actions' }, connect));
   const form = element('form', { class: 'sheet-registration', onsubmit: connectSource }, connectionFields);
-  const refreshButton = actionButton('Refresh status', () => refresh(), 'button');
+  const refreshButton = actionButton('Обновить состояние', () => refresh(), 'button');
   root.append(element('div', { class: 'sheet-introduction' },
-    element('p', {}, 'The connection imports Manager requests and returns completed work and mechanic names to the same working copy.'),
-    element('p', { class: 'muted' }, 'The original stays untouched. Managers can select catalogue works and type extra comments in Wrapping (G). The app updates Status (I) and Notes (J). Unclear selections wait for Owner review. Managers need no app account or Submit step.')),
-    feedback, setupArea, form, element('div', { class: 'sheet-list-heading' }, element('h2', {}, 'Connected spreadsheets'), refreshButton), sourceList, reviewArea);
+    element('p', {}, 'Подключение загружает запросы менеджеров и записывает выполненные работы и имена механиков в ту же рабочую копию.'),
+    element('p', { class: 'muted' }, 'Исходная таблица не изменяется. Менеджеры выбирают работы из каталога и вводят дополнительные комментарии в столбце «Оклейка» (G). Приложение обновляет столбцы «Статус» (I) и «Примечания» (J). Неясные запросы ждут проверки владельца. Менеджерам не нужны учётная запись в приложении или отдельная отправка запроса.')),
+    feedback, setupArea, form, element('div', { class: 'sheet-list-heading' }, element('h2', {}, 'Подключённые таблицы'), refreshButton), sourceList, reviewArea);
 
   function actionButton(text, onclick, className = 'button button-small') {
     return element('button', { type: 'button', class: className, 'data-sheet-action': '', onclick }, text);
@@ -150,19 +150,19 @@ export function mountSheets({ profile, client }) {
     if (response.error) throw response.error;
     return response.data;
   }
-  function formatTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? 'Unavailable' : date.toLocaleString(); }
+  function formatTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? 'Недоступно' : date.toLocaleString('ru-RU'); }
   function drawSources() {
     if (!active) return;
     if (!sources.length) {
-      sourceList.replaceChildren(element('div', { class: 'empty-state' }, element('h2', {}, 'No working copy connected'), element('p', {}, 'Connect a full working copy in the existing Manager spreadsheet layout.')));
+      sourceList.replaceChildren(element('div', { class: 'empty-state' }, element('h2', {}, 'Рабочая копия не подключена'), element('p', {}, 'Подключите полную рабочую копию в существующем формате таблицы менеджеров.')));
       return;
     }
     sourceList.replaceChildren(...sources.map(source => {
       const url = connectionUrl(source), checked = Boolean(source.last_success_at), failed = Boolean(source.last_error_code);
-      const status = !source.active ? 'Imports paused' : failed ? 'Check needed' : checked ? 'Has synchronized' : source.reader_only ? 'Waiting for private reader' : 'Waiting for first sync';
-      const detail = !source.active ? 'New spreadsheet imports are paused. Existing app orders remain available.'
-        : failed ? 'The latest check could not finish. The server will retry; existing app orders are preserved.'
-          : checked ? `Last successful check: ${formatTime(source.last_success_at)}` : source.reader_only ? 'Connected. Set up the private Google reader once; the copy stays private.' : 'Connected. Waiting for the scheduled server check.';
+      const status = !source.active ? 'Импорт приостановлен' : failed ? 'Требуется проверка' : checked ? 'Синхронизация выполнена' : source.reader_only ? 'Ожидается настройка загрузчика' : 'Ожидается первая синхронизация';
+      const detail = !source.active ? 'Импорт новых данных из таблицы приостановлен. Существующие заказы доступны в приложении.'
+        : failed ? 'Последняя проверка не завершена. Сервер повторит попытку; существующие заказы сохранены.'
+          : checked ? `Последняя успешная проверка: ${formatTime(source.last_success_at)}` : source.reader_only ? 'Подключено. Настройте закрытый загрузчик Google один раз; копия останется закрытой.' : 'Подключено. Ожидается плановая проверка сервером.';
       const count = Number(source.review_count) || 0;
       const settling = Number(source.summary?.awaiting_stability) || 0;
       const feedbackConfirmed = source.summary?.feedback_confirmed, feedbackPending = source.summary?.feedback_pending;
@@ -171,14 +171,14 @@ export function mountSheets({ profile, client }) {
       return element('article', { class: 'sheet-source-card', 'data-source-id': source.id || source.source_id },
         element('div', { class: 'sheet-source-heading' }, element('h3', {}, source.name), element('span', { class: 'tag tag-neutral' }, status)),
         element('p', { class: 'sheet-source-detail' }, detail),
-        element('p', { class: 'sheet-source-detail' }, count ? `${count} spreadsheet ${count === 1 ? 'row needs' : 'rows need'} Owner review.` : checked ? 'No rows are currently waiting for review.' : 'Review results appear after the first successful read.'),
-        settling ? element('p', { class: 'sheet-source-detail' }, `${settling} ${settling === 1 ? 'request is' : 'requests are'} waiting for a second unchanged read, at least one minute apart, before publication.`) : null,
-        hasFeedbackStatus ? element('p', { class: 'sheet-source-detail' }, `Completion feedback: ${feedbackConfirmed} confirmed · ${feedbackPending} waiting.`) : null,
+        element('p', { class: 'sheet-source-detail' }, count ? `Строк на проверке у владельца: ${count}.` : checked ? 'Сейчас нет строк, ожидающих проверки.' : 'Результаты проверки появятся после первого успешного чтения.'),
+        settling ? element('p', { class: 'sheet-source-detail' }, `Ожидают повторного чтения: ${settling}. Перед публикацией данные должны остаться неизменными при двух чтениях с интервалом не менее минуты.`) : null,
+        hasFeedbackStatus ? element('p', { class: 'sheet-source-detail' }, `Результаты выполнения: подтверждено ${feedbackConfirmed} · ожидает ${feedbackPending}.`) : null,
         element('div', { class: 'sheet-source-actions' },
-          url ? element('a', { class: 'button button-small', href: url, target: '_blank', rel: 'noopener noreferrer' }, 'Open working copy') : null,
-          actionButton(source.active ? 'Pause imports' : 'Resume imports', () => setActive(source)), actionButton('Review rows', () => showReviews(source)),
-          actionButton('Set up private reader', () => prepareReader(source))),
-        element('p', { class: 'field-hint' }, 'Work choices belong to the approved closed catalogue. Prices are kept separately in the Owner account.'));
+          url ? element('a', { class: 'button button-small', href: url, target: '_blank', rel: 'noopener noreferrer' }, 'Открыть рабочую копию') : null,
+          actionButton(source.active ? 'Приостановить импорт' : 'Возобновить импорт', () => setActive(source)), actionButton('Проверить строки', () => showReviews(source)),
+          actionButton('Настроить закрытый загрузчик', () => prepareReader(source))),
+        element('p', { class: 'field-hint' }, 'Работы выбираются из утверждённого каталога. Цены хранятся отдельно в учётной записи владельца.'));
     }));
     if (pending) lock(true);
   }
@@ -197,35 +197,37 @@ export function mountSheets({ profile, client }) {
     const fields = Object.entries(readerProperties()).map(([key, value]) => {
       const input = element('input', { id: `setup-${key.toLowerCase()}`, type: key === 'INTEGRATION_SECRET' ? 'password' : 'text',
         value, readonly: '', autocomplete: 'off', spellcheck: 'false' });
-      const wrap = field(key, input);
-      if (key === 'INTEGRATION_SECRET') wrap.append(actionButton('Show secret', event => {
+      const labels = { SPREADSHEET_ID: 'Идентификатор таблицы', SHEET_GID: 'Идентификатор листа',
+        INTEGRATION_ID: 'Идентификатор подключения', INTEGRATION_SECRET: 'Секретный ключ', API_URL: 'Адрес сервера' };
+      const wrap = field(labels[key], input);
+      if (key === 'INTEGRATION_SECRET') wrap.append(actionButton('Показать ключ', event => {
         const reveal = input.type === 'password'; input.type = reveal ? 'text' : 'password';
-        event.currentTarget.textContent = reveal ? 'Hide secret' : 'Show secret';
+        event.currentTarget.textContent = reveal ? 'Скрыть ключ' : 'Показать ключ';
       }));
       return wrap;
     });
-    setupArea.replaceChildren(element('section', { class: 'sheet-setup', 'aria-label': 'Private reader setup' },
-      element('div', { class: 'sheet-source-heading' }, element('h2', {}, 'Private reader setup'), element('span', { class: 'tag' }, 'Owner only')),
-      element('p', {}, 'The private connection reads the configured working copy and writes completion results only to its Status (I) and Notes (J) columns. The original stays untouched and the copy stays private.'),
-      element('p', { class: 'field-hint' }, 'Google asks for permission to edit spreadsheets. The script limits changes to the configured working copy. An existing read-only installation must be updated and authorized again before completion results can be written.'),
+    setupArea.replaceChildren(element('section', { class: 'sheet-setup', 'aria-label': 'Настройка закрытого загрузчика' },
+      element('div', { class: 'sheet-source-heading' }, element('h2', {}, 'Настройка закрытого загрузчика'), element('span', { class: 'tag' }, 'Только владелец')),
+      element('p', {}, 'Закрытое подключение читает настроенную рабочую копию и записывает результаты выполнения только в её столбцы «Статус» (I) и «Примечания» (J). Исходная таблица не изменяется, а копия остаётся закрытой.'),
+      element('p', { class: 'field-hint' }, 'Google запрашивает разрешение на редактирование таблиц. Скрипт ограничивает изменения настроенной рабочей копией. Если загрузчик ранее работал только на чтение, обновите его и повторно предоставьте разрешение для записи результатов выполнения.'),
       element('ol', { class: 'sheet-setup-steps' },
-        element('li', {}, 'Create a standalone Google Apps Script project that only you can edit.'),
-        element('li', {}, 'Copy Code.gs, Feedback.gs and the manifest from the instructions, then add the setup function below.'),
-        element('li', {}, 'Run setupConnection once and complete Google authorization, including spreadsheet editing. It installs a trigger that imports requests and returns completion results every minute.'),
-        element('li', {}, 'Delete the temporary setupConnection function afterward. Keep the reader project private.')),
-      element('div', { class: 'sheet-setup-links' }, element('a', { href: READER_GUIDE, target: '_blank', rel: 'noopener noreferrer' }, 'Open reader code and instructions')),
+        element('li', {}, 'Создайте отдельный проект скрипта Google, доступный для редактирования только вам.'),
+        element('li', {}, 'Скопируйте файлы Code.gs, Feedback.gs и манифест из инструкции, затем добавьте функцию настройки ниже.'),
+        element('li', {}, 'Один раз запустите функцию setupConnection и завершите авторизацию Google, включая разрешение на редактирование таблиц. Она настроит ежеминутную загрузку запросов и запись результатов выполнения.'),
+        element('li', {}, 'После настройки удалите временную функцию setupConnection. Сохраняйте проект загрузчика закрытым.')),
+      element('div', { class: 'sheet-setup-links' }, element('a', { href: READER_GUIDE, target: '_blank', rel: 'noopener noreferrer' }, 'Открыть код загрузчика и инструкцию')),
       element('div', { class: 'sheet-setup-properties' }, ...fields),
-      element('p', { class: 'field-hint' }, 'Copy the settings now; the key cannot be retrieved later. Never place it in a shared spreadsheet. Setting up a new reader key disables the previous one.'),
-      element('div', { class: 'button-row form-actions' }, actionButton('Copy setup function', copySetup, 'button button-primary'),
-        actionButton('Hide setup credentials', () => { setup = null; setupArea.replaceChildren(); }))));
+      element('p', { class: 'field-hint' }, 'Скопируйте настройки сейчас: позже получить ключ будет невозможно. Не размещайте его в общей таблице. Создание нового ключа загрузчика отключает предыдущий.'),
+      element('div', { class: 'button-row form-actions' }, actionButton('Скопировать функцию настройки', copySetup, 'button button-primary'),
+        actionButton('Скрыть данные подключения', () => { setup = null; setupArea.replaceChildren(); }))));
   }
   async function copySetup() {
     if (!active || !setup) return;
     const text = `function setupConnection() {\n  PropertiesService.getScriptProperties().setProperties(${JSON.stringify(readerProperties(), null, 2)});\n  install();\n}\n`;
     try {
       await navigator.clipboard.writeText(text);
-      if (active) tell('Copied', 'Paste this only into your private standalone reader project. It includes the connection key.');
-    } catch { if (active) tell('Copy unavailable', 'Copy the displayed settings, or allow clipboard access in your browser.', true); }
+      if (active) tell('Скопировано', 'Вставляйте функцию только в свой закрытый проект загрузчика. Она содержит ключ подключения.');
+    } catch { if (active) tell('Копирование недоступно', 'Скопируйте показанные настройки или разрешите доступ к буферу обмена в браузере.', true); }
   }
   async function prepareReader(source) {
     if (!active || pending) return;
@@ -243,8 +245,8 @@ export function mountSheets({ profile, client }) {
       readerAttempt = null;
       sources = sources.map(item => (item.id || item.source_id) === sourceId ? { ...item, ...result } : item);
       drawSources(); drawSetup();
-      tell('Private reader settings ready', 'Complete the Google setup below. Synchronization is confirmed only after an actual successful read.');
-    } catch (error) { if (active) tell('Reader setup not confirmed', feedbackMessage(error), true); }
+      tell('Настройки закрытого загрузчика готовы', 'Завершите настройку Google ниже. Синхронизация будет подтверждена только после успешного чтения данных.');
+    } catch (error) { if (active) tell('Настройка загрузчика не подтверждена', feedbackMessage(error), true); }
     finally { if (active) lock(false); }
   }
   async function refresh({ preserveFeedback = false } = {}) {
@@ -252,7 +254,7 @@ export function mountSheets({ profile, client }) {
     const request = ++loadVersion;
     refreshButton.disabled = true;
     sourceList.setAttribute('aria-busy', 'true');
-    if (!sources.length) sourceList.replaceChildren(element('p', { class: 'orders-loading' }, 'Loading spreadsheet connections…'));
+    if (!sources.length) sourceList.replaceChildren(element('p', { class: 'orders-loading' }, 'Загрузка подключений таблиц…'));
     try {
       const result = await rpc('garage_sheet_pull_sources');
       if (!active || request !== loadVersion) return;
@@ -260,7 +262,7 @@ export function mountSheets({ profile, client }) {
       drawSources();
       if (!preserveFeedback) feedback.replaceChildren();
     } catch (error) {
-      if (active && request === loadVersion) { sourceList.replaceChildren(); tell('Connections unavailable', feedbackMessage(error), true); }
+      if (active && request === loadVersion) { sourceList.replaceChildren(); tell('Подключения недоступны', feedbackMessage(error), true); }
     } finally {
       if (active && request === loadVersion) { refreshButton.disabled = false; sourceList.removeAttribute('aria-busy'); }
     }
@@ -270,7 +272,7 @@ export function mountSheets({ profile, client }) {
     if (!active || pending) return;
     const name = sourceName.value.trim(), spreadsheetId = parseSpreadsheetId(spreadsheet.value), gid = tab.value.trim();
     if (!name || !spreadsheetId || !TAB_ID.test(gid) || Number(gid) > 2147483647) {
-      tell('Check the connection', 'Enter a name, a valid Google Sheets link or ID, and the order tab ID.', true); return;
+      tell('Проверьте подключение', 'Укажите название, корректную ссылку или идентификатор таблицы Google и идентификатор листа заказов.', true); return;
     }
     lock(true);
     try {
@@ -279,8 +281,8 @@ export function mountSheets({ profile, client }) {
       sourceName.value = ''; spreadsheet.value = ''; tab.value = '';
       sources = [result, ...sources.filter(source => (source.id || source.source_id) !== (result.id || result.source_id))];
       drawSources();
-      tell('Working copy connected', 'Complete the private reader setup to start importing. The original spreadsheet is not connected.');
-    } catch (error) { if (active) tell('Connection not confirmed', feedbackMessage(error), true); }
+      tell('Рабочая копия подключена', 'Завершите настройку закрытого загрузчика для начала импорта. Исходная таблица не подключена.');
+    } catch (error) { if (active) tell('Подключение не подтверждено', feedbackMessage(error), true); }
     finally { if (active) lock(false); }
   }
   async function setActive(source) {
@@ -292,32 +294,32 @@ export function mountSheets({ profile, client }) {
       if (!active) return;
       sources = sources.map(item => (item.id || item.source_id) === sourceId ? { ...item, ...result } : item);
       drawSources();
-      tell(result.active ? 'Imports resumed' : 'Imports paused', result.active ? 'The configured reader can check the working copy again on its schedule.' : 'New spreadsheet requests are paused. Existing orders remain in the app.');
-    } catch (error) { if (active) tell('Connection change not confirmed', feedbackMessage(error), true); }
+      tell(result.active ? 'Импорт возобновлён' : 'Импорт приостановлен', result.active ? 'Настроенный загрузчик снова проверяет рабочую копию по расписанию.' : 'Загрузка новых запросов из таблицы приостановлена. Существующие заказы остаются в приложении.');
+    } catch (error) { if (active) tell('Изменение подключения не подтверждено', feedbackMessage(error), true); }
     finally { if (active) lock(false); }
   }
   async function showReviews(source) {
     if (!active || pending) return;
     const request = ++reviewVersion;
-    reviewArea.replaceChildren(element('p', { class: 'orders-loading' }, 'Loading rows for Owner review…'));
+    reviewArea.replaceChildren(element('p', { class: 'orders-loading' }, 'Загрузка строк для проверки владельцем…'));
     try {
       const result = await rpc('garage_sheet_pull_reviews', { p_source_id: source.id || source.source_id });
       if (!active || request !== reviewVersion) return;
       const rows = Array.isArray(result) ? result : [];
       const cards = rows.map(row => {
         const url = connectionUrl(source, row.row_number), reasons = Array.isArray(row.reason_codes) ? row.reason_codes : [];
-        const messages = [...new Set(reasons.map(code => REVIEW_MESSAGES[code] || REVIEW_MESSAGES[String(code).toLowerCase()] || 'This row needs Owner review before it can be imported.'))];
+        const messages = [...new Set(reasons.map(code => REVIEW_MESSAGES[code] || REVIEW_MESSAGES[String(code).toLowerCase()] || 'Перед импортом эту строку должен проверить владелец.'))];
         return element('article', { class: 'sheet-source-card' },
-          element('h3', {}, `Row ${Number.isSafeInteger(Number(row.row_number)) ? Number(row.row_number) : '—'}${row.vehicle ? ` · ${String(row.vehicle)}` : ''}`),
-          row.planned_date ? element('p', { class: 'sheet-source-detail' }, `Requested date: ${String(row.planned_date)}`) : null,
+          element('h3', {}, `Строка ${Number.isSafeInteger(Number(row.row_number)) ? Number(row.row_number) : '—'}${row.vehicle ? ` · ${String(row.vehicle)}` : ''}`),
+          row.planned_date ? element('p', { class: 'sheet-source-detail' }, `Планируемая дата: ${String(row.planned_date)}`) : null,
           element('ul', { class: 'sheet-setup-steps' }, ...messages.map(message => element('li', {}, message))),
-          url ? element('a', { class: 'button button-small', href: url, target: '_blank', rel: 'noopener noreferrer' }, 'Open source row') : null);
+          url ? element('a', { class: 'button button-small', href: url, target: '_blank', rel: 'noopener noreferrer' }, 'Открыть исходную строку') : null);
       });
       reviewArea.replaceChildren(
-        element('div', { class: 'sheet-list-heading' }, element('h2', {}, 'Rows for Owner review'), actionButton('Close review', () => { reviewVersion += 1; reviewArea.replaceChildren(); })),
-        element('p', { class: 'sheet-source-detail' }, rows.length ? 'Clarify ambiguous vehicle or work selections in the working copy; the next check will retry. Changes to work already started in the app need Owner reconciliation.' : 'No rows are currently waiting for review.'), ...cards);
+        element('div', { class: 'sheet-list-heading' }, element('h2', {}, 'Строки для проверки владельцем'), actionButton('Закрыть проверку', () => { reviewVersion += 1; reviewArea.replaceChildren(); })),
+        element('p', { class: 'sheet-source-detail' }, rows.length ? 'Уточните неоднозначные данные автомобиля или выбранные работы в рабочей копии. При следующей проверке загрузчик повторит попытку. Изменения уже начатых работ должен сверить владелец.' : 'Сейчас нет строк, ожидающих проверки.'), ...cards);
     } catch (error) {
-      if (active && request === reviewVersion) reviewArea.replaceChildren(renderNotice('Review unavailable', feedbackMessage(error), 'error'));
+      if (active && request === reviewVersion) reviewArea.replaceChildren(renderNotice('Проверка недоступна', feedbackMessage(error), 'error'));
     }
   }
   refresh();

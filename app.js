@@ -2,6 +2,9 @@ import { createAuthController } from './src/auth.js';
 import { element, icon, renderNotice } from './src/ui.js';
 import { getSections, resolveSection } from './src/navigation.js';
 import { createSectionView } from './src/views.js';
+import { installRussianValidation } from './src/locale.js';
+
+installRussianValidation();
 
 const app = document.getElementById('app');
 let controller;
@@ -19,37 +22,37 @@ function showLogin(message = '') {
   const email = element('input', { id: 'email', name: 'email', type: 'email', autocomplete: 'username', required: true });
   const password = element('input', { id: 'password', name: 'password', type: 'password', autocomplete: 'current-password', required: true });
   const feedback = element('p', { class: 'form-feedback', role: 'status', 'aria-live': 'polite' }, message);
-  const submit = element('button', { class: 'button button-primary', type: 'submit' }, 'Sign in');
+  const submit = element('button', { class: 'button button-primary', type: 'submit' }, 'Войти');
   const form = element('form', { class: 'login-form', onsubmit: async event => {
     event.preventDefault();
     if (submit.disabled) return;
     submit.disabled = true;
-    submit.textContent = 'Signing in…';
+    submit.textContent = 'Выполняется вход…';
     feedback.textContent = '';
     const result = await controller.signIn(email.value.trim(), password.value);
     password.value = '';
     if (result?.error && form.isConnected) {
       feedback.textContent = result.error;
       submit.disabled = false;
-      submit.textContent = 'Sign in';
+      submit.textContent = 'Войти';
     }
   } },
-  element('label', { for: 'email' }, 'Email'), email,
-  element('label', { for: 'password' }, 'Password'), password, submit, feedback);
+  element('label', { for: 'email' }, 'Электронная почта'), email,
+  element('label', { for: 'password' }, 'Пароль'), password, submit, feedback);
 
   app.replaceChildren(element('main', { id: 'main-content', class: 'login-layout' },
     element('section', { class: 'login-intro' },
       element('span', { class: 'wordmark' }, 'Garage', element('span', { 'aria-hidden': 'true' }, '/')),
-      element('p', { class: 'eyebrow' }, 'A clear place for every task'),
-      element('h1', {}, 'Your workshop.\nOne workspace.'),
-      element('p', { class: 'intro-copy' }, 'Owner assignments and manager orders, organized around the vehicle and the work to be done.'),
-      element('div', { class: 'intro-note' }, icon('work'), element('span', {}, 'For the Owner and the workshop team.'))),
+      element('p', { class: 'eyebrow' }, 'Каждая задача на своём месте'),
+      element('h1', {}, 'Ваша мастерская.\nВсё в одном месте.'),
+      element('p', { class: 'intro-copy' }, 'Поручения владельца и заказы менеджеров: автомобили, задачи и ход выполнения.'),
+      element('div', { class: 'intro-note' }, icon('work'), element('span', {}, 'Для владельца и команды мастерской.'))),
     element('section', { class: 'login-panel', 'aria-labelledby': 'signin-title' },
-      element('span', { class: 'tag' }, 'Work orders'),
-      element('h2', { id: 'signin-title' }, 'Welcome back'),
-      element('p', { class: 'muted' }, 'Sign in with the account provided by the Owner.'),
+      element('span', { class: 'tag' }, 'Заказы и работы'),
+      element('h2', { id: 'signin-title' }, 'Добро пожаловать'),
+      element('p', { class: 'muted' }, 'Войдите в учётную запись, которую предоставил владелец.'),
       form,
-      element('p', { class: 'login-help' }, 'Need access? Ask the Owner for an account or a fresh setup link.'))));
+      element('p', { class: 'login-help' }, 'Нужен доступ? Попросите владельца создать учётную запись или прислать новую ссылку.'))));
 }
 
 function showError(message) {
@@ -57,10 +60,10 @@ function showError(message) {
   workspace = null;
   app.replaceChildren(element('main', { id: 'main-content', class: 'startup' },
     element('span', { class: 'wordmark' }, 'Garage/'),
-    renderNotice('We couldn’t open your workspace', message, 'error'),
+    renderNotice('Не удалось открыть рабочее пространство', message, 'error'),
     element('div', { class: 'button-row' },
-      element('button', { class: 'button button-primary', onclick: () => controller ? controller.refresh() : location.reload() }, 'Try again'),
-      controller ? element('button', { class: 'button', onclick: () => controller.signOut() }, 'Sign out') : null)));
+      element('button', { class: 'button button-primary', onclick: () => controller ? controller.refresh() : location.reload() }, 'Повторить'),
+      controller ? element('button', { class: 'button', onclick: () => controller.signOut() }, 'Выйти') : null)));
 }
 
 function updateWorkspace(focus = false) {
@@ -83,33 +86,33 @@ function updateWorkspace(focus = false) {
 function showWorkspace(profile) {
   const owner = profile.role === 'admin';
   const sections = getSections(profile.role);
-  const navigation = element('nav', { class: 'workspace-nav', 'aria-label': owner ? 'Owner workspace' : 'Mechanic workspace' },
+  const navigation = element('nav', { class: 'workspace-nav', 'data-workspace-role': profile.role, 'aria-label': owner ? 'Кабинет владельца' : 'Кабинет механика' },
     sections.map(section => element('a', { href: `#${section.id}`, class: 'nav-link' }, icon(section.icon), element('span', {}, section.label))));
   const title = element('h1', { tabindex: '-1' });
   const description = element('p', { class: 'page-description' });
   const content = element('div', { class: 'page-content' });
-  const name = profile.name.trim() || (owner ? 'Owner' : 'Mechanic');
+  const name = profile.name.trim() || (owner ? 'Владелец' : 'Механик');
   const connection = element('span', { class: 'connection', role: 'status' });
   const updateConnection = () => {
-    connection.textContent = navigator.onLine ? 'Online' : 'Offline';
+    connection.textContent = navigator.onLine ? 'В сети' : 'Нет сети';
     connection.classList.toggle('is-offline', !navigator.onLine);
   };
   updateConnection();
 
   app.replaceChildren(element('div', { class: 'workspace' },
     element('aside', { class: 'sidebar' },
-      element('a', { class: 'wordmark', href: `#${sections[0].id}`, 'aria-label': 'Garage home' }, 'Garage', element('span', { 'aria-hidden': 'true' }, '/')),
-      element('p', { class: 'sidebar-caption' }, owner ? 'Owner workspace' : 'Mechanic workspace'), navigation,
-      element('div', { class: 'sidebar-foot' }, element('span', { class: 'version-label' }, 'Workshop workspace'), connection)),
+      element('a', { class: 'wordmark', href: `#${sections[0].id}`, 'aria-label': 'Главная Garage' }, 'Garage', element('span', { 'aria-hidden': 'true' }, '/')),
+      element('p', { class: 'sidebar-caption' }, owner ? 'Кабинет владельца' : 'Кабинет механика'), navigation,
+      element('div', { class: 'sidebar-foot' }, element('span', { class: 'version-label' }, 'Рабочее пространство мастерской'), connection)),
     element('div', { class: 'workspace-body' },
       element('header', { class: 'workspace-header' },
         element('div', { class: 'identity' }, element('span', { class: 'avatar', 'aria-hidden': 'true' }, name.slice(0, 1).toLocaleUpperCase()),
-          element('div', {}, element('span', { class: 'identity-name' }, name), element('span', { class: 'identity-role' }, owner ? 'Owner' : 'Mechanic'))),
+          element('div', {}, element('span', { class: 'identity-name' }, name), element('span', { class: 'identity-role' }, owner ? 'Владелец' : 'Механик'))),
         element('div', { class: 'header-actions' },
-          element('a', { class: 'account-link', href: 'account.html' }, 'Account'),
-          element('button', { class: 'button button-small', onclick: () => controller.signOut() }, 'Sign out'))),
+          element('a', { class: 'account-link', href: 'account.html' }, 'Учётная запись'),
+          element('button', { class: 'button button-small', onclick: () => controller.signOut() }, 'Выйти'))),
       element('main', { id: 'main-content', class: 'workspace-main' },
-        element('div', { class: 'page-heading' }, element('p', { class: 'eyebrow' }, 'Work orders'), title, description), content))));
+        element('div', { class: 'page-heading' }, element('p', { class: 'eyebrow' }, 'Заказы и работы'), title, description), content))));
   workspace = { navigation, title, description, content, updateConnection };
   updateWorkspace();
 }
@@ -119,13 +122,13 @@ function showState(state) {
   currentState = state;
   workspace = null;
   if (state.status === 'signed_out') {
-    document.title = 'Sign in · Garage';
+    document.title = 'Вход · Garage';
     showLogin(state.message);
   } else if (state.status === 'ready') showWorkspace(state.profile);
   else if (state.status === 'error') showError(state.message);
   else {
     app.replaceChildren(element('main', { id: 'main-content', class: 'startup', 'aria-live': 'polite' },
-      element('span', { class: 'wordmark' }, 'Garage/'), element('p', { class: 'muted' }, state.message || 'Opening your workspace…')));
+      element('span', { class: 'wordmark' }, 'Garage/'), element('p', { class: 'muted' }, state.message || 'Открываем рабочее пространство…')));
   }
 }
 
@@ -146,7 +149,7 @@ async function start() {
     controller = createAuthController(sb, { onChange: showState });
     await controller.start();
   } catch {
-    showError('Check your connection and try again. Sign-in needs an internet connection.');
+    showError('Проверьте подключение и повторите попытку. Для входа нужен интернет.');
   }
 }
 

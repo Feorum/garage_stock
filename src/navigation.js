@@ -1,14 +1,14 @@
 const OWNER = [
-  { id: 'orders', label: 'Orders', icon: 'orders', description: 'Client assignments and manager orders in one place.' },
-  { id: 'reports', label: 'Reports', icon: 'reports', description: 'A clear record of the work performed by your team.' },
-  { id: 'ledger', label: 'Business ledger', icon: 'catalogue', description: 'Review and edit your private business workbook, with source references and change history.' },
-  { id: 'sheets', label: 'Sheet connections', icon: 'catalogue', description: 'Manage the workbooks that submit Manager orders.' }
+  { id: 'orders', label: 'Заказы', icon: 'orders', description: 'Поручения владельца и заказы менеджеров в одном месте.' },
+  { id: 'reports', label: 'Отчёты', icon: 'reports', description: 'Выполненные работы и результаты команды.' },
+  { id: 'ledger', label: 'Учёт бизнеса', icon: 'catalogue', description: 'Данные вашей рабочей книги с редактированием, ссылками на источник и историей изменений.' },
+  { id: 'sheets', label: 'Подключения таблиц', icon: 'catalogue', description: 'Настройка таблиц, из которых поступают заказы менеджеров.' }
 ];
 
 const MECHANIC = [
-  { id: 'assigned', label: 'Assigned by Owner', icon: 'assigned', description: 'Client work assigned directly to you.' },
-  { id: 'manager-orders', label: 'Manager orders', icon: 'orders', description: 'Available work to choose from the shared queue.' },
-  { id: 'my-work', label: 'My work', icon: 'work', description: 'Your work in progress and completed tasks.' }
+  { id: 'assigned', label: 'Назначено владельцем', icon: 'assigned', description: 'Работы, которые владелец назначил вам.' },
+  { id: 'manager-orders', label: 'Заказы менеджеров', icon: 'orders', description: 'Доступные работы из общей очереди.' },
+  { id: 'my-work', label: 'Мои работы', icon: 'work', description: 'Ваши текущие и завершённые задачи.' }
 ];
 
 export function getSections(role) {

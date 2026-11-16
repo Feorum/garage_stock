@@ -27,7 +27,7 @@ def check_cache_upgrade(browser, server, base, new_page, cache_name):
         }""")
         page.wait_for_function('navigator.serviceWorker.controller !== null')
         page.goto(base + '/index.html')
-        expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
+        expect(page.get_by_role('button', name='Войти', exact=True)).to_be_visible()
         # Wait for old controlled tabs to close before changing their module graph.
         page.wait_for_function('navigator.serviceWorker.getRegistration().then(reg => !!reg.waiting)')
         page.close()
@@ -46,7 +46,7 @@ def check_cache_upgrade(browser, server, base, new_page, cache_name):
         page = context.new_page()
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.goto(base + '/index.html')
-        expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
+        expect(page.get_by_role('button', name='Войти', exact=True)).to_be_visible()
         page.wait_for_function("navigator.serviceWorker.controller && new URL(navigator.serviceWorker.controller.scriptURL).pathname.endsWith('/sw.js')")
         page.wait_for_function("name => caches.keys().then(keys => keys.includes(name) && !keys.includes('garage-log-v5'))", arg=cache_name)
         keys = page.evaluate('caches.keys()')

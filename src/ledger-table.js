@@ -9,11 +9,11 @@ function valuesView(headers, row, sheet, calculator, original = false) {
     const cell = (original ? row.original_cells : row.cells)[header.column];
     const result = original ? { value: cell.formula ? cell.cached : cell.value, status: 'ok' }
       : resultFor(sheet, row, header.column, calculator);
-    return element('div', {}, element('dt', {}, `${header.column} · ${header.label}`),
-      element('dd', {}, resultLabel(result)),
-      result.status === 'error' ? element('p', { class: 'ledger-cell-note is-warning' }, result.error || 'Source calculation needs review.') : null,
+    return element('div', {}, element('dt', {}, `${header.column} · ${original ? header.sourceLabel || header.label : header.label}`),
+      element('dd', {}, resultLabel(result, cell.type)),
+      result.status === 'error' ? element('p', { class: 'ledger-cell-note is-warning' }, result.error || 'Требуется проверка исходного расчёта.') : null,
       result.warning ? element('p', { class: 'ledger-cell-note is-warning' }, result.warning) : null,
-      cell.formula ? element('p', { class: 'ledger-cell-note' }, cell.override && !original ? 'Manual override · ' : 'Source formula · ', element('code', {}, cell.formula)) : null);
+      cell.formula ? element('p', { class: 'ledger-cell-note' }, cell.override && !original ? 'Значение задано вручную · ' : 'Исходная формула · ', element('code', {}, cell.formula)) : null);
   }));
 }
 
@@ -21,24 +21,24 @@ export function renderLedgerRows({ sheet, rows, section, calculator, expanded, e
   const headers = ledgerHeaders(sheet, section, rows);
   const amount = headers.find(item => /^(price|цена|сумма|стоимость)(\b|\s|$)/i.test(item.label)) || headers.find(item => item.column === 'B');
   const date = headers.find(item => /date|дат[аы]/i.test(item.label)) || headers.find(item => item.column === 'A');
-  const list = element('div', { class: 'ledger-list', 'aria-label': 'Ledger records' },
+  const list = element('div', { class: 'ledger-list', 'aria-label': 'Записи журнала' },
     element('div', { class: 'ledger-column-headings', 'aria-hidden': 'true' },
-      ...['Row', date?.label || 'Date', 'Description / entry', amount?.label || 'Value', 'Review', ''].map(label => element('span', {}, label))));
-  if (!rows.length) list.append(element('div', { class: 'ledger-empty' }, element('h2', {}, 'No matching records'),
-    element('p', {}, 'Change the filters or add an entry to this section.')));
+      ...['Строка', date?.label || 'Дата', 'Описание / запись', amount?.label || 'Значение', 'Проверка', ''].map(label => element('span', {}, label))));
+  if (!rows.length) list.append(element('div', { class: 'ledger-empty' }, element('h2', {}, 'Подходящих записей нет'),
+    element('p', {}, 'Измените фильтры или добавьте запись в этот раздел.')));
   for (const row of rows) {
     const readOnly = ledgerReadOnly(sheet, section, row);
     const results = headers.map(header => resultFor(sheet, row, header.column, calculator));
     const errors = results.filter(result => result.status === 'error').length;
     const overrides = results.filter(result => result.status === 'override').length;
     const issues = ledgerIssues(sheet, row, headers, calculator);
-    const state = row.archived ? 'Archived' : errors ? `${errors} unavailable` : issues.length ? 'Review needed' : overrides ? `${overrides} overridden` : row.version > 1 ? 'Edited' : 'Source';
+    const state = row.archived ? 'В архиве' : errors ? `Недоступно: ${errors}` : issues.length ? 'Нужна проверка' : overrides ? `Вручную: ${overrides}` : row.version > 1 ? 'Изменено' : 'Исходная запись';
     const details = element('details', { class: 'ledger-record', 'data-ledger-row': row.id });
     details.open = expanded.has(row.id);
     details.addEventListener('toggle', () => details.open ? expanded.add(row.id) : expanded.delete(row.id));
     details.append(element('summary', { class: 'ledger-summary' },
-      element('span', { class: 'ledger-row-number' }, row.source_row || 'New'),
-      element('span', { class: 'ledger-row-date' }, date ? resultLabel(resultFor(sheet, row, date.column, calculator)) : '—'),
+      element('span', { class: 'ledger-row-number' }, row.source_row || 'Новая'),
+      element('span', { class: 'ledger-row-date' }, date ? resultLabel(resultFor(sheet, row, date.column, calculator), row.cells?.[date.column]?.type) : '—'),
       element('span', { class: 'ledger-row-description' }, rowDescription(row, headers)),
       element('span', { class: 'ledger-row-amount' }, amount ? resultLabel(resultFor(sheet, row, amount.column, calculator)) : '—'),
       element('span', { class: `ledger-row-state${row.archived ? ' is-archived' : errors || issues.length ? ' is-warning' : row.version > 1 ? ' is-edited' : ''}` }, state),
@@ -47,13 +47,13 @@ export function renderLedgerRows({ sheet, rows, section, calculator, expanded, e
       ...issues.map(issue => element('p', { class: 'ledger-cell-note is-warning' }, issue)),
       valuesView(headers, row, sheet, calculator),
       element('p', { class: 'ledger-cell-note' }, row.source_row
-        ? `${sheet.name} · source row ${row.source_row} · revision ${row.version}`
-        : `Manual entry · revision ${row.version} · outside original worksheet formula ranges`),
-      row.original_cells ? element('details', { class: 'ledger-source-detail' }, element('summary', {}, 'Original workbook values and formulas'),
+        ? `${sheet.name} · исходная строка ${row.source_row} · версия ${row.version}`
+        : `Ручная запись · версия ${row.version} · вне диапазонов исходных формул листа`),
+      row.original_cells ? element('details', { class: 'ledger-source-detail' }, element('summary', {}, 'Исходные значения и формулы книги'),
         valuesView(headers, row, sheet, calculator, true)) : null,
-      readOnly ? element('p', { class: 'ledger-notice' }, 'Source header or template. Add a record in Work entries to include it in current entry totals.')
-        : element('div', { class: 'button-row' }, ledgerButton('Edit entry', () => edit(row)),
-          ledgerButton(row.archived ? 'History and restore' : 'History / archive', () => history(row))));
+      readOnly ? element('p', { class: 'ledger-notice' }, 'Исходный заголовок или шаблон. Добавьте запись в раздел «Основные записи», чтобы включить её в текущие итоги.')
+        : element('div', { class: 'button-row' }, ledgerButton('Изменить запись', () => edit(row)),
+          ledgerButton(row.archived ? 'История и восстановление' : 'История / архив', () => history(row))));
     details.append(body); list.append(details);
   }
   return list;
@@ -71,11 +71,11 @@ export function sectionTotals({ sheet, rows, section, calculator }) {
       else if (result.value === null || result.value === undefined || result.value === '') { blanks++; if (price) missing++; }
     }
     return numbers || missing ? [element('div', {}, element('dt', {}, `${header.column} · ${header.label}`),
-      element('dd', {}, missing ? 'Unavailable' : ledgerValue(total)),
-      missing ? element('p', { class: 'ledger-cell-note is-warning' }, `${missing} unresolved value${missing === 1 ? '' : 's'}; known values total ${ledgerValue(total)}.`)
-        : blanks ? element('p', { class: 'ledger-cell-note' }, `${numbers} entered values; ${blanks} blank field${blanks === 1 ? '' : 's'} excluded.`) : null)] : [];
+      element('dd', {}, missing ? 'Недоступно' : ledgerValue(total)),
+      missing ? element('p', { class: 'ledger-cell-note is-warning' }, `Неподтверждённых значений: ${missing}. Сумма известных значений: ${ledgerValue(total)}.`)
+        : blanks ? element('p', { class: 'ledger-cell-note' }, `Заполненных значений: ${numbers}. Пустых полей исключено: ${blanks}.`) : null)] : [];
   });
-  return element('details', { class: 'ledger-source-detail' }, element('summary', {}, 'Current section column totals'),
-    element('p', { class: 'ledger-notice' }, 'Active records are totaled by column, including manual entries. Original worksheet formulas retain their source ranges. Unresolved values keep a column total unavailable.'),
+  return element('details', { class: 'ledger-source-detail' }, element('summary', {}, 'Текущие итоги по столбцам раздела'),
+    element('p', { class: 'ledger-notice' }, 'Суммируются действующие записи, включая добавленные вручную. Исходные формулы листа сохраняют свои диапазоны. Пока есть неподтверждённые значения, итог столбца недоступен.'),
     element('dl', { class: 'ledger-values' }, totals));
 }

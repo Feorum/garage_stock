@@ -1,13 +1,13 @@
 import { element, renderNotice } from './ui.js';
 import { createLedgerCalculator } from './ledger-calculations.js';
-import { ledgerButton, ledgerField, ledgerFailure, ledgerReadOnly, rowDescription, ledgerHeaders, ledgerIssues, resultFor } from './ledger-shared.js';
+import { ledgerButton, ledgerField, ledgerFailure, ledgerReadOnly, ledgerSectionLabel, ledgerWarning, rowDescription, ledgerHeaders, ledgerIssues, resultFor } from './ledger-shared.js';
 import { renderLedgerRows, sectionTotals } from './ledger-table.js';
 import { createLedgerEditor } from './ledger-editor.js';
 import { createLedgerHistory } from './ledger-history.js';
 
 export function mountLedger({ profile, client }) {
   if (profile?.role !== 'admin' || !client) return { element: element('div'), dispose() {} };
-  const root = element('section', { class: 'ledger-workspace', 'aria-label': 'Owner business ledger' });
+  const root = element('section', { class: 'ledger-workspace', 'aria-label': 'Учёт бизнеса для владельца' });
   const abort = new AbortController(), receipts = new Map(), expanded = new Set();
   let active = true, loading = 0, pending = false, sheetLoading = false, staleCalculations = false;
   let imports = [], data = null, calculator = null, contextCache = null, editor = null, page = 0;
@@ -16,14 +16,14 @@ export function mountLedger({ profile, client }) {
   const importSelect = element('select', { id: 'ledger-import', onchange: () => { setWorksheets(); loadSheet(); } });
   const sheetSelect = element('select', { id: 'ledger-sheet', onchange: () => loadSheet() });
   const sectionSelect = element('select', { id: 'ledger-section', onchange: () => { page = 0; draw(); } });
-  const search = element('input', { id: 'ledger-search', type: 'search', placeholder: 'Description, payer, invoice or value', oninput: () => { page = 0; draw(); } });
+  const search = element('input', { id: 'ledger-search', type: 'search', placeholder: 'Описание, плательщик, счёт или значение', oninput: () => { page = 0; draw(); } });
   const archived = element('select', { id: 'ledger-archived', onchange: () => { page = 0; draw(); } },
-    element('option', { value: 'active' }, 'Active entries'), element('option', { value: 'all' }, 'Include archived'), element('option', { value: 'archived' }, 'Archived only'));
-  const refresh = ledgerButton('Refresh ledger', () => loadSheet());
-  const add = ledgerButton('Add entry', () => openEditor(null), true);
-  root.append(element('div', { class: 'ledger-toolbar' }, ledgerField('Workbook version', importSelect),
-    ledgerField('Worksheet / period', sheetSelect), ledgerField('Section', sectionSelect), refresh, add), source,
-    element('div', { class: 'ledger-toolbar' }, ledgerField('Search ledger', search), ledgerField('Records', archived)),
+    element('option', { value: 'active' }, 'Действующие записи'), element('option', { value: 'all' }, 'Включая архив'), element('option', { value: 'archived' }, 'Только архив'));
+  const refresh = ledgerButton('Обновить журнал', () => loadSheet());
+  const add = ledgerButton('Добавить запись', () => openEditor(null), true);
+  root.append(element('div', { class: 'ledger-toolbar' }, ledgerField('Версия книги', importSelect),
+    ledgerField('Лист / период', sheetSelect), ledgerField('Раздел', sectionSelect), refresh, add), source,
+    element('div', { class: 'ledger-toolbar' }, ledgerField('Поиск по журналу', search), ledgerField('Записи', archived)),
     counts, feedback, formArea, list, totals, pages);
   const controls = [importSelect, sheetSelect, sectionSelect, search, archived];
 
@@ -69,7 +69,7 @@ export function mountLedger({ profile, client }) {
     if (!active || !sheetSelect.value) return false;
     const version = ++loading;
     sheetLoading = true; lock();
-    if (showLoading) { list.replaceChildren(element('p', { role: 'status', class: 'ledger-notice' }, 'Loading private ledger records…')); refresh.disabled = true; }
+    if (showLoading) { list.replaceChildren(element('p', { role: 'status', class: 'ledger-notice' }, 'Загрузка закрытых записей журнала…')); refresh.disabled = true; }
     try {
       let next, context;
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -87,7 +87,7 @@ export function mountLedger({ profile, client }) {
       const previousSection = data?.sheet.id === next.sheet.id ? sectionSelect.value : '';
       data = next;
       const sections = data.sheet.metadata?.sections || [...new Set(data.rows.map(row => row.section))].map(id => ({ id, label: id }));
-      sectionSelect.replaceChildren(...sections.map(section => element('option', { value: section.id }, section.label || section.id)));
+      sectionSelect.replaceChildren(...sections.map(section => element('option', { value: section.id }, ledgerSectionLabel(section))));
       if (sections.some(section => section.id === previousSection)) sectionSelect.value = previousSection;
       else {
         const primary = sections.find(section => section.id === 'ledger' || section.id === 'entries' || section.kind === 'entries');
@@ -100,7 +100,7 @@ export function mountLedger({ profile, client }) {
       if (active && version === loading) {
         if (data) { importSelect.value = data.import.id; setWorksheets(); sheetSelect.value = data.sheet.id; draw(); }
         else list.replaceChildren();
-        tell('Ledger unavailable', ledgerFailure(error), true);
+        tell('Журнал недоступен', ledgerFailure(error), true);
       }
       return false;
     } finally { if (active && version === loading) { sheetLoading = false; lock(); } }
@@ -116,14 +116,14 @@ export function mountLedger({ profile, client }) {
       || Object.keys(row.cells).some(column => resultFor(sheet, row, column, calculator).status === 'error'))).length;
     const manual = sectionRows.filter(row => !row.archived && row.source_row === null).length;
     const warnings = sheet.metadata?.warnings || [];
-    source.replaceChildren(...[element('div', { class: 'ledger-source' }, element('div', {}, element('p', {}, data.import.name || data.import.filename || 'Imported workbook'),
-      element('small', {}, `${sheet.name} · working revision ${data.import.revision} · Owner only`)),
-      element('p', { class: 'ledger-notice' }, 'Original values remain available on every record.')),
-      staleCalculations ? renderNotice('Refresh required', 'The current calculation context could not be confirmed. Refresh before starting another edit.', 'error') : null,
-      warnings.length ? element('details', { class: 'ledger-source-detail' }, element('summary', {}, `${warnings.length} source review note${warnings.length === 1 ? '' : 's'}`),
-        ...warnings.map(warning => element('p', { class: 'ledger-notice' }, typeof warning === 'string' ? warning : warning.message || warning.code || JSON.stringify(warning)))) : null].filter(Boolean));
-    counts.replaceChildren(element('dl', { class: 'ledger-counts' }, ...[['Active records', sectionRows.filter(row => !row.archived).length],
-      ['Need calculation review', errorRows], ['Manual entries', manual]].map(([label, number]) => element('div', {}, element('dt', {}, label), element('dd', {}, String(number))))));
+    source.replaceChildren(...[element('div', { class: 'ledger-source' }, element('div', {}, element('p', {}, data.import.name || data.import.filename || 'Импортированная книга'),
+      element('small', {}, `${sheet.name} · рабочая версия ${data.import.revision} · только для владельца`)),
+      element('p', { class: 'ledger-notice' }, 'Исходные значения доступны в каждой записи.')),
+      staleCalculations ? renderNotice('Требуется обновление', 'Не удалось подтвердить данные для текущих расчётов. Обновите журнал перед следующим изменением.', 'error') : null,
+      warnings.length ? element('details', { class: 'ledger-source-detail' }, element('summary', {}, `Замечания к исходным данным: ${warnings.length}`),
+        ...warnings.map(warning => element('p', { class: 'ledger-notice' }, ledgerWarning(warning)))) : null].filter(Boolean));
+    counts.replaceChildren(element('dl', { class: 'ledger-counts' }, ...[['Действующих записей', sectionRows.filter(row => !row.archived).length],
+      ['Требуют проверки', errorRows], ['Ручных записей', manual]].map(([label, number]) => element('div', {}, element('dt', {}, label), element('dd', {}, String(number))))));
     const maxPage = Math.max(0, Math.ceil(shown.length / 40) - 1); page = Math.min(page, maxPage);
     list.replaceChildren(renderLedgerRows({ sheet, rows: shown.slice(page * 40, page * 40 + 40), section, calculator, expanded,
       edit: row => openEditor(row), history: row => openEditor(row, true) }));
@@ -131,10 +131,10 @@ export function mountLedger({ profile, client }) {
     const totalable = selected?.totalable === true || selected?.kind === 'entries' || /^(ledger|entries|work_entries|main)$/.test(section);
     totals.replaceChildren(...(totalable ? [sectionTotals({ sheet, rows: sectionRows, section, calculator })] : []));
     pages.replaceChildren(element('div', { class: 'ledger-pagination' }, element('span', {}, shown.length
-      ? `${page * 40 + 1}–${Math.min(shown.length, page * 40 + 40)} of ${shown.length} records` : '0 records'),
+      ? `${page * 40 + 1}–${Math.min(shown.length, page * 40 + 40)} из ${shown.length} записей` : 'Записей: 0'),
       element('div', { class: 'button-row' }, element('button', { type: 'button', class: 'button button-small', disabled: page === 0,
-        onclick: () => { page--; draw(); } }, 'Previous records'), element('button', { type: 'button', class: 'button button-small', disabled: page >= maxPage,
-        onclick: () => { page++; draw(); } }, 'Next records')))); lock();
+        onclick: () => { page--; draw(); } }, 'Предыдущие'), element('button', { type: 'button', class: 'button button-small', disabled: page >= maxPage,
+        onclick: () => { page++; draw(); } }, 'Следующие')))); lock();
   }
   async function save(name, parameters) {
     if (pending || sheetLoading || !active) return false;
@@ -151,8 +151,8 @@ export function mountLedger({ profile, client }) {
       if (existing < 0) data.rows.push(result.row); else data.rows[existing] = result.row;
       data.import.revision = result.revision;
       const refreshed = await loadSheet(false);
-      tell('Saved', refreshed ? 'The working ledger was updated. Its original workbook record is preserved.'
-        : 'Your change was saved. Refresh the ledger to reload current calculations.'); return true;
+      tell('Сохранено', refreshed ? 'Рабочий журнал обновлён. Исходная запись книги сохранена.'
+        : 'Изменение сохранено. Обновите журнал, чтобы загрузить текущие расчёты.'); return true;
     } catch (error) {
       if (active) {
         contextCache = null; calculator = null; staleCalculations = true;
@@ -160,23 +160,23 @@ export function mountLedger({ profile, client }) {
         if (refreshed && (error?.code === '40001' || /version|conflict|changed/i.test(error?.message || ''))) {
           editor?.showConflict?.(data?.rows.find(row => row.id === parameters.p_row_id));
         }
-        tell('Change not confirmed', ledgerFailure(error), true);
+        tell('Изменение не подтверждено', ledgerFailure(error), true);
       }
       return false;
     } finally { if (active) { pending = false; lock(); } }
   }
   async function initialize() {
-    pending = true; lock(); list.replaceChildren(element('p', { role: 'status', class: 'ledger-notice' }, 'Loading private workbook versions…'));
+    pending = true; lock(); list.replaceChildren(element('p', { role: 'status', class: 'ledger-notice' }, 'Загрузка закрытых версий книги…'));
     try {
       imports = await rpc('garage_ledger_imports');
       if (!active) return;
       if (!Array.isArray(imports)) throw new Error('Invalid workbook list');
-      importSelect.replaceChildren(...imports.map(item => element('option', { value: item.id }, item.name || item.filename || 'Imported workbook')));
+      importSelect.replaceChildren(...imports.map(item => element('option', { value: item.id }, item.name || item.filename || 'Импортированная книга')));
       if (!imports.length) {
-        list.replaceChildren(renderNotice('No workbook imported', 'Import the private workbook before adding or editing its ledger records.')); return;
+        list.replaceChildren(renderNotice('Книга ещё не импортирована', 'Импортируйте закрытую книгу, чтобы добавлять и редактировать записи журнала.')); return;
       }
       setWorksheets(); await loadSheet();
-    } catch (error) { if (active) { list.replaceChildren(); tell('Ledger unavailable', ledgerFailure(error), true); list.append(ledgerButton('Retry ledger', initialize)); } }
+    } catch (error) { if (active) { list.replaceChildren(); tell('Журнал недоступен', ledgerFailure(error), true); list.append(ledgerButton('Повторить загрузку', initialize)); } }
     finally { if (active) { pending = false; lock(); } }
   }
   initialize();

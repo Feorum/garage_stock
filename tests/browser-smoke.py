@@ -95,7 +95,7 @@ def new_page(browser, fixture, viewport=None, service_workers='block'):
 
 
 def ready(page, name):
-    expect(page.get_by_role('button', name='Sign out', exact=True)).to_be_visible()
+    expect(page.get_by_role('button', name='Выйти', exact=True)).to_be_visible()
     expect(page.get_by_text(name, exact=True).first).to_be_visible()
 
 
@@ -113,10 +113,10 @@ def run(args):
         try:
             # Both roles load only their own workspace navigation.
             for role, name, expected_links, forbidden in [
-                ('admin', 'Test Owner', ['Orders', 'Reports', 'Business ledger', 'Sheet connections'], 'Assigned by Owner'),
-                ('mechanic', 'Test Mechanic', ['Assigned by Owner', 'Manager orders', 'My work'], 'Reports'),
+                ('admin', 'Test Owner', ['Заказы', 'Отчёты', 'Учёт бизнеса', 'Подключения таблиц'], 'Назначено владельцем'),
+                ('mechanic', 'Test Mechanic', ['Назначено владельцем', 'Заказы менеджеров', 'Мои работы'], 'Отчёты'),
             ]:
-                viewport = {'width': 390, 'height': 844} if role == 'mechanic' else None
+                viewport = {'width': 320, 'height': 844} if role == 'mechanic' else None
                 context, page, errors, live = new_page(browser, {'profile': {'name': name, 'role': role}}, viewport)
                 page.goto(base + '/index.html')
                 ready(page, name)
@@ -132,16 +132,16 @@ def run(args):
                     page.screenshot(path=str(args.output / 'owner-workspace.png'), full_page=True)
                     expect(page.get_by_role('link', name='Approved works', exact=True)).to_have_count(0)
                     page.evaluate("location.hash = '#catalogue'")
-                    expect(page.get_by_role('heading', name='Orders', exact=True)).to_be_visible()
-                    page.get_by_role('link', name='Skip to content', exact=True).evaluate('link => link.click()')
-                    expect(page.get_by_role('link', name='Orders', exact=True)).to_have_attribute('aria-current', 'page')
+                    expect(page.get_by_role('heading', name='Заказы', exact=True)).to_be_visible()
+                    page.get_by_role('link', name='Перейти к содержимому', exact=True).evaluate('link => link.click()')
+                    expect(page.get_by_role('link', name='Заказы', exact=True)).to_have_attribute('aria-current', 'page')
                     assert page.evaluate("document.activeElement.id === 'main-content'")
                     check_no_private_data(page)
                 else:
                     page.screenshot(path=str(args.output / 'mechanic-workspace.png'), full_page=True)
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-                page.get_by_role('button', name='Sign out', exact=True).click()
-                expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
+                page.get_by_role('button', name='Выйти', exact=True).click()
+                expect(page.get_by_role('button', name='Войти', exact=True)).to_be_visible()
                 expect(page.get_by_role('navigation')).to_have_count(0)
                 expect(page.get_by_text(name, exact=True)).to_have_count(0)
                 passed.append(role + ' role, route guard, workspace/privacy and logout')
@@ -152,12 +152,12 @@ def run(args):
                 'signedIn': False, 'loginError': 'Invalid login credentials', 'loginDelay': 250,
             }, {'width': 390, 'height': 844})
             page.goto(base + '/index.html')
-            page.get_by_label('Email', exact=True).fill('test@example.invalid')
-            page.get_by_label('Password', exact=True).fill('not-a-real-password')
-            page.get_by_role('button', name='Sign in', exact=True).click()
+            page.get_by_label('Электронная почта', exact=True).fill('test@example.invalid')
+            page.get_by_label('Пароль', exact=True).fill('not-a-real-password')
+            page.get_by_role('button', name='Войти', exact=True).click()
             button = page.locator('form button[type="submit"]')
             expect(button).to_be_disabled()
-            expect(page.get_by_text('Invalid login credentials', exact=True)).to_be_visible()
+            expect(page.get_by_text('Неверный адрес электронной почты или пароль.', exact=True)).to_be_visible()
             assert page.evaluate("__garageCalls.filter(c => c.method === 'signInWithPassword').length") == 1
             expect(button).to_be_enabled()
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
@@ -171,12 +171,12 @@ def run(args):
                 'signedIn': False, 'profile': {'name': 'Test Mechanic', 'role': 'mechanic'},
             })
             page.goto(base + '/index.html')
-            page.get_by_label('Email', exact=True).fill('test@example.invalid')
-            page.get_by_label('Password', exact=True).fill('not-a-real-password')
-            page.get_by_role('button', name='Sign in', exact=True).click()
+            page.get_by_label('Электронная почта', exact=True).fill('test@example.invalid')
+            page.get_by_label('Пароль', exact=True).fill('not-a-real-password')
+            page.get_by_role('button', name='Войти', exact=True).click()
             ready(page, 'Test Mechanic')
-            expect(page.get_by_role('link', name='Assigned by Owner', exact=True)).to_be_visible()
-            expect(page.get_by_role('link', name='Reports', exact=True)).to_have_count(0)
+            expect(page.get_by_role('link', name='Назначено владельцем', exact=True)).to_be_visible()
+            expect(page.get_by_role('link', name='Отчёты', exact=True)).to_have_count(0)
             check_no_private_data(page)
             assert not errors, errors
             assert not live, live
@@ -188,7 +188,7 @@ def run(args):
                             {'name': 'Inactive User', 'role': 'mechanic', 'active': False}):
                 context, page, errors, live = new_page(browser, {'profile': profile})
                 page.goto(base + '/index.html')
-                expect(page.get_by_role('button', name='Sign out', exact=True)).to_be_visible()
+                expect(page.get_by_role('button', name='Выйти', exact=True)).to_be_visible()
                 expect(page.get_by_role('navigation')).to_have_count(0)
                 check_no_private_data(page)
                 assert not errors, errors
@@ -201,9 +201,9 @@ def run(args):
             page.goto(base + '/index.html')
             page.wait_for_function("(globalThis.__garageCalls || []).some(c => c.method === 'from')")
             page.evaluate('__garageAuth.signOut()')
-            expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
+            expect(page.get_by_role('button', name='Войти', exact=True)).to_be_visible()
             page.wait_for_timeout(750)
-            expect(page.get_by_role('button', name='Sign in', exact=True)).to_be_visible()
+            expect(page.get_by_role('button', name='Войти', exact=True)).to_be_visible()
             expect(page.get_by_role('navigation')).to_have_count(0)
             assert not errors, errors
             assert not live, live
@@ -213,12 +213,12 @@ def run(args):
             # The account callback remains verified, scrubbed and usable after configuration refactor.
             context, page, errors, live = new_page(browser, {})
             page.goto(base + '/account.html#access_token=fake-test-token&type=recovery')
-            expect(page.get_by_label('New password', exact=True)).to_be_visible()
+            expect(page.get_by_label('Новый пароль', exact=True)).to_be_visible()
             assert page.url == base + '/account.html', page.url
-            page.get_by_label('New password', exact=True).fill('a-long-test-password')
-            page.get_by_label('Confirm new password', exact=True).fill('a-long-test-password')
-            page.get_by_role('button', name='Save password', exact=True).click()
-            expect(page.get_by_role('heading', name='Password saved', exact=True)).to_be_visible()
+            page.get_by_label('Новый пароль', exact=True).fill('a-long-test-password')
+            page.get_by_label('Повторите новый пароль', exact=True).fill('a-long-test-password')
+            page.get_by_role('button', name='Сохранить пароль', exact=True).click()
+            expect(page.get_by_role('heading', name='Пароль сохранён', exact=True)).to_be_visible()
             assert not errors, errors
             assert not live, live
             passed.append('account callback verification, URL cleanup and password form')
@@ -231,8 +231,8 @@ def run(args):
             ):
                 context, page, errors, live = new_page(browser, fixture)
                 page.goto(base + path)
-                expect(page.get_by_text('This account link is missing, expired, or invalid.', exact=True)).to_be_visible()
-                expect(page.get_by_label('New password', exact=True)).not_to_be_visible()
+                expect(page.get_by_text('Ссылка отсутствует, недействительна или срок её действия истёк.', exact=True)).to_be_visible()
+                expect(page.get_by_label('Новый пароль', exact=True)).not_to_be_visible()
                 assert page.url == base + '/account.html', page.url
                 assert not errors, errors
                 context.close()

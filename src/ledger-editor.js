@@ -1,5 +1,5 @@
 import { element, renderNotice } from './ui.js';
-import { clone, same, ledgerButton, ledgerField, ledgerHeaders, ledgerValue, resultFor } from './ledger-shared.js';
+import { clone, same, ledgerButton, ledgerField, ledgerHeaders, ledgerSectionLabel, ledgerValue, resultFor } from './ledger-shared.js';
 
 export function createLedgerEditor({ sheet, section, row, sampleRows = [], getCalculator, save, close }) {
   let record = row ? clone(row) : null, baseline = clone(row?.cells || {}), active = true;
@@ -24,39 +24,40 @@ export function createLedgerEditor({ sheet, section, row, sampleRows = [], getCa
     const attributes = { id: `ledger-field-${header.column}`, type: cell.type === 'error' && !formula ? 'text' : type === 'number' ? 'number' : type === 'date' ? 'date' : 'text',
       value: shown == null || formula && cell.type === 'error' && !cell.override ? '' : String(shown), step: type === 'number' ? 'any' : null };
     const control = type === 'boolean'
-      ? element('select', { id: attributes.id }, element('option', { value: '' }, 'Not specified'),
-        element('option', { value: 'true', selected: value === true }, 'Yes'), element('option', { value: 'false', selected: value === false }, 'No'))
-      : /description|описан|наименован|комментар/i.test(header.label)
+      ? element('select', { id: attributes.id }, element('option', { value: '' }, 'Не указано'),
+        element('option', { value: 'true', selected: value === true }, 'Да'), element('option', { value: 'false', selected: value === false }, 'Нет'))
+      : /description|описан|назван|наименован|комментар/i.test(header.label)
         ? element('textarea', { ...attributes, rows: '3' }) : element('input', attributes);
     const wrapper = ledgerField(`${header.column} · ${header.label}`, control);
     const override = formula ? element('input', { type: 'checkbox', id: `ledger-override-${header.column}`, checked: cell.override === true,
       onchange: () => { control.disabled = !override.checked; if (override.checked) control.focus(); } }) : null;
     if (formula) {
       control.disabled = !override.checked;
-      wrapper.append(element('label', { class: 'ledger-override', for: override.id }, override, 'Override calculated value'),
-        element('p', { class: 'field-hint' }, calculated?.status === 'error' ? calculated.error || 'The source calculation needs review.' : 'The source formula is preserved.'),
+      wrapper.append(element('label', { class: 'ledger-override', for: override.id }, override, 'Задать значение вручную'),
+        element('p', { class: 'field-hint' }, calculated?.status === 'error' ? calculated.error || 'Требуется проверка исходного расчёта.' : 'Исходная формула сохраняется.'),
         element('code', { class: 'ledger-cell-note' }, cell.formula));
-    } else if (cell.type === 'error') wrapper.append(element('p', { class: 'field-hint' }, 'Source value unavailable. Replace it with a number or leave it unchanged.'));
+    } else if (cell.type === 'error') wrapper.append(element('p', { class: 'field-hint' }, 'Исходное значение недоступно. Введите число или оставьте его без изменений.'));
     controls.set(header.column, { control, override, type, template, initialText: control.value, initialOverride: override?.checked });
     (formula ? derived : inputs).append(wrapper);
   }
-  const submitButton = ledgerButton(record ? 'Save changes' : 'Add entry', () => {}, true);
+  const submitButton = ledgerButton(record ? 'Сохранить изменения' : 'Добавить запись', () => {}, true);
   submitButton.type = 'submit';
-  fields.append(element('legend', {}, record ? `Edit ${sheet.name} · ${record.source_row ? `row ${record.source_row}` : 'manual entry'}` : `Add entry · ${section}`),
+  fields.append(element('legend', {}, record ? `Изменить: ${sheet.name} · ${record.source_row ? `строка ${record.source_row}` : 'ручная запись'}`
+    : `Добавить запись · ${ledgerSectionLabel(sheet.metadata?.sections?.find(item => item.id === section) || { id: section })}`),
     element('p', { class: 'ledger-notice' }, record
-      ? 'Changes are recorded in the app. Original workbook values and formulas remain available.'
-      : 'This manual entry is included in current entry totals. Original worksheet formulas keep their original ranges.'), inputs,
-    derived.childElementCount ? element('details', { class: 'ledger-source-detail' }, element('summary', {}, 'Saved calculations and manual overrides'),
-      element('p', { class: 'ledger-notice' }, 'Calculated values refresh after input changes are saved.'), derived) : null,
-    element('div', { class: 'ledger-reason' }, element('label', { for: reason.id }, 'Reason for this change'), reason),
-    conflict, feedback, element('div', { class: 'button-row' }, submitButton, ledgerButton('Cancel editing', close)));
+      ? 'Изменения сохраняются в приложении. Исходные значения и формулы книги остаются доступны.'
+      : 'Ручная запись включается в текущие итоги раздела. Исходные формулы листа сохраняют свои диапазоны.'), inputs,
+    derived.childElementCount ? element('details', { class: 'ledger-source-detail' }, element('summary', {}, 'Сохранённые расчёты и ручные значения'),
+      element('p', { class: 'ledger-notice' }, 'Расчётные значения обновятся после сохранения изменений.'), derived) : null,
+    element('div', { class: 'ledger-reason' }, element('label', { for: reason.id }, 'Причина изменения'), reason),
+    conflict, feedback, element('div', { class: 'button-row' }, submitButton, ledgerButton('Отменить редактирование', close)));
   form.append(fields);
 
   function read(control, type) {
     if (control.value.trim() === '') return null;
     if (type === 'number') {
       const value = Number(control.value);
-      if (!Number.isFinite(value)) throw new Error('Enter valid numeric values.');
+      if (!Number.isFinite(value)) throw new Error('Введите корректные числовые значения.');
       return value;
     }
     if (type === 'boolean') return control.value === 'true';
@@ -82,7 +83,7 @@ export function createLedgerEditor({ sheet, section, row, sampleRows = [], getCa
     try {
       const next = cells();
       if (!record && !Object.values(next).some(cell => cell.value != null && cell.value !== '')) {
-        feedback.textContent = 'Enter at least one value for this record.'; return;
+        feedback.textContent = 'Заполните хотя бы одно значение записи.'; return;
       }
       const result = await save('garage_ledger_save_row', { p_row_id: record?.id || null, p_expected_version: record?.version || 0,
         p_cells: next, p_section: record?.section || section, p_archived: record?.archived || false, p_reason: reason.value.trim() });
@@ -96,9 +97,9 @@ export function createLedgerEditor({ sheet, section, row, sampleRows = [], getCa
     const changed = Object.keys(entered).filter(column => !same(entered[column], baseline[column]));
     const review = element('dl', { class: 'ledger-values' }, changed.map(column => element('div', {},
       element('dt', {}, headers.find(header => header.column === column)?.label || column),
-      element('dd', {}, `Your entry: ${ledgerValue(entered[column]?.value)} · Latest saved: ${ledgerValue(latest.cells?.[column]?.value)}`))));
-    conflict.replaceChildren(renderNotice('Review the latest record', 'Your entries are kept. Check the saved values below before applying your changes to the latest revision.'), review,
-      ledgerButton('Use my entries with the latest revision', () => {
+      element('dd', {}, `Ваш ввод: ${ledgerValue(entered[column]?.value)} · Последнее сохранённое значение: ${ledgerValue(latest.cells?.[column]?.value)}`))));
+    conflict.replaceChildren(renderNotice('Проверьте последнюю версию', 'Ваш ввод сохранён в форме. Проверьте значения ниже перед применением изменений к последней версии.'), review,
+      ledgerButton('Применить мой ввод к последней версии', () => {
         const merged = { ...clone(latest.cells) };
         for (const column of changed) merged[column] = entered[column];
         baseline = clone(latest.cells); record = clone(latest);
@@ -112,7 +113,7 @@ export function createLedgerEditor({ sheet, section, row, sampleRows = [], getCa
           const result = cell.formula && !cell.override ? resultFor(sheet, record, column, getCalculator()) : { value: cell.value };
           entry.control.value = result.value == null || cell.formula && cell.type === 'error' && !cell.override ? '' : String(result.value);
         }
-        conflict.replaceChildren(renderNotice('Latest revision loaded', 'Your changed fields are retained. Review and save to record the merged entry.'));
+        conflict.replaceChildren(renderNotice('Последняя версия загружена', 'Ваши изменения сохранены в форме. Проверьте и сохраните объединённую запись.'));
       }));
   }
   return { element: form, showConflict, dispose() { active = false; } };
