@@ -172,7 +172,8 @@ export function renderOrderList({ owner, profile, section, orders, intakes, need
         ? 'This row is no longer in the connected table. The saved order is kept.'
         : intake?.owner_managed || order.owner_managed ? 'The table text changed after Owner review. Your saved work selection is preserved.'
           : 'The Manager table text changed. Review the latest request before editing this order.') : null,
-      order.instructions && !(order.instructions_from_manager === true && order.manager_comment_updated_at)
+      order.instructions && order.instructions !== order.manager_comment
+        && !(order.instructions_from_manager === true && order.manager_comment_updated_at)
         ? element('p', { class: 'order-instructions' }, order.instructions) : null,
       order.manager_comment ? element('section', { class: 'order-manager-comment', 'aria-label': 'Manager comment' },
         element('h4', {}, 'Manager comment'), element('p', { class: 'order-instructions' }, order.manager_comment),
