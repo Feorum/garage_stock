@@ -65,9 +65,42 @@ export function VehicleRow({ order, selected, locked, open, take }: RowProps) {
   );
 }
 
-function WorkChecklist({ tasks }: { tasks: HandoffTask[] }) {
+function ChecklistItems({ tasks }: { tasks: HandoffTask[] }) {
+  if (!tasks.length) return null;
+  return (
+    <ul>
+      {tasks.map((task) => (
+        <li key={task.id}>
+          <span>{taskName(task)}</span>
+          {task.status !== 'completed' && <small>{taskLabel[task.status] || 'В работе'}</small>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function WorkChecklist({ tasks, confirmation = false }: { tasks: HandoffTask[]; confirmation?: boolean }) {
   const complete = tasks.filter((task) => task.status === 'completed');
   const open = tasks.filter((task) => !['completed', 'cancelled'].includes(task.status));
+  if (confirmation) {
+    if (!open.length && !complete.length) return <p class="shift-hint">Нет доступных работ для передачи.</p>;
+    return (
+      <div class="handoff-checklist">
+        <section class="handoff-remaining">
+          <h4>Осталось выполнить <span class="shift-count">{open.length}</span></h4>
+          <ChecklistItems tasks={open} />
+        </section>
+        {complete.length > 0 ? (
+          <details open={!open.length}>
+            <summary>Выполнено · {complete.length}</summary>
+            <ChecklistItems tasks={complete} />
+          </details>
+        ) : (
+          <p class="shift-hint">Выполнено · 0</p>
+        )}
+      </div>
+    );
+  }
   return (
     <div class="vehicle-checklist">
       {[
@@ -78,16 +111,7 @@ function WorkChecklist({ tasks }: { tasks: HandoffTask[] }) {
           <h4>
             {group.title} · {group.items.length}
           </h4>
-          {!!group.items.length && (
-            <ul>
-              {group.items.map((task) => (
-                <li key={task.id}>
-                  <span>{taskName(task)}</span>
-                  {task.status !== 'completed' && <small>{taskLabel[task.status] || 'В работе'}</small>}
-                </li>
-              ))}
-            </ul>
-          )}
+          <ChecklistItems tasks={group.items} />
         </section>
       ))}
     </div>
@@ -202,16 +226,16 @@ export function VehicleDetail({
       {showDraft && draft && (
         <form
           class="vehicle-handoff"
+          aria-labelledby="vehicle-handoff-title"
           onSubmit={async (event) => {
             event.preventDefault();
-            if (!stale && (await handoff(draft.version, draft.note))) setDraft(null);
+            if (!locked && !stale && (await handoff(draft.version, draft.note))) setDraft(null);
           }}
         >
-          <h3 tabIndex={-1} ref={checklistTitle}>
+          <h3 id="vehicle-handoff-title" tabIndex={-1} ref={checklistTitle}>
             Передача владельцу
           </h3>
-          <p>Проверьте состояние доступных вам работ перед передачей автомобиля.</p>
-          <WorkChecklist tasks={tasks} />
+          <WorkChecklist tasks={tasks} confirmation />
           <label>
             Комментарий владельцу <span class="shift-hint">(необязательно)</span>
             <textarea
@@ -235,7 +259,7 @@ export function VehicleDetail({
           )}
           <div class="shift-button-strip">
             <button class="button button-primary" disabled={locked || stale}>
-              Подтвердить передачу
+              Передать владельцу
             </button>
             <button type="button" class="button" disabled={saving} onClick={() => setDraft(null)}>
               Отмена
@@ -261,48 +285,50 @@ export function VehicleDetail({
       {!flow && order.status === 'published' && (
         <p class="shift-alert">Статус автомобиля недоступен. Обновите смену.</p>
       )}
-      <section class="shift-detail-section vehicle-services">
-        <div class="shift-section-heading">
-          <h3>Работы по автомобилю</h3>
-          {total > 0 && (
-            <span class="shift-count">{`Выполнено ${counted.completed} из ${total}`}</span>
+      {!showDraft && (
+        <section class="shift-detail-section vehicle-services">
+          <div class="shift-section-heading">
+            <h3>Работы по автомобилю</h3>
+            {total > 0 && (
+              <span class="shift-count">{`Выполнено ${counted.completed} из ${total}`}</span>
+            )}
+          </div>
+          {tasks.length ? (
+            <ul class="shift-list">
+              {orderedTasks.map((task) => {
+                const team = participants(task);
+                const names = team.map((member) => member.name).filter(Boolean);
+                return (
+                  <li key={task.id} data-task-id={task.id}>
+                    <button
+                      type="button"
+                      class="shift-row vehicle-task-row"
+                      data-shift-target={task.id}
+                      onClick={() => openTask(task.id)}
+                    >
+                      <span class="shift-row-main">
+                        <strong>{taskName(task)}</strong>
+                        {names.length > 0 && <small>Команда: {names.join(', ')}</small>}
+                        {history && mine(task, profileId) === 'confirmed' && <small>Ваше выполнение учтено</small>}
+                      </span>
+                      <span class={`task-status status-${task.status}`}>
+                        {taskLabel[task.status] || 'Состояние уточняется'}
+                      </span>
+                      {task === next ? (
+                        <span class="button button-primary vehicle-open-task">Открыть работу</span>
+                      ) : (
+                        <span aria-hidden="true" class="shift-arrow">→</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p class="shift-hint">В этом посещении нет доступных работ.</p>
           )}
-        </div>
-        {tasks.length ? (
-          <ul class="shift-list">
-            {orderedTasks.map((task) => {
-              const team = participants(task);
-              const names = team.map((member) => member.name).filter(Boolean);
-              return (
-                <li key={task.id} data-task-id={task.id}>
-                  <button
-                    type="button"
-                    class="shift-row vehicle-task-row"
-                    data-shift-target={task.id}
-                    onClick={() => openTask(task.id)}
-                  >
-                    <span class="shift-row-main">
-                      <strong>{taskName(task)}</strong>
-                      {names.length > 0 && <small>Команда: {names.join(', ')}</small>}
-                      {history && mine(task, profileId) === 'confirmed' && <small>Ваше выполнение учтено</small>}
-                    </span>
-                    <span class={`task-status status-${task.status}`}>
-                      {taskLabel[task.status] || 'Состояние уточняется'}
-                    </span>
-                    {task === next ? (
-                      <span class="button button-primary vehicle-open-task">Открыть работу</span>
-                    ) : (
-                      <span aria-hidden="true" class="shift-arrow">→</span>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <p class="shift-hint">В этом посещении нет доступных работ.</p>
-        )}
-      </section>
+        </section>
+      )}
       {!readyToHandoff && handoffControl}
       {order.manager_comment && (
         <section class="shift-detail-section">

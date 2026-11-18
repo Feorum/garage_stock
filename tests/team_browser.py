@@ -45,9 +45,10 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
 
     def handoff(page, note):
         page.get_by_role('button', name='Передать владельцу', exact=True).click()
-        comment = page.get_by_label('Комментарий владельцу')
+        form = page.locator('form.vehicle-handoff')
+        comment = form.get_by_label('Комментарий владельцу')
         comment.fill(note)
-        confirm_handoff = page.get_by_role('button', name='Подтвердить передачу', exact=True)
+        confirm_handoff = form.get_by_role('button', name='Передать владельцу', exact=True)
         confirm_handoff.click()
         success = page.get_by_text('Автомобиль передан владельцу на проверку.', exact=True)
         review = page.get_by_role('button', name='Я проверил изменения', exact=True)

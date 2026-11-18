@@ -332,15 +332,29 @@ input[type='checkbox'], input[type='radio'] { width: 1.1rem; height: 1.1rem; mar
 .vehicle-detail > .shift-hint { margin-block: .35rem .5rem; }
 .vehicle-services { padding-top: .8rem; }
 .vehicle-services .shift-section-heading > .shift-count { padding: 0; border-radius: 0; background: none; }
-.vehicle-controls, .vehicle-detail > .vehicle-handoff { margin-block: .8rem; }
+.vehicle-controls { margin-block: .8rem; }
 .vehicle-controls .vehicle-secondary-action { background: transparent; }
 .vehicle-task-row { row-gap: .55rem; }
 .vehicle-open-task { grid-column: 1 / -1; width: 100%; }
 .vehicle-task-row:hover .vehicle-open-task { background: #ffd293; color: var(--accent-ink); }
-.vehicle-handoff, .vehicle-receipt { display: grid; gap: .75rem; padding: .95rem; border: 1px solid var(--control-line); border-inline-start: 3px solid var(--accent); border-radius: .4rem; }
-.vehicle-handoff label { display: grid; gap: .25rem; }
-.vehicle-handoff textarea { min-height: 5rem; }
-.vehicle-receipt { margin-block: .75rem; border-inline-start-color: var(--info); }
+.vehicle-handoff { display: grid; gap: 1rem; margin-block: 1rem; padding-block-start: 1rem; border-block-start: 1px solid var(--line); }
+.vehicle-handoff h3 { font-size: 1.24rem; }
+.handoff-checklist ul { display: grid; gap: .45rem; margin: 0; padding: 0; list-style: none; }
+.handoff-remaining { padding-block-end: 1rem; }
+.handoff-remaining h4 { display: flex; justify-content: space-between; align-items: center; gap: .6rem; font-size: 1.08rem; line-height: 1.4; }
+.handoff-remaining .shift-count { padding: .1rem .5rem; border-radius: .25rem; background: #343b3a; color: var(--ink); }
+.handoff-remaining h4 + ul { margin-top: .75rem; }
+.handoff-remaining li { padding: .75rem .875rem; border-inline-start: 3px solid var(--accent); border-radius: .25rem; background: var(--surface-raised); font-size: 1.02rem; line-height: 1.35; font-weight: 650; }
+.handoff-remaining small { display: block; margin-top: .2rem; font-size: .86rem; font-weight: 400; color: var(--warning); }
+.handoff-checklist details { border-block: 1px solid var(--line); }
+.handoff-checklist summary { padding: .75rem 0; min-height: 48px; cursor: pointer; font-size: .96rem; font-weight: 600; }
+.handoff-checklist summary::marker { color: var(--muted); }
+.handoff-checklist details ul { padding-bottom: .875rem; }
+.vehicle-handoff label { color: var(--ink); font-weight: 600; font-size: .94rem; }
+.vehicle-handoff label .shift-hint { font-weight: 400; font-size: .85rem; }
+.vehicle-handoff textarea { display: block; margin-top: .45rem; min-height: 4.75rem; font-weight: 400; }
+.vehicle-handoff .shift-button-strip .button { min-height: 46px; }
+.vehicle-receipt { display: grid; gap: .75rem; margin-block: .75rem; padding: .95rem; border: 1px solid var(--control-line); border-inline-start: 3px solid var(--info); border-radius: .4rem; }
 .vehicle-receipt p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .vehicle-checklist { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(13rem,100%),1fr)); gap: .7rem; }
 .vehicle-checklist section { padding: .65rem .75rem; background: var(--surface-raised); border-radius: .3rem; }
@@ -354,7 +368,6 @@ input[type='checkbox'], input[type='radio'] { width: 1.1rem; height: 1.1rem; mar
   .vehicle-index-row { padding-inline: 0; }
   .vehicle-index-button { flex-basis: 100%; }
   .vehicle-take, .vehicle-controls > .button { width: 100%; }
-  .vehicle-handoff { padding: .75rem; }
   .vehicle-handoff .shift-button-strip > .button-primary { flex: 1 1 auto; }
 }
 
