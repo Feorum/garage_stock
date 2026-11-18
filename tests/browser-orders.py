@@ -185,9 +185,12 @@ def run(args):
             card.get_by_role('button', name='Подтвердить отмену', exact=True).click()
             expect(card.get_by_text('Отменено', exact=True)).to_be_visible()
             page.get_by_role('button', name='Закрыть заказ', exact=True).click()
+            expect(page.get_by_text('Заказ закрыт.', exact=True)).to_be_visible()
             page.get_by_role('button', name='К списку заказов', exact=True).click()
+            expect(page.get_by_role('region', name='Подробности заказа')).to_have_count(0)
             page.get_by_role('combobox', name='Статус заказа', exact=True).select_option('closed')
-            expect(page.get_by_text('Synthetic vehicle 10', exact=True)).to_be_visible()
+            closed_row = page.locator(f'[data-order-id="{owner_order["id"]}"]')
+            expect(closed_row.get_by_text('Закрыт', exact=True)).to_be_visible()
             assert page.evaluate('__garageOrderState.orders[0].status') == 'closed'
             assert page.evaluate('__garageOrderState.orders[0].tasks[0].status') == 'completed'
             passed.append('Owner reassigns, cancels remaining scope and closes without deleting completed work')
