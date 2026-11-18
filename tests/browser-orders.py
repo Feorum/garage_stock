@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright, expect
-from order_browser_helpers import navigate_section, task_card
+from order_browser_helpers import navigate_section, open_visit, task_card
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +52,7 @@ def safe_mechanic(page):
     assert not rpc_calls(page, 'garage_order_financials')
     assert not rpc_calls(page, 'garage_manager_intakes')
     assert not rpc_calls(page, 'garage_quote_order')
+    assert not rpc_calls(page, 'garage_save_task_pricing')
     body = page.locator('body').inner_text()
     for forbidden in ('BYN', 'EUR', 'НДС', '€', 'Посмотреть стоимость'):
         assert forbidden not in body, forbidden
@@ -170,6 +171,7 @@ def run(args):
             completed['completed_at'] = '2026-11-12T09:00:00Z'
             pending = task(11, 'W02')
             owner_order = order(10, tasks=[completed, pending])
+            owner_order['vehicle_workflow'] = {'state': 'active', 'holder_id': ME}
             context, page, errors, live = smoke.new_page(browser, {'orders': [owner_order]})
             page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
@@ -184,8 +186,17 @@ def run(args):
             card.get_by_label('Причина', exact=True).fill('Synthetic scope reduction')
             card.get_by_role('button', name='Подтвердить отмену', exact=True).click()
             expect(card.get_by_text('Отменено', exact=True)).to_be_visible()
-            page.get_by_role('button', name='Закрыть заказ', exact=True).click()
-            expect(page.get_by_text('Заказ закрыт.', exact=True)).to_be_visible()
+            expect(page.get_by_role('button', name='Принять и закрыть заказ', exact=True)).to_have_count(0)
+            assert page.evaluate('__garageOrderState.orders[0].tasks[0].status') == 'completed'
+            finish_context(context, errors, live)
+            # The Owner can close this visit only after a mechanic has handed it back.
+            owner_order['tasks'][1]['status'] = 'cancelled'
+            owner_order['vehicle_workflow'] = {'state': 'review', 'holder_id': ME,
+                'handoff_tasks': [{key: t[key] for key in ('id', 'work_name', 'status')} for t in owner_order['tasks']]}
+            context, page, errors, live = smoke.new_page(browser, {'orders': [owner_order]})
+            page.goto(base + '/index.html#orders/' + owner_order['id'])
+            page.get_by_role('button', name='Принять и закрыть заказ', exact=True).click()
+            page.wait_for_function("__garageOrderState.orders[0].status === 'closed'")
             page.get_by_role('button', name='К списку заказов', exact=True).click()
             expect(page.get_by_role('region', name='Подробности заказа')).to_have_count(0)
             page.get_by_role('combobox', name='Статус заказа', exact=True).select_option('closed')
@@ -208,6 +219,7 @@ def run(args):
             smoke.ready(page, 'Test Mechanic')
             expect(page.get_by_text('Synthetic vehicle 1', exact=True)).to_be_visible()
             expect(page.get_by_text('Synthetic vehicle 2', exact=True)).to_have_count(0)
+            open_visit(page, assigned['id'], take=True)
             card = task_card(page, assigned['tasks'][0]['id'])
             card.get_by_role('button', name='Начать работу', exact=True).click()
             expect(card.get_by_role('button', name='Подтвердить свою работу', exact=True)).to_be_visible()
@@ -231,16 +243,17 @@ def run(args):
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             passed.append('assigned mechanic starts, blocks, resumes and completes without financial access')
             navigate_section(page, 'Общая очередь')
+            open_visit(page, shared['id'], take=True)
             shared_card = task_card(page, shared['tasks'][0]['id'])
             shared_card.get_by_role('button', name='Начать работу', exact=True).click()
             navigate_section(page, 'Моя смена')
-            shared_card = task_card(page, shared['tasks'][0]['id'])
+            shared_card = task_card(page, shared['tasks'][0]['id'], shared['id'])
             expect(shared_card.get_by_role('button', name='Подтвердить свою работу', exact=True)).to_be_visible()
             shared_card.get_by_role('button', name='Вернуть в очередь', exact=True).click()
             shared_card.get_by_label('Причина', exact=True).fill('Synthetic shared release reason')
             shared_card.get_by_role('button', name='Подтвердить возврат', exact=True).click()
             navigate_section(page, 'Общая очередь')
-            expect(task_card(page, shared['tasks'][0]['id']).get_by_role('button', name='Начать работу', exact=True)).to_be_visible()
+            expect(task_card(page, shared['tasks'][0]['id'], shared['id']).get_by_role('button', name='Начать работу', exact=True)).to_be_visible()
             safe_mechanic(page)
             passed.append('mechanic self-claims and explicitly returns a Manager task without changing Owner assignments')
             finish_context(context, errors, live)
@@ -284,6 +297,10 @@ def run(args):
             expect(page.get_by_text('Test Mechanic · участий: 1', exact=True)).to_be_visible()
             expect(page.get_by_text('Other Mechanic · участий: 1', exact=True)).to_be_visible()
             expect(page.get_by_text('Незавершённых работ: 1 · с приостановкой: 1', exact=True)).to_be_visible()
+            page.get_by_label('С даты', exact=True).fill('2026-11-14')
+            expect(page.get_by_role('alert')).to_contain_text('Дата начала должна быть раньше даты окончания')
+            expect(page.get_by_text('Незавершённых работ: 1 · с приостановкой: 1', exact=True)).to_be_visible()
+            page.get_by_label('С даты', exact=True).fill('2026-11-13')
             page.get_by_role('combobox', name='Механик', exact=True).select_option(OTHER)
             expect(page.get_by_text('Test Mechanic · участий: 1', exact=True)).to_have_count(0)
             expect(page.get_by_text('Незавершённых работ: 0 · с приостановкой: 0', exact=True)).to_be_visible()

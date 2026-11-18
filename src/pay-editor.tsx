@@ -11,14 +11,19 @@ interface Props {
 
 export function PayEditor({ item, client, close, saved }: Props) {
   const [version, setVersion] = useState(item.version);
-  const [pool, setPool] = useState(item.pool_kopeks === null ? '' : decimal(item.pool_kopeks));
+  const initialPool = item.pool_kopeks ?? item.suggested_pool_kopeks;
+  const [pool, setPool] = useState(initialPool == null ? '' : decimal(initialPool));
+  const [equal, setEqual] = useState(
+    item.pool_kopeks == null ? Boolean(item.suggested_shares?.length) : Boolean(item.equal_split)
+  );
   const [reason, setReason] = useState('');
   const [zero, setZero] = useState(false);
   const [parts, setParts] = useState<Record<string, string>>(() => {
     const result: Record<string, string> = {};
     const final = item.candidates.filter(person => !person.former);
+    const initialShares = item.pool_kopeks == null ? item.suggested_shares || [] : item.shares;
     for (const person of item.candidates) {
-      const prior = item.shares.find(share => share.mechanic_id === person.mechanic_id);
+      const prior = initialShares.find(share => share.mechanic_id === person.mechanic_id);
       if (prior) result[person.mechanic_id] = decimal(prior.basis_points);
       else if (!person.former) result[person.mechanic_id] = final.length === 1 ? '100' : '';
     }
@@ -36,6 +41,19 @@ export function PayEditor({ item, client, close, saved }: Props) {
   const values = chosen.map(person => hundredths(parts[person.mechanic_id]));
   const total = values.reduce<number>((sum, part) => sum + (part ?? 0), 0);
   const reasonNeeded = version > 0 || chosen.some(person => person.former);
+  const previews = new Map<string, number>();
+  if (cents != null && total === 10000 && values.every(n => n != null && n <= 10000)) {
+    const denominator = equal ? chosen.length : 10000;
+    const ranked = chosen.map((person, index) => {
+      const weight = equal ? 1 : values[index]!;
+      // Divide first so even large BYN inputs stay within the exact integer range.
+      const tail = (cents % denominator) * weight;
+      const base = Math.floor(cents / denominator) * weight + Math.floor(tail / denominator);
+      return { id: person.mechanic_id, base, remainder: tail % denominator };
+    }).sort((a, b) => b.remainder - a.remainder || a.id.localeCompare(b.id));
+    const extra = cents - ranked.reduce((sum, person) => sum + person.base, 0);
+    ranked.forEach((person, i) => previews.set(person.id, person.base + Number(i < extra)));
+  }
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
@@ -49,7 +67,7 @@ export function PayEditor({ item, client, close, saved }: Props) {
     const args = {
       p_task_id: item.task_id, p_expected_version: version, p_pool_kopeks: cents,
       p_shares: chosen.map((person, index) => ({ mechanic_id: person.mechanic_id, basis_points: values[index] })),
-      p_reason: reason.trim(), p_zero_confirmed: cents === 0 && zero
+      p_reason: reason.trim(), p_zero_confirmed: cents === 0 && zero, ...(equal ? { p_equal_split: true } : {})
     };
     const fingerprint = JSON.stringify(args);
     if (request.current.fingerprint !== fingerprint) request.current = { fingerprint, id: crypto.randomUUID() };
@@ -82,6 +100,7 @@ export function PayEditor({ item, client, close, saved }: Props) {
     if (included) next[id] = '';
     else delete next[id];
     setParts(next);
+    setEqual(false);
     setError('');
   }
 
@@ -99,14 +118,23 @@ export function PayEditor({ item, client, close, saved }: Props) {
       {cents === 0 && <label class="pay-check"><input type="checkbox" checked={zero} required
         onChange={event => { setZero(event.currentTarget.checked); setError(''); }} /> Подтверждаю сумму 0,00 BYN</label>}
       <fieldset class="pay-shares"><legend>Доли механиков</legend>
+        {item.suggested_shares?.length ? <button type="button" class="button" onClick={() => {
+          setParts(Object.fromEntries(item.suggested_shares!.map(s => [s.mechanic_id, decimal(s.basis_points)])));
+          setEqual(true);
+          setError('');
+        }}>Разделить поровну между исполнителями</button> : null}
         {item.candidates.map(person => <div key={person.mechanic_id} class="pay-person">
           {person.former && <label class="pay-check"><input type="checkbox" checked={person.mechanic_id in parts}
             onChange={event => formerParticipation(person.mechanic_id, event.currentTarget.checked)} />
             Включить прежнего участника · {person.name}</label>}
           {person.mechanic_id in parts && <label>Доля · {person.name}, %
             <input required inputMode="decimal" autoComplete="off" value={parts[person.mechanic_id]}
-              onInput={event => setParts({ ...parts, [person.mechanic_id]: event.currentTarget.value })} />
+              onInput={event => {
+                setEqual(false);
+                setParts({ ...parts, [person.mechanic_id]: event.currentTarget.value });
+              }} />
           </label>}
+          {previews.has(person.mechanic_id) && <span>К распределению · {money(previews.get(person.mechanic_id)!)}</span>}
         </div>)}
         <p class="muted">Сумма долей · {decimal(total)}%</p>
       </fieldset>

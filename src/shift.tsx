@@ -1,18 +1,24 @@
-import { h } from 'preact';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { confirmations, dayLabel, finishedAt, isTerminal, matchesWork, mayJoin, mine, participantLabel, participants, sortWork, taskLabel, taskName, today } from './shift-model';
-import type { Intake, Order, ShiftProps, TaskRow } from './shift-model';
+import { confirmations, dayLabel, isTerminal, matchesVisit, participants, taskName, today, vehicleGroups, visibleProgress } from './shift-model';
+import type { Intake, Order, ShiftProps } from './shift-model';
 import { TaskDetail } from './shift-task';
+import { VehicleDetail, VehicleRow } from './shift-vehicle';
+import { useVehicleActions } from './shift-vehicle-actions';
 
-interface Group { title: string; rows: TaskRow[] }
 interface Snapshot { orders: Order[]; intakes: Intake[]; intakeFailed: boolean }
-interface Attention { key: string; kind: string; taskId?: string; recordId: string; title: string; description: string }
-const exceptionFilters = [ ['all','Все'], ['blocked','Приостановки'], ['intake','Заявки'], ['due','Сроки'], ['signoff','Подтверждения'], ['close','К закрытию'] ] as const;
+interface Attention { key: string; kind: string; closable?: boolean; taskId?: string; recordId: string; title: string; description: string }
+const exceptionFilters = [ ['all','Все'], ['handoff','Переданы владельцу'], ['blocked','Приостановки'], ['intake','Заявки'], ['due','Сроки'], ['signoff','Подтверждения'], ['close','К закрытию'] ] as const;
 function attentionItems(orders: Order[], intakes: Intake[]) {
   const items: Attention[] = [];
   const date = today();
   for (const order of orders) {
     if (order.status !== 'published') continue;
+    if (order.vehicle_workflow?.state === 'review') {
+      const { completed, unfinished } = visibleProgress(order);
+      items.push({ key:'handoff-' + order.id, kind:'handoff', closable:order.vehicle_workflow.can_close, recordId:order.id, title:order.vehicle,
+        description:`Передан владельцу · ${order.order_number} · Выполнено: ${completed} · Осталось: ${unfinished}` });
+      continue;
+    }
     const open = order.tasks.filter(task => !isTerminal(task));
     for (const task of open) {
       const progress = confirmations(task);
@@ -22,24 +28,26 @@ function attentionItems(orders: Order[], intakes: Intake[]) {
     }
     if (open.length && order.due_date && order.due_date <= date) items.push({ key: 'due-' + order.id, kind: 'due', recordId: order.id, title: order.vehicle,
       description: `${order.due_date === date ? 'Срок сегодня' : 'Просрочено'} · ${dayLabel(order.due_date)} · ${order.order_number}` });
-    if (!open.length && order.tasks.some(task => task.status === 'completed')) items.push({ key: 'close-' + order.id, kind: 'close', recordId: order.id, title: order.vehicle, description: `Работы завершены · ${order.order_number}` });
+    if (order.vehicle_workflow?.can_close) items.push({ key: 'close-' + order.id, kind: 'close', recordId: order.id, title: order.vehicle, description: `Работы завершены · ${order.order_number}` });
   }
   for (const intake of intakes) {
     if (intake.status !== 'pending' || intake.order_id) continue;
     items.push({ key: 'intake-' + intake.id, kind: 'intake', recordId: intake.id, title: intake.latest?.vehicle || intake.original?.vehicle || 'Автомобиль не указан',
       description: [intake.source_name || 'Заявка менеджера', intake.row_numbers?.length ? `Строка ${intake.row_numbers.join(', ')}` : '', 'Нужна проверка'].filter(Boolean).join(' · ') });
   }
-  const rank = ['blocked','due','intake','signoff','close'];
+  const rank = ['handoff','blocked','due','intake','signoff','close'];
   return items.sort((a, b) => rank.indexOf(a.kind) - rank.indexOf(b.kind));
 }
 function OwnerShift({ snapshot, openTask, openOrder }: { snapshot: Snapshot; openTask(id: string): void; openOrder(id?: string): void }) {
   const [filter, setFilter] = useState('all');
   const issues = useMemo(() => attentionItems(snapshot.orders, snapshot.intakes), [snapshot]);
-  const shown = issues.filter(item => filter === 'all' || item.kind === filter);
+  const inCategory = (item: Attention, category: string) =>
+    category === 'all' || item.kind === category || (category === 'close' && item.closable);
+  const shown = issues.filter(item => inCategory(item, filter));
   return <section class="shift-board" aria-label="Смена владельца">
     <div class="shift-section-heading"><h2>Требуют внимания</h2><span class="shift-count">{issues.length}</span></div>
     <div class="shift-filters" role="group" aria-label="Категории внимания">{exceptionFilters.map(([id, label]) => <button key={id} type="button" aria-pressed={filter === id} onClick={() => setFilter(id)}>
-      {label}{id !== 'all' && <span>{id === 'intake' && snapshot.intakeFailed ? '—' : issues.filter(item => item.kind === id).length}</span>}</button>)}</div>
+      {label}{id !== 'all' && <span>{id === 'intake' && snapshot.intakeFailed ? '—' : issues.filter(item => inCategory(item, id)).length}</span>}</button>)}</div>
     {snapshot.intakeFailed && <p class="shift-alert" role="status">Не удалось проверить заявки менеджеров. Обновите смену.</p>}
     {shown.length ? <ul class="shift-list">{shown.map(item => <li key={item.key}><button type="button" class={`shift-row attention-${item.kind}`} data-shift-target={item.taskId || item.recordId} onClick={() => item.taskId ? openTask(item.taskId) : openOrder(item.recordId)}>
       <span class="shift-row-main"><strong>{item.title}</strong><small>{item.description}</small></span><span aria-hidden="true" class="shift-arrow">→</span></button></li>)}</ul>
@@ -47,37 +55,6 @@ function OwnerShift({ snapshot, openTask, openOrder }: { snapshot: Snapshot; ope
     <div class="shift-board-footer"><button type="button" class="button" onClick={() => openOrder()}>Все заказы</button></div>
   </section>;
 }
-function groupsFor(section: ShiftProps['section'], rows: TaskRow[], id: string): Group[] {
-  const active = rows.filter(({order, task}) => order.status === 'published' && !isTerminal(task));
-  if (section === 'manager-orders') return [
-    { title: 'Доступны для участия', rows: sortWork(active.filter(row => mayJoin(row, id))) },
-    { title: 'Уже в работе', rows: sortWork(active.filter(row => row.order.source === 'manager' && !mayJoin(row, id) && participants(row.task).length > 0)) }
-  ];
-  const history = { title: 'Ваши подтверждения', rows: rows.filter(({task}) => mine(task, id) === 'confirmed' && task.status !== 'cancelled')
-    .sort((a, b) => finishedAt(b.task, id).localeCompare(finishedAt(a.task, id))) };
-  if (section === 'history') return [history];
-  const own = sortWork(active.filter(({order, task}) => mine(task, id) && (section !== 'assigned' || order.source === 'owner')));
-  return [
-    { title: 'В работе', rows: own.filter(({task}) => mine(task, id) === 'working') },
-    { title: 'Приостановлено', rows: own.filter(({task}) => mine(task, id) === 'blocked') },
-    { title: 'Назначено', rows: own.filter(({task}) => mine(task, id) === 'assigned') },
-    section === 'my-work' ? history : { title: 'Ожидаем команду', rows: own.filter(({task}) => mine(task, id) === 'confirmed') }
-  ];
-}
-function TaskButton({ row, id, selected, showTeam, onClick }: { row: TaskRow; id: string; selected: boolean; showTeam: boolean; onClick(): void }) {
-  const { task, order } = row;
-  const status = mine(task, id);
-  const signoff = confirmations(task);
-  const names = showTeam ? participants(task).map(person => person.name || 'Механик') : [];
-  return <button type="button" class={`shift-row${selected ? ' is-selected' : ''}`} data-shift-target={task.id} aria-current={selected ? 'true' : undefined} onClick={onClick}>
-    <span class="shift-row-main"><small class="shift-code">{order.order_number}{order.priority === 'urgent' ? ' · Срочно' : order.priority === 'high' ? ' · Высокий приоритет' : ''}</small>
-      <strong>{taskName(task)}</strong><span>{order.vehicle}</span>{names.length > 0 && <small>Команда: {names.slice(0,2).join(', ')}{names.length > 2 ? ` и ещё ${names.length - 2}` : ''}</small>}</span>
-    <span class="shift-row-end"><span class={`task-status ${status ? 'member-' + status : 'status-' + task.status}`}>{status ? participantLabel[status] : taskLabel[task.status]}</span>
-      {signoff.total > 1 ? <small>{signoff.count} из {signoff.total} подтвердили</small> : order.due_date ? <small>Срок {dayLabel(order.due_date)}</small> : null}</span>
-    <span class="shift-arrow" aria-hidden="true">→</span>
-  </button>;
-}
-
 export function ShiftView({ client, profile, section, recordId, navigate }: ShiftProps) {
   const owner = profile.role === 'admin';
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -88,6 +65,8 @@ export function ShiftView({ client, profile, section, recordId, navigate }: Shif
   const [seenAt, setSeenAt] = useState('');
   const generation = useRef(0);
   const previousRoute = useRef({section, recordId});
+  const currentRoute = useRef({section, recordId});
+  currentRoute.current = {section, recordId};
   const view = useRef<HTMLDivElement>(null);
   const trackedProfile = useRef(profile.id);
   const displayTime = useMemo(() => new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Minsk', hour: '2-digit', minute: '2-digit' }), []);
@@ -110,6 +89,9 @@ export function ShiftView({ client, profile, section, recordId, navigate }: Shif
       setError('Не удалось обновить данные смены. Проверьте подключение и повторите попытку.');
     } finally { if (generation.current === token) setBusy(false); }
   }, [client, owner, profile.id, displayTime]);
+  const vehicle = useVehicleActions(client, online, refresh, id => {
+    if (section === currentRoute.current.section && recordId === currentRoute.current.recordId) navigate(section, id);
+  });
   useEffect(() => {
     trackedProfile.current = profile.id;
     setSnapshot(null); setSeenAt(''); setError(''); setSearch('');
@@ -126,7 +108,8 @@ export function ShiftView({ client, profile, section, recordId, navigate }: Shif
   useEffect(() => {
     const previous = previousRoute.current;
     previousRoute.current = {section, recordId};
-    if (recordId || previous.section !== section || !previous.recordId) return;
+    if (previous.section !== section || !previous.recordId) return;
+    if (recordId && !snapshot?.orders.some(order => order.id === recordId && order.tasks.some(task => task.id === previous.recordId))) return;
     const handle = requestAnimationFrame(() => {
       const selector = `[data-shift-target="${CSS.escape(previous.recordId!)}"]`;
       const trigger = view.current?.querySelector<HTMLButtonElement>(selector);
@@ -134,25 +117,36 @@ export function ShiftView({ client, profile, section, recordId, navigate }: Shif
     });
     return () => cancelAnimationFrame(handle);
   }, [section, recordId]);
-  const rows = useMemo(() => (snapshot?.orders || []).flatMap(order => (order.tasks || []).map(task => ({ order, task }))), [snapshot]);
-  const groups = useMemo(() => groupsFor(section, rows, profile.id).map(group => ({ ...group, rows: group.rows.filter(row => matchesWork(row, search)) })), [section, rows, profile.id, search]);
-  const selected = recordId ? rows.find(({ task }) => task.id === recordId) : undefined;
-  const detail = selected && (owner || mine(selected.task, profile.id) || (selected.order.source === 'manager' && selected.order.status === 'published' && !isTerminal(selected.task)));
+  const orders = snapshot?.orders;
+  const groups = useMemo(() => owner ? [] : vehicleGroups(section, orders || [], profile.id).map(group => ({
+    ...group, orders:group.orders.filter(order => matchesVisit(order, search))
+  })), [owner, section, orders, profile.id, search]);
+  const taskOrder = recordId ? orders?.find(order => order.tasks.some(task => task.id === recordId)) : undefined;
+  const task = taskOrder && taskOrder.tasks.find(task => task.id === recordId);
+  const selectedVisit = !owner && recordId && orders?.find(order => order.id === recordId);
   const openTask = (id: string) => navigate(section, id);
-  const listTitle = section === 'manager-orders' ? 'Доступные работы' : section === 'history' ? 'История работ' : 'Задачи смены';
+  const listTitle = section === 'manager-orders' ? 'Общая очередь автомобилей' : section === 'history' ? 'История по автомобилям' : 'Автомобили смены';
+  const locked = !online || !!error || vehicle.saving || !!vehicle.uncertain;
   if (trackedProfile.current !== profile.id) return <p role="status">Загружаем смену…</p>;
   return <div ref={view} class={`shift-workspace${recordId ? ' has-detail' : ''}`}>
     <div class="shift-toolbar"><span class="shift-hint">{seenAt ? `Обновлено в ${seenAt}` : busy ? 'Загружаем смену…' : 'Данные не загружены'}</span>
       <button type="button" class="button" disabled={busy || !online} onClick={() => void refresh()}>Обновить</button></div>
     {error && <p class="shift-alert" role="alert">{error}</p>}
+    {vehicle.feedback && <div class={vehicle.feedback.error ? 'shift-alert' : 'shift-saved'} role="status">{vehicle.feedback.message}
+      {vehicle.uncertain && <button class="button" type="button" disabled={!online || vehicle.saving} onClick={() => void vehicle.retry()}>Проверить отправку</button>}</div>}
     {snapshot && <div class={`shift-layout${recordId ? ' with-detail' : ''}`}><div class="shift-master" aria-label={owner ? 'Работа мастерской' : listTitle}>
       {owner ? <OwnerShift snapshot={snapshot} openTask={openTask} openOrder={id => navigate('orders', id)}/> : <>
-        <div class="shift-search"><label htmlFor="shift-search">Поиск</label><input id="shift-search" type="search" value={search} placeholder="Работа, автомобиль, VIN или заказ" onInput={e => setSearch(e.currentTarget.value)}/></div>
-        {groups.filter(group => group.rows.length).map(group => <section key={group.title} class="shift-board"><div class="shift-section-heading"><h2>{group.title}</h2><span class="shift-count">{group.rows.length}</span></div>
-          <ul class="shift-list">{group.rows.map(row => <li key={row.task.id} data-task-id={row.task.id}><TaskButton row={row} id={profile.id} selected={recordId === row.task.id} showTeam={section === 'manager-orders'} onClick={() => openTask(row.task.id)}/></li>)}</ul></section>)}
-        {groups.every(group => !group.rows.length) && <div class="shift-empty"><h2>{search ? 'Совпадений нет' : section === 'manager-orders' ? 'Свободных работ пока нет' : section === 'history' ? 'Подтверждений пока нет' : 'У вас нет текущих задач'}</h2>
+        <div class="shift-search"><label htmlFor="shift-search">Поиск</label><input id="shift-search" type="search" value={search} placeholder="Автомобиль, VIN, заказ или работа" onInput={e => setSearch(e.currentTarget.value)}/></div>
+        {groups.filter(group => group.orders.length).map(group => <section key={group.title} class="shift-board"><div class="shift-section-heading"><h2>{group.title}</h2><span class="shift-count">{group.orders.length}</span></div>
+          <ul class="shift-list">{group.orders.map(order => <VehicleRow key={order.id} order={order} locked={locked} selected={recordId === order.id || taskOrder?.id === order.id}
+            open={() => navigate(section, order.id)} take={() => void vehicle.run(order, 'take', order.version)}/>)}</ul></section>)}
+        {groups.every(group => !group.orders.length) && <div class="shift-empty"><h2>{search ? 'Совпадений нет' : section === 'history' ? 'История пока пуста' : 'Автомобилей пока нет'}</h2>
           {search ? <button type="button" class="button" onClick={() => setSearch('')}>Очистить поиск</button> : section === 'shift' || section === 'assigned' ? <button type="button" class="button" onClick={() => navigate('manager-orders')}>Открыть общую очередь</button> : null}</div>}
       </>}
-    </div>{recordId && <div class="shift-detail-slot">{detail && selected ? <TaskDetail key={selected.task.id} row={selected} profile={profile} online={online} current={!error} client={client} refresh={refresh} close={() => navigate(section)} openOrder={id => navigate('orders', id)}/> : <div class="shift-empty"><h2>Работа больше недоступна</h2><button type="button" class="button" onClick={() => navigate(section)}>К списку</button></div>}</div>}</div>}
+    </div>{recordId && <div class="shift-detail-slot">{selectedVisit ? <VehicleDetail key={selectedVisit.id} order={selectedVisit} profileId={profile.id} section={section} locked={locked} saving={vehicle.saving}
+      openTask={openTask} close={() => navigate(section)} take={() => void vehicle.run(selectedVisit,'take',selectedVisit.version)} handoff={(version, note) => vehicle.run(selectedVisit,'handoff',version,note)}/>
+      : taskOrder && task ? <TaskDetail key={task.id} row={{order:taskOrder,task}} profile={profile} online={online} current={!error && !vehicle.saving && !vehicle.uncertain} client={client} refresh={refresh}
+        close={() => navigate(section, owner ? undefined : taskOrder.id)} openOrder={id => navigate('orders', id)}/>
+      : <div class="shift-empty"><h2>Запись больше недоступна</h2><button type="button" class="button" onClick={() => navigate(section)}>К списку</button></div>}</div>}</div>}
   </div>;
 }

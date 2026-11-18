@@ -5,14 +5,14 @@ Live app: https://feorum.github.io/garage_stock/.
 
 ## Current functionality
 
-The Russian-language PWA opens on the current shift. Owners see requests awaiting review, blockers, outstanding team confirmations and orders ready to close. Mechanics see personal tasks, the shared queue and their work history. The workshop uses Europe/Minsk for deadlines and reporting.
+The Russian-language PWA opens on the current shift. A mechanic takes a vehicle visit, works through its assigned services and hands it to the Owner for review. The Owner sees the completed and outstanding services together, can return the vehicle for remaining work, and can close a finished order. Two visits for the same VIN have independent handoffs. The workshop uses Europe/Minsk for deadlines and reporting.
 
 - A Manager task can have several mechanics. Joining is open until the first personal confirmation. A private order has an Owner-selected team for each catalogue task.
 - A mechanic can pause their own participation, resume it, or confirm their part. The last required confirmation creates one completion for the service. Owners can adjust the roster with a reason, including after sign-off starts. Participant history is retained.
 - Owners can create, interpret, edit and close orders, or record omitted work with its contributors and actual completion time. Source identities and the approved 19-work, 17-group catalogue still govern intake. The tinted package requires an explicit 5% or 15% option.
 - Reports count each completed service once and distinguish individual participation. Operational team status is visible on shared vehicles. Task notes, private intake text and financial fields have separate audiences.
-- New completions enter an Owner-only pay worklist. The Owner enters a BYN compensation pool and allocates it in percentages. A past participant can be included with a reason. Pending compensation is independent of order closure and Sheets feedback.
-- Catalogue pricing, mechanic compensation and the editable business-workbook ledger have distinct meanings. The ledger preserves original cells, formulas, edit history and manual overrides. Its review filter opens the rows that need attention.
+- In the Owner's order detail, each service shows its model-specific price. The Owner can edit the customer calculation and keep a private comment. A missing rate stays visible for review. Restoring the catalogue price keeps the original rate snapshot available.
+- A new completion proposes the full listed pre-VAT price in BYN, shared equally among confirmed contributors. The Owner can change the pay pool and each mechanic's percentage. A past participant can be included with a reason. Customer-price adjustments, mechanic pay and the business ledger are independent. Only the Owner can retrieve financial data or private calculation comments.
 
 The Manager integration reads an approved complete copy of the existing
 operational spreadsheet. It keeps its existing vehicle rows, work-list columns,
@@ -90,6 +90,13 @@ retaining prior corrected identities. They do not rerun the historical schema or
 replace stored orders or rates.
 
 The team-workflow release adds migrations `20261118000001_team_workflow.sql`, `20261118000002_owner_team_orders.sql` and `20261118174234_pay_worklist.sql` after all earlier migrations. Apply them in filename order to the existing installation, before publishing its dependent frontend. Backfill preserves the recorded single worker on existing tasks. The pay queue starts with newly recorded completions, including a backdated service recorded after cutover.
+
+The vehicle handoff and Owner calculation release adds migrations `20261118185004`,
+`20261118185053` and `20261118185548`. Apply them in order and configure the
+workbook promotion privately in `garage_pay.gift_offer`. The Owner chooses
+whether to include the gift in the order editor. The customer charge becomes
+zero and the mechanic pay suggestion still uses the original listed rate.
+
 
 ## Validate
 

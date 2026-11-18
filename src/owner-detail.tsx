@@ -1,3 +1,4 @@
+import { qualifies, type GiftOffer } from './owner-gift';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import {
   participants,
@@ -14,11 +15,14 @@ import {
   read,
   type Staff,
   type Money,
+  type TaskPrice,
   type OwnerOrder,
   type OwnerIntake,
   type Mutate,
 } from './owner-model';
 import { Price, SourceReference } from './owner-summary';
+import { PayoutSummary, TaskPricing } from './owner-pricing';
+import { OwnerHandoff } from './owner-handoff';
 
 interface DetailProps {
   order: OwnerOrder;
@@ -27,19 +31,27 @@ interface DetailProps {
   client: GarageClient;
   mutate: Mutate;
   reload: () => Promise<void>;
-  edit: () => void;
+  edit: (promptGift?: boolean) => void;
+  offer: GiftOffer | null;
   omit: () => void;
   back: () => void;
   notify: (s: string) => void;
 }
 function OwnerTask({
   task,
+  price,
+  client,
+  refreshPrice,
   order,
   staff,
   mutate,
   reload,
   notify,
-}: Pick<DetailProps, 'order' | 'staff' | 'mutate' | 'reload' | 'notify'> & { task: Task }) {
+}: Pick<DetailProps, 'client' | 'order' | 'staff' | 'mutate' | 'reload' | 'notify'> & {
+  task: Task;
+  price?: TaskPrice;
+  refreshPrice(): Promise<void>;
+}) {
   const [action, choose] = useState(''),
     [person, setPerson] = useState(''),
     [replacement, setReplacement] = useState(''),
@@ -129,6 +141,15 @@ function OwnerTask({
           </details>
         ) : null}
       </div>
+      {price && <TaskPricing client={client} taskId={task.id} value={price} reload={refreshPrice} />}
+      {task.status === 'completed' && price?.payout && (
+        <div class="task-remuneration">
+          <PayoutSummary payout={price.payout} />
+          <a class="button" href={'#pay/' + encodeURIComponent(task.id)}>
+            Оплата механикам
+          </a>
+        </div>
+      )}
       {order.status === 'published' && !['completed', 'cancelled'].includes(task.status) && (
         <div class="task-actions">
           <a class="button" href={'#shift/' + encodeURIComponent(task.id)}>
@@ -223,6 +244,7 @@ function OwnerTask({
 }
 export function OwnerDetail({
   order,
+  offer,
   intake,
   staff,
   client,
@@ -234,6 +256,7 @@ export function OwnerDetail({
   notify,
 }: DetailProps) {
   const [price, setPrice] = useState<Money | null>(null),
+    [priceError, setPriceError] = useState(false),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const [cancelVersion, setCancel] = useState<number | null>(null),
@@ -241,20 +264,19 @@ export function OwnerDetail({
   const sending = useRef(false),
     epoch = useRef(0);
   useEffect(() => {
-    epoch.current++;
-    setPrice(null);
+    void financials();
     return () => {
       epoch.current++;
     };
-  }, [order.id, order.version]);
+  }, [client, order.id, order.version]);
   async function financials() {
-    const at = epoch.current;
-    setError('');
+    const at = ++epoch.current;
+    setPriceError(false);
     try {
       const data = await read<Money>(client, 'garage_order_financials', { p_order_id: order.id });
       if (at === epoch.current) setPrice(data);
     } catch {
-      if (at === epoch.current) setError('Не удалось загрузить стоимость работ. Повторите попытку.');
+      if (at === epoch.current) setPriceError(true);
     }
   }
   async function finish(action: string, version: number, note: string) {
@@ -330,12 +352,29 @@ export function OwnerDetail({
           )}
         </section>
       )}
+      {order.status === 'published' &&
+        offer &&
+        qualifies(
+          offer,
+          order.vehicle_group_code,
+          order.tasks.filter((t) => t.status !== 'cancelled').map((t) => t.work_code || ''),
+        ) &&
+        price &&
+        !price.tasks?.some((item) => item.work_code === offer.work_code && item.override_kopeks === 0) && (
+          <button class="button" type="button" onClick={() => edit(true)}>
+            Выбрать подарок для клиента
+          </button>
+        )}
+      <OwnerHandoff order={order} mutate={mutate} reload={reload} notify={notify} />
       <SourceReference intake={intake} />
       <div class="order-tasks">
         {order.tasks.map((t) => (
           <OwnerTask
             key={t.id}
             task={t}
+            client={client}
+            price={(price?.tasks || price?.items)?.find((row) => row.task_id === t.id)}
+            refreshPrice={financials}
             order={order}
             staff={staff}
             mutate={mutate}
@@ -346,19 +385,16 @@ export function OwnerDetail({
       </div>
       <div class="order-actions">
         {order.status === 'published' && (
-          <button type="button" class="button button-primary" onClick={edit}>
+          <button type="button" class="button button-primary" onClick={() => edit()}>
             Изменить заказ
           </button>
         )}
-        <button type="button" class="button" onClick={financials}>
-          Посмотреть стоимость
-        </button>
         {order.status !== 'cancelled' && (
           <button type="button" class="button" onClick={omit}>
             Добавить пропущенную выполненную работу
           </button>
         )}
-        {order.status === 'published' && canClose && (
+        {order.status === 'published' && !order.vehicle_workflow && canClose && (
           <button
             type="button"
             class="button"
@@ -382,6 +418,16 @@ export function OwnerDetail({
         )}
       </div>
       {price && <Price value={price} />}
+      {priceError ? (
+        <p role="alert">
+          Не удалось загрузить стоимость работ.{' '}
+          <button type="button" class="button" onClick={financials}>
+            Повторить расчёт
+          </button>
+        </p>
+      ) : (
+        !price && <p role="status">Загружаем стоимость работ…</p>
+      )}
       {cancelVersion !== null && (
         <form
           onSubmit={(e) => {
