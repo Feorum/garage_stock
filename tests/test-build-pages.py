@@ -53,8 +53,16 @@ class ReleaseBuildTests(unittest.TestCase):
             self.assertIn(('"sha-' + SHA_A + '"').encode(), files['sw.js'])
             self.assertTrue(all(not path.startswith(('tests/', 'supabase/', '.github/'))
                                 and Path(path).suffix not in ('.sql', '.xlsx', '.env') for path in files))
-            self.assertIn(PUBLIC_KEY.encode(), files['src/supabase.js'])
-            self.assertNotIn(b'YOUR-PROJECT', files['src/supabase.js'])
+            self.assertTrue(any(PUBLIC_KEY.encode() in data for data in files.values()))
+            self.assertTrue(all(b'YOUR-PROJECT' not in data for data in files.values()))
+            worker = files['sw.js'].decode()
+            self.assertIn('./sdk.js', worker)
+            self.assertNotIn('./account.html', worker)
+            self.assertNotIn('./assets/account-', worker)
+            self.assertNotIn('./release.json', worker)
+            self.assertTrue(all(b'__garageTest' not in data for data in files.values()))
+            self.assertIn(b'/garage_stock/assets/', files['account.html'])
+            self.assertIn(b'/garage_stock/assets/', files['index.html'])
 
     def test_new_commit_changes_cache_while_application_assets_remain_unchanged(self):
         with tempfile.TemporaryDirectory(prefix='garage-release-test-') as directory:
@@ -72,7 +80,7 @@ class ReleaseBuildTests(unittest.TestCase):
             self.successful(self.build(release, env_changes={'GARAGE_RELEASE_SHA': SHA_A.upper()}))
             self.assertEqual(json.loads((release / 'release.json').read_text())['commit'], SHA_A)
             self.successful(self.build(local))
-            self.assertEqual(json.loads((local / 'release.json').read_text())['cache'], 'garage-log-v8')
+            self.assertRegex(json.loads((local / 'release.json').read_text())['cache'], r'^garage-log-local-[a-f0-9]{16}$')
             self.assertIsNone(json.loads((local / 'release.json').read_text())['commit'])
 
     def test_invalid_release_is_rejected_before_output_is_written(self):

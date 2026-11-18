@@ -21,7 +21,8 @@ the acting user. Private mutation helpers cannot be executed by browser roles.
 | `garage_list_orders()` | Safe order/task JSON, filtered by caller. Owner sees all orders; Mechanics see published Manager work and their authorized assignments/contributions. No financial fields. |
 | `garage_staff()` | Owner-only active mechanic ID/name directory. |
 | `garage_create_order(...)` | Owner-only atomic publication; arguments below. |
-| `garage_task_action(...)` | Atomic start/block/resume/complete/release/cancel/reassign with version and retry checks. |
+| `garage_team_action(...)` | Join, start, pause, resume, confirm, leave, add a note, change a roster member. |
+| `garage_task_action(...)` | Installed-client compatibility for single-mechanic actions and Owner cancellation. |
 | `garage_order_action(...)` | Owner-only close or cancellation of remaining work. |
 | `garage_order_financials(order_id)` | Owner-only snapshot amounts. Missing rates produce `needs_pricing` and unknown totals rather than zero. |
 
@@ -58,12 +59,25 @@ p_note text = ''
 p_assignee uuid = null
 ```
 
-Starting a Manager task claims it; starting Owner work requires its mandatory
-assignee. Only its current worker can perform mechanic actions. Owner transfers
-require a reason and an active recipient. Pending Manager tasks remain freely
-claimable; transfer applies only to work already in progress or blocked and
-keeps the mandatory assignee null. Returning to the queue applies to shared work,
-not mandatory assignments. Completion creates one immutable ledger record.
+Migration `20261118000001_team_workflow.sql` adds one participation history per mechanic and keeps a single completion per catalogue task. Existing single-mechanic jobs retain their identity, timestamps and private rate snapshot. The old single-person action accepts valid solo work, including retries from an older app. A grouped task requires the team API for mechanic and roster actions.
+
+### Team actions
+
+```text
+garage_team_action(
+  p_task_id uuid, p_action text, p_expected_version integer, p_request_id uuid,
+  p_note text = '', p_mechanic_id uuid = null, p_replacement_id uuid = null
+)
+```
+
+- `join` starts the caller on published Manager work. `start` starts the caller’s private assignment or named replacement. More than one mechanic can join shared work until the first confirmation.
+- `block` records a reason and pauses that participant. `resume` resumes them. The task is blocked when every remaining unconfirmed person is blocked. A blocked person resumes before confirming.
+- `confirm` records the caller’s contribution. The first confirmation freezes self-joining and self-withdrawal. The last required confirmation creates one permanent completion. One service and its original price count once for the order.
+- `leave` returns a shared place before sign-off and requires a reason. The last such departure makes the task available again. Private assignees request relief from the Owner.
+- The Owner uses `assign` with `p_mechanic_id` for a private task. `remove` and `replace` take the affected person and a reason. Replacement also takes `p_replacement_id`; the replacement starts and confirms personally. After sign-off begins, excusing an unconfirmed person may finish the task when every remaining participant has personally confirmed. A confirmed contribution remains in the roster.
+- `note` appends an operational note for the Owner and current team. A nonparticipant on a published Manager order can see the team’s names and statuses. Private task details, blockers and event notes stay with the Owner and authorized participants.
+- The list embeds `participants`, `my_status`, `roster_locked`, `can_see_notes` and `notes` in each task. Participant statuses are `assigned`, `working`, `blocked` and `confirmed`. The aggregate task status keeps its existing vocabulary.
+- Completion feedback on the working copy names confirmed people on one line per task. An order with a partly confirmed task keeps the checkbox clear. Owner-attested omitted work explicitly records its origin.
 
 Order actions take `p_order_id`, `p_action` (`close`/`cancel`),
 `p_expected_version`, `p_request_id`, and optional `p_note`. Closing requires
@@ -73,8 +87,10 @@ cancels remaining work with a recorded reason.
 All mutations use caller-scoped request IDs and compare the original payload.
 Retry an ambiguous response with the same ID and arguments. A changed payload
 with that ID is rejected. Locks consistently acquire the parent order before
-its task rows; simultaneous claims have one winner. Actor/assignee profile locks
-prevent concurrent deactivation from creating stranded assignments.
+its task rows. Compatible simultaneous joins or confirmations can both succeed.
+The server checks membership and roster state again while holding those locks.
+A racing join either joins before the first confirmation or receives a closed
+roster result. Profile locks protect against deactivation during assignment.
 
 ## Financial import and confidentiality
 

@@ -1,51 +1,28 @@
-// One complete module graph per version. A waiting update activates after the
-// previous app tabs close, rather than replacing modules under a running page.
+// The release builder substitutes the application entry's complete public module graph.
+// Waiting for previous tabs to close keeps a single release in each running app.
 const CACHE_PREFIX = 'garage-log-';
-const RELEASE = 'v8';
-const CACHE = `${CACHE_PREFIX}${RELEASE}`;
-const SHELL = [
-  './', './index.html', './styles.css', './ledger.css', './app.js',
-  './src/supabase.js', './src/auth.js', './src/ui.js', './src/locale.js',
-  './src/navigation.js', './src/views.js', './src/orders.js', './src/order-editor.js', './src/order-list.js',
-  './src/order-shared.js', './src/order-tasks.js', './src/order-completion.js', './src/sheets.js', './src/catalogue.js',
-  './src/ledger.js', './src/ledger-table.js', './src/ledger-editor.js', './src/ledger-history.js', './src/ledger-shared.js',
-  './src/ledger-calculations.js', './src/ledger-formula-parser.js',
-  './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png',
-];
-const SHELL_URLS = new Set(SHELL.map(path => new URL(path, self.registration.scope).href));
+const RELEASE = '__GARAGE_RELEASE__';
+const CACHE = CACHE_PREFIX + RELEASE;
+const SHELL = __GARAGE_SHELL__;
+const urls = new Set(SHELL.map(path => new URL(path, self.registration.scope).href));
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(
+    SHELL.map(path => new Request(new URL(path, self.registration.scope), { cache: 'reload' }))
+  )));
 });
 
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys().then(keys => Promise.all(
-    keys.filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE)
-      .map(key => caches.delete(key))
+    keys.filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE).map(key => caches.delete(key))
   )));
 });
 
 self.addEventListener('fetch', event => {
   const request = event.request;
-  const url = new URL(request.url);
-  const authParameters = [
-    'access_token', 'refresh_token', 'token', 'token_hash',
-    'code', 'error', 'error_description', 'type',
-  ];
-  // Password pages, callbacks, user/API data and authorization-bearing requests
-  // never enter this cache. Only explicitly listed public assets are local.
-  if (request.method !== 'GET' || url.hash ||
-      request.headers.has('Authorization') ||
-      authParameters.some(name => url.searchParams.has(name))) return;
-  const isShell = SHELL_URLS.has(url.href);
-  const isDependency = url.origin === 'https://cdn.jsdelivr.net' && url.pathname.startsWith('/npm/');
-  if (!isShell && !isDependency) return;
-
-  event.respondWith(caches.open(CACHE).then(async cache => {
-    const cached = await cache.match(request);
-    if (cached) return cached;
-    const response = await fetch(request);
-    if (response.ok) await cache.put(request, response.clone()).catch(() => {});
-    return response;
-  }));
+  // The exact URL allowlist excludes callbacks, password pages, queries and RPC data.
+  if (request.method !== 'GET' || request.headers.has('Authorization') || !urls.has(request.url)) return;
+  event.respondWith(caches.open(CACHE).then(async cache =>
+    await cache.match(request) || await fetch(request)
+  ));
 });

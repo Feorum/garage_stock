@@ -1,23 +1,26 @@
 const OWNER = [
-  { id: 'orders', label: 'Заказы', icon: 'orders', description: 'Поручения владельца и заказы менеджеров в одном месте.' },
-  { id: 'reports', label: 'Отчёты', icon: 'reports', description: 'Выполненные работы и результаты команды.' },
-  { id: 'ledger', label: 'Учёт бизнеса', icon: 'catalogue', description: 'Данные вашей рабочей книги с редактированием, ссылками на источник и историей изменений.' },
-  { id: 'sheets', label: 'Подключения таблиц', icon: 'catalogue', description: 'Настройка таблиц, из которых поступают заказы менеджеров.' }
+  { id: 'shift', label: 'Смена', icon: 'work' },
+  { id: 'orders', label: 'Заказы', icon: 'orders' },
+  { id: 'reports', label: 'Отчёты', icon: 'reports' },
+  { id: 'pay', label: 'Распределение оплаты', icon: 'reports' },
+  { id: 'ledger', label: 'Учёт бизнеса', icon: 'catalogue' },
+  { id: 'sheets', label: 'Подключения таблиц', icon: 'catalogue' }
 ];
-
 const MECHANIC = [
-  { id: 'assigned', label: 'Назначено владельцем', icon: 'assigned', description: 'Работы, которые владелец назначил вам.' },
-  { id: 'manager-orders', label: 'Заказы менеджеров', icon: 'orders', description: 'Доступные работы из общей очереди.' },
-  { id: 'my-work', label: 'Мои работы', icon: 'work', description: 'Ваши текущие и завершённые задачи.' }
+  { id: 'shift', label: 'Моя смена', icon: 'work' },
+  { id: 'manager-orders', label: 'Общая очередь', icon: 'orders' },
+  { id: 'history', label: 'История', icon: 'reports' }
 ];
-
 export function getSections(role) {
   if (role === 'admin') return OWNER;
   if (role === 'mechanic') return MECHANIC;
   return [];
 }
-
-export function resolveSection(role, hash = '') {
+export function resolveRoute(role, hash = '') {
+  const [id, record] = hash.replace(/^#/, '').split('/');
+  const legacy = role === 'mechanic' && ['assigned', 'my-work'].includes(id);
   const sections = getSections(role);
-  return sections.find(section => hash === `#${section.id}`) || sections[0];
+  const section = sections.find(item => item.id === id) || sections[0];
+  return { section, id: legacy ? id : section?.id, record: (legacy || section?.id === id) && record && /^[A-Za-z0-9_-]{1,100}$/.test(record) ? record : undefined };
 }
+export function resolveSection(role, hash = '') { return resolveRoute(role, hash).section; }

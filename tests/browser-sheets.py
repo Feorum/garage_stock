@@ -43,11 +43,13 @@ def open_sheets(browser, base, fixture=None, width=1440):
     page.goto(base + '/index.html#sheets')
     smoke.ready(page, 'Test Owner')
     expect(page.get_by_role('heading', name='Подключения таблиц', exact=True)).to_be_visible()
-    expect(page.get_by_role('button', name='Подключить рабочую копию', exact=True)).to_be_visible()
+    expect(page.get_by_role('button', name='Добавить подключение', exact=True)).to_be_visible()
     return context, page, errors, live
 
 
 def fill_connection(page, name='Synthetic existing feed', sheet=None):
+    if not page.get_by_label('Название подключения', exact=True).is_visible():
+        page.get_by_role('button', name='Добавить подключение', exact=True).click()
     page.get_by_label('Название подключения', exact=True).fill(name)
     page.get_by_label('Ссылка или идентификатор таблицы', exact=True).fill(sheet or f'https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid={TAB_ID}')
 
@@ -83,6 +85,7 @@ def run(args):
         browser = playwright.chromium.launch(executable_path=args.chromium, headless=True, args=['--no-sandbox'])
         try:
             context, page, errors, live = open_sheets(browser, base)
+            page.get_by_role('button', name='Добавить подключение', exact=True).click()
             page.get_by_role('button', name='Подключить рабочую копию', exact=True).click()
             assert page.get_by_label('Название подключения', exact=True).evaluate('(input) => input.validationMessage') == 'Заполните это поле.'
             fill_connection(page)
@@ -201,6 +204,22 @@ def run(args):
             passed.append('Owner sees safe review explanations and exact source-row links; cell text is escaped')
             finish(context, errors, live)
 
+            intake_id = '44444444-4444-4444-8444-444444444444'
+            key = '2026-11-13|12345678901234567'
+            context, page, errors, live = open_sheets(browser, base, {
+                'sheetSources': [source(review_count=1)],
+                'sheetReviews': {SOURCE_ID: [{'source_key': key, 'row_number': 23, 'vehicle': 'Example car'}]},
+                'managerIntakes': [{'id': intake_id, 'source_id': SOURCE_ID, 'source_key': key,
+                                    'status': 'pending', 'issues': [], 'row_numbers': [28],
+                                    'latest': {'vehicle': 'Example car'}}],
+            })
+            page.get_by_role('button', name='Проверить строки', exact=True).click()
+            page.get_by_role('button', name='Проверить в заказах', exact=True).click()
+            expect(page).to_have_url(base + '/index.html#orders/' + intake_id)
+            expect(page.get_by_role('heading', name='Example car')).to_be_visible()
+            passed.append('Review opens the stable intake identity after its spreadsheet row moves')
+            finish(context, errors, live)
+
             context, page, errors, live = open_sheets(browser, base, {
                 'sheetSources': [source(last_success_at='2026-11-13T11:00:00Z', last_error_code='INTERNAL_PAYLOAD_DO_NOT_DISPLAY')],
             })
@@ -215,7 +234,7 @@ def run(args):
             fill_connection(page, name='Synthetic private late connection')
             page.get_by_role('button', name='Подключить рабочую копию', exact=True).click()
             page.wait_for_function('(__garageCalls || []).some(c => c.name === "garage_connect_sheet_pull")')
-            page.get_by_role('button', name='Выйти', exact=True).click()
+            smoke.sign_out(page)
             expect(page.get_by_role('button', name='Войти', exact=True)).to_be_visible()
             page.wait_for_timeout(850)
             assert 'Synthetic private late connection' not in page.locator('body').inner_text()
@@ -240,7 +259,7 @@ def run(args):
             }, {'width': 390, 'height': 844})
             page.goto(base + '/index.html#sheets')
             smoke.ready(page, 'Test Mechanic')
-            expect(page.get_by_role('heading', name='Назначено владельцем', exact=True)).to_be_visible()
+            expect(page.get_by_role('heading', name='Моя смена', exact=True)).to_be_visible()
             expect(page.get_by_role('link', name='Подключения таблиц', exact=True)).to_have_count(0)
             assert not page.evaluate('(__garageCalls || []).some(c => c.method === "rpc" && /sheet/.test(c.name))')
             passed.append('Mechanic navigation and direct hashes cannot access sheet connection or review APIs')
@@ -297,7 +316,7 @@ def run(args):
             page.get_by_role('button', name='Настроить закрытый загрузчик', exact=True).click()
             page.wait_for_function('(__garageCalls || []).some(c => c.name === "garage_prepare_sheet_reader")')
             secret = calls(page, 'garage_prepare_sheet_reader')[0]['args']['p_secret']
-            page.get_by_role('button', name='Выйти', exact=True).click()
+            smoke.sign_out(page)
             expect(page.get_by_role('button', name='Войти', exact=True)).to_be_visible()
             page.wait_for_timeout(850)
             expect(page.get_by_label('Секретный ключ', exact=True)).to_have_count(0)

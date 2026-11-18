@@ -27,18 +27,20 @@ new releases use the tested Actions artifact.
 
 1. Check out the triggering commit with read-only repository access and no saved
    Git credentials. Official Actions are pinned to immutable commit SHAs.
-2. Run Node boundary tests and Python release build/integrity tests.
-3. Build the explicit public-file allowlist using the configured public values.
-   Pull requests and manual runs on another branch use synthetic settings and
-   cannot deploy.
-4. Run all four mocked Chromium browser suites, including authentication,
-   permissions, order editing, Sheets setup and an actual service-worker upgrade.
-   They block live database requests and create no real orders.
-5. Upload only `dist/`, then deploy it with the job's temporary Pages/OIDC token.
-   Deployments are serialized; an active deployment is not cancelled by a push.
-6. Fetch `release.json` and all its public assets from the live site. Check the
-   expected commit, cache identity and every SHA-256, with bounded retries for
-   CDN propagation. The Actions run reports failure if live verification fails.
+2. Install the locked frontend packages with Node.js 24, run TypeScript in strict
+   mode, and run the integration, database and release-format checks.
+3. Build both HTML entry points with Vite for `/garage_stock/`. Package the public
+   module graphs and fixed app icons from a fresh staging directory. Pull requests
+   and manual runs on another branch use synthetic settings.
+4. Run the Chromium workflows against the built artifact and the team workflow
+   against an isolated PostgreSQL database. The cache test builds the historical
+   release at `5b89aa5` from Git, keeps its app open across an upgrade, checks the
+   new shell offline, then switches the site back and verifies rollback.
+5. Record the SHA-256 of `release.json`, upload the tested `dist/`, and deploy it
+   with the job's temporary Pages/OIDC token. Deployments are serialized.
+6. Fetch the live manifest and verify its digest, commit and cache identity.
+   Download each entry and verify its SHA-256, with bounded retries for CDN
+   propagation. A failed verification is visible in the Actions run.
 
 A failure before publication leaves the previous site running. A failure in the
 final live check means publication was attempted and needs inspection in the
@@ -67,9 +69,10 @@ rows whose completion Notes changed; unrelated row heights remain untouched.
 ## Cache and release identity
 
 The builder's `--release` option takes a full 40-character commit SHA. The workflow
-passes `GITHUB_SHA`; `GARAGE_RELEASE_SHA` is an optional local equivalent. The
+passes `GITHUB_SHA`. `GARAGE_RELEASE_SHA` is an optional local equivalent. The
 resulting worker cache is `garage-log-sha-<commit>`. Same source, configuration and
-release identity produce the same output, without build timestamps.
+release identity produce the same output. Local builds without a commit use a
+content digest for their cache name.
 
 `release.json` contains public commit/cache information and hashes for the public
 assets. It is outside the worker's cache. Published account callbacks and private
@@ -79,7 +82,8 @@ its current module graph until its old tabs close, then activates the new worker
 For a local release build, supply the existing public environment values and run:
 
 ```sh
-python3 scripts/build-pages.py --output dist --release "$(git rev-parse HEAD)"
+npm ci
+npm run build -- --output dist --release "$(git rev-parse HEAD)"
 python3 scripts/verify-pages.py \
   --url https://feorum.github.io/garage_stock/ \
   --commit "$(git rev-parse HEAD)"

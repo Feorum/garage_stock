@@ -38,5 +38,7 @@ tests/owner-manager-edit.sql|owner-edit-test.sql
 tests/owner-intake-guards.sql|owner-guards-test.sql
 tests/sheet-completion-feedback.sql|feedback-test.sql
 tests/feedback-readable-output.sql|readable-feedback-test.sql
+supabase/migrations/20261118000001_team_workflow.sql|team-workflow.sql
+tests/team-sheet-feedback.sql|team-feedback-test.sql
 GARAGE_FILES
-garage_docker exec "$garage_container" psql -X -U postgres -v ON_ERROR_STOP=1 -f /tmp/readable-feedback-test.sql
+garage_docker exec "$garage_container" psql -X -U postgres -v ON_ERROR_STOP=1 -f /tmp/team-feedback-test.sql
