@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
-import type { Order, Participant, Task, VehicleWorkflow } from './shift-model';
+import type { Order, Task, VehicleWorkflow } from './shift-model';
 import { subscribeBoardUpdates } from './board-updates';
 import { readRpc } from './workspace-rpc';
 import type { Client } from './workspace-types';
 
 export interface BoardTask extends Task {
-  participants?: (Participant & { color?: string | null })[];
   can_check_work?: boolean;
 }
 export interface BoardOrder extends Order {
   tasks: BoardTask[];
-  created_at?: string;
   vehicle_workflow?: VehicleWorkflow & { can_submit?: boolean; handed_by?: string | null };
 }
 

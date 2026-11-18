@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import { ExecutorMarker } from './executor-marker';
 import type { BoardOrder, BoardTask } from './mechanic-board-data';
-import { instantLabel, participants, taskName, type Participant } from './shift-model';
+import { instantLabel, participants, taskName } from './shift-model';
 import { WorkChecklist } from './shift-vehicle';
 
 export interface Draft {
@@ -24,8 +24,7 @@ export function WorkRow({
   pending: boolean;
   check(): void;
 }) {
-  const people: (Participant & { color?: string | null })[] = task.participants || participants(task);
-  const checked = people.filter((person) => person.status === 'confirmed');
+  const checked = participants(task).filter((person) => person.status === 'confirmed');
   const allowed =
     !readOnly &&
     !!task.can_check_work &&

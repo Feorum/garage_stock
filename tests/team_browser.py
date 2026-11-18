@@ -24,10 +24,21 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
     competing = Barrier(2)
     first_checks = set()
 
+    revisions = {}
+
+    def board_revision(recipient):
+        # RLS applies to the synthetic Realtime transport just as it does to a subscriber.
+        value = db.sql(r"""begin; set local role authenticated;
+            select set_config('request.jwt.claim.sub', :'actor', true) as subject \gset
+            select revision from garage_board_updates where recipient_id=:'actor'; commit;""", {'actor': recipient})
+        return int(value or 0)
+
     def new_page(browser, subject, name, role, route):
+        revisions[subject] = board_revision(subject)
         context, page, errors, live = smoke.new_page(
             browser, {'userId': subject, 'profile': {'id': subject, 'name': name, 'role': role, 'active': True},
-                      'appMetadata': {'mechanic_color': {mechanic_a:'red', mechanic_b:'blue'}.get(subject)}},
+                      'appMetadata': {'mechanic_color': {mechanic_a:'red', mechanic_b:'blue'}.get(subject)},
+                      'initialBoardRevision': revisions[subject]},
             {'width': 390 if role == 'mechanic' else 1440, 'height': 844},
         )
         sessions.append((context, errors, live))
@@ -35,18 +46,17 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
             if method == 'garage_check_work' and params['p_task_id'] == task_id and subject not in first_checks:
                 first_checks.add(subject)
                 await asyncio.to_thread(competing.wait, 12)
-            return await asyncio.to_thread(db.transport, subject, method, params)
+            result = await asyncio.to_thread(db.transport, subject, method, params)
+            if method in ('garage_check_work', 'garage_submit_work', 'garage_vehicle_action') and not result['error']:
+                recipients = list(revisions)
+                current_rows = await asyncio.gather(*(asyncio.to_thread(board_revision, recipient) for recipient in recipients))
+                for recipient, revision in zip(recipients, current_rows):
+                    revisions[recipient] = max(revisions[recipient], revision)
+            return result
+        page.expose_function('__garageReadFixtureRevision', lambda: revisions[subject])
         page.expose_function('__garageRpcFixture', transport)
         page.goto(f'{base}/index.html#{route}')
         return page
-
-    def publish(page, recipient):
-        # Stand in for Supabase Realtime delivery using only the notification this account can SELECT.
-        revision = db.sql(r"""begin; set local role authenticated;
-            select set_config('request.jwt.claim.sub', :'actor', true) as subject \gset
-            select revision from garage_board_updates where recipient_id=:'actor'; commit;""", {'actor':recipient})
-        assert revision and int(revision) > 0, revision
-        page.evaluate('row => __garageBoardSignal(row)', {'recipient_id':recipient, 'revision':int(revision)})
 
     def work(page, key=task_id):
         return page.locator(f'[data-vehicle-id="{record["id"]}"] [data-task-id="{key}"]')
@@ -68,13 +78,14 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
         comment.fill(note)
         confirm_handoff = form.get_by_role('button', name='Передать владельцу', exact=True)
         confirm_handoff.click()
-        confirm_state = db.rpc(owner, 'garage_list_orders')
-        if next(item for item in confirm_state if item['id'] == record['id'])['vehicle_workflow']['state'] != 'review':
-            review = form.get_by_role('button', name='Я проверил изменения', exact=True)
-            if review.is_visible():
-                expect(comment).to_have_value(note)
-                review.click()
-                confirm_handoff.click()
+        notice = page.get_by_text('Автомобиль передан владельцу.', exact=True)
+        review = form.get_by_role('button', name='Я проверил изменения', exact=True)
+        expect(notice.or_(review)).to_be_visible()
+        if review.is_visible():
+            expect(comment).to_have_value(note)
+            review.click()
+            confirm_handoff.click()
+        expect(notice).to_be_visible()
         expect(form).to_be_hidden()
 
     try:
@@ -93,7 +104,6 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
                 expect(work(a).locator(f'[data-mechanic-id="{mechanic_a}"]')).to_be_visible()
                 expect(work(b).locator(f'[data-mechanic-id="{mechanic_b}"]')).to_be_visible()
                 for page, recipient in ((a, mechanic_a), (b, mechanic_b), (other, colleague)):
-                    publish(page, recipient)
                     for person, name, color in ((mechanic_a,'Андрей','rgb(255, 147, 157)'), (mechanic_b,'Миша','rgb(138, 196, 255)')):
                         marker = work(page).locator(f'[data-mechanic-id="{person}"]')
                         expect(marker).to_be_visible(timeout=2000)
@@ -119,7 +129,6 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
                 review.get_by_label('Механику при возврате (необязательно)', exact=True).fill('Закончить вторую услугу')
                 review.get_by_role('button', name='Вернуть в работу', exact=True).click()
                 expect(review.get_by_role('button', name='Вернуть в работу', exact=True)).to_have_count(0)
-                publish(a, mechanic_a)
                 open_visit(a, record['id'])
                 work(a, extra_task['id']).get_by_role('checkbox').click()
                 expect(work(a,extra_task['id']).locator(f'[data-mechanic-id="{mechanic_a}"]')).to_be_visible()

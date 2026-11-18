@@ -494,6 +494,24 @@ export function createClient() {
         },
         subscribe(status) {
           if (!fixture.realtimeUnavailable) channels.add(this);
+          // Real-PG acceptance bridges committed recipient revisions between isolated Chromium contexts.
+          if (globalThis.__garageReadFixtureRevision) {
+            let last = fixture.initialBoardRevision;
+            let reading = false;
+            this.timer = setInterval(async () => {
+              if (reading) return;
+              reading = true;
+              try {
+                const revision = await globalThis.__garageReadFixtureRevision();
+                if (revision > last && channels.has(this)) {
+                  last = revision;
+                  globalThis.__garageBoardSignal({recipient_id: user.id, revision});
+                }
+              } finally {
+                reading = false;
+              }
+            }, 75);
+          }
           queueMicrotask(() => status?.(fixture.realtimeUnavailable ? 'CHANNEL_ERROR' : 'SUBSCRIBED'));
           return this;
         },
@@ -501,6 +519,7 @@ export function createClient() {
       return channel;
     },
     async removeChannel(channel) {
+      clearInterval(channel.timer);
       channels.delete(channel);
       calls.push({ method: 'removeChannel', name: channel.name });
       return 'ok';
