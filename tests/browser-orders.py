@@ -297,16 +297,23 @@ def run(args):
 
             # A failed staff fetch must have a working recovery path for order creation.
             context, page, errors, live = smoke.new_page(browser, {
-                'rpcErrors': {'garage_staff': {'times': 1, 'message': 'Temporary staff lookup failure'}},
+                'rpcErrors': {'garage_staff': 'Temporary staff lookup failure'},
             })
             page.goto(base + '/index.html#orders/tools')
             smoke.ready(page, 'Test Owner')
-            expect(page.get_by_role('button', name='Новый заказ', exact=True)).to_be_disabled()
+            staff_error = page.get_by_text('Не удалось загрузить механиков. Обновите список перед созданием заказа.', exact=True)
+            expect(staff_error).to_be_visible()
+            new_order = page.get_by_role('button', name='Новый заказ', exact=True)
+            expect(new_order).to_be_disabled()
+            # Mount and Realtime subscription can each refresh the roster.
+            failed_reads = len(rpc_calls(page, 'garage_staff'))
+            page.evaluate('delete __garageTest.rpcErrors.garage_staff')
             page.get_by_role('button', name='Обновить', exact=True).click()
-            expect(page.get_by_role('button', name='Новый заказ', exact=True)).to_be_enabled()
-            page.get_by_role('button', name='Новый заказ', exact=True).click()
+            expect(staff_error).to_have_count(0)
+            expect(new_order).to_be_enabled()
+            new_order.click()
             expect(page.get_by_role('combobox', name='Назначить механика', exact=True)).to_be_visible()
-            assert len(rpc_calls(page, 'garage_staff')) == 2
+            assert len(rpc_calls(page, 'garage_staff')) > failed_reads
             passed.append('transient staff lookup failure can recover without a page reload')
             finish_context(context, errors, live)
         finally:
