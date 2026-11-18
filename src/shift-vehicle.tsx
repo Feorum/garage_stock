@@ -137,11 +137,15 @@ export function VehicleDetail({
   const showDraft = !!draft && !!canHandoff;
   useLayoutEffect(() => {
     if (showDraft) checklistTitle.current?.focus();
-    else if (wasDraft.current) (handoffButton.current || title.current)?.focus({ preventScroll: true });
+    else if (wasDraft.current) {
+      if (handoffButton.current) handoffButton.current.focus();
+      else title.current?.focus({ preventScroll: true });
+    }
     wasDraft.current = showDraft;
   }, [showDraft]);
   const tasks = order.tasks || [];
   const counted = visibleProgress(order);
+  const total = counted.completed + counted.unfinished;
   const stale = !!draft && draft.version !== order.version;
   const history = section === 'history';
   const next = !history && !showDraft && !locked && counted.unfinished > 0 ? nextService(order, profileId) : undefined;
@@ -260,8 +264,8 @@ export function VehicleDetail({
       <section class="shift-detail-section vehicle-services">
         <div class="shift-section-heading">
           <h3>Работы по автомобилю</h3>
-          {counted.completed + counted.unfinished > 0 && (
-            <span class="shift-count">Выполнено {counted.completed} из {counted.completed + counted.unfinished}</span>
+          {total > 0 && (
+            <span class="shift-count">{`Выполнено ${counted.completed} из ${total}`}</span>
           )}
         </div>
         {tasks.length ? (

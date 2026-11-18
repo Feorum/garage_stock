@@ -1,8 +1,8 @@
 """Exercise vehicle claims, handoff, task detail drafts, focus and team visibility with the local SDK fixture."""
 import argparse
 import importlib.util
-from pathlib import Path
 import re
+from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('garage_browser_smoke', ROOT / 'tests/browser-smoke.py')
 smoke = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(smoke)
+PRIMARY_BUTTON = re.compile(r'\bbutton-primary\b')
 
 
 def fixture():
@@ -104,8 +105,10 @@ def check_private_work_and_handoff(browser, base):
     try:
         page.goto(base + '/index.html#shift/empty-work')
         cancelled_visit = page.locator('[data-vehicle-detail="empty-work"]')
+        cancelled_handoff = cancelled_visit.get_by_role('button', name='Передать владельцу', exact=True)
+        expect(cancelled_handoff).to_be_visible()
         expect(cancelled_visit.get_by_text('Открыть работу', exact=True)).to_have_count(0)
-        expect(cancelled_visit.get_by_role('button', name='Передать владельцу', exact=True)).not_to_have_class(re.compile(r'\bbutton-primary\b'))
+        expect(cancelled_handoff).not_to_have_class(PRIMARY_BUTTON)
         page.goto(base + '/index.html#assigned/11')
         detail = page.locator('[data-vehicle-detail="11"]')
         handoff = detail.get_by_role('button', name='Передать владельцу', exact=True)
@@ -115,9 +118,9 @@ def check_private_work_and_handoff(browser, base):
                                   ('assigned', 'Оклейка дверей', 'Начать работу'),
                                   ('blocked', 'Подготовка кузова', 'Продолжить работу')]:
             expect(detail.get_by_text('Открыть работу', exact=True)).to_have_count(1)
-            expect(handoff).not_to_have_class(re.compile(r'\bbutton-primary\b'))
+            expect(handoff).not_to_have_class(PRIMARY_BUTTON)
             button = work_button(detail, key)
-            expect(button.get_by_text('Открыть работу', exact=True)).to_have_class(re.compile(r'\bbutton-primary\b'))
+            expect(button.get_by_text('Открыть работу', exact=True)).to_have_class(PRIMARY_BUTTON)
             before = page.evaluate('JSON.stringify(__garageOrderState.orders)')
             button.click()
             expect(page).to_have_url(base + '/index.html#assigned/' + key)
@@ -133,14 +136,14 @@ def check_private_work_and_handoff(browser, base):
             expect(page).to_have_url(base + '/index.html#assigned/11')
             expect(detail.locator(f'[data-task-id="{key}"] button')).to_be_focused()
         expect(detail.get_by_text('Открыть работу', exact=True)).to_have_count(0)
-        expect(handoff).to_have_class(re.compile(r'\bbutton-primary\b'))
+        expect(handoff).to_have_class(PRIMARY_BUTTON)
         services = detail.get_by_role('heading', name='Работы по автомобилю', exact=True)
         assert handoff.bounding_box()['y'] < services.bounding_box()['y']
         page.evaluate("location.hash = 'history/11'")
         expect(detail.get_by_text('Ваше выполнение учтено', exact=True)).to_have_count(3)
-        expect(handoff).not_to_have_class(re.compile(r'\bbutton-primary\b'))
+        expect(handoff).not_to_have_class(PRIMARY_BUTTON)
         page.evaluate("location.hash = 'assigned/11'")
-        expect(handoff).to_have_class(re.compile(r'\bbutton-primary\b'))
+        expect(handoff).to_have_class(PRIMARY_BUTTON)
         handoff.click()
         form = detail.locator('form.vehicle-handoff')
         expect(form.get_by_role('heading', name='Выполнено · 3', exact=True)).to_be_visible()
@@ -215,7 +218,9 @@ def run(directory, chromium):
                 expect(page.get_by_text('Возьмите автомобиль в работу', exact=False)).to_be_visible()
                 expect(page.get_by_role('button', name='Начать работу', exact=True)).to_have_count(0)
                 page.get_by_role('button', name='← К автомобилю').click()
-                expect(page.locator('[data-vehicle-detail="13"]').get_by_text('Открыть работу', exact=True)).to_have_count(0)
+                available = page.locator('[data-vehicle-detail="13"]')
+                expect(available.get_by_role('button', name='Взять автомобиль', exact=True)).to_be_visible()
+                expect(available.get_by_text('Открыть работу', exact=True)).to_have_count(0)
                 page.get_by_role('button', name='← К списку').click()
                 take = page.locator('[data-vehicle-id="13"]').get_by_role('button', name='Взять автомобиль', exact=True)
                 context.set_offline(True)
@@ -228,7 +233,7 @@ def run(directory, chromium):
                 open_work = work_button(detail, 'task-13')
                 expect(open_work).to_be_in_viewport(ratio=1)
                 expect(give_back).to_be_in_viewport(ratio=1)
-                expect(give_back).not_to_have_class(re.compile(r'\bbutton-primary\b'))
+                expect(give_back).not_to_have_class(PRIMARY_BUTTON)
                 assert open_work.bounding_box()['y'] < give_back.bounding_box()['y']
                 expect(detail.locator('[data-task-id]')).to_have_count(2)
                 context.set_offline(True)
