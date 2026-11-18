@@ -255,6 +255,7 @@ def run(directory, chromium):
                 give_back.click()
                 handoff = detail.locator('form.vehicle-handoff')
                 expect(page.get_by_role('heading', name='Передача владельцу', exact=True)).to_be_focused()
+                expect(handoff.get_by_role('button', name='Передать владельцу', exact=True)).to_be_in_viewport(ratio=1)
                 expect(detail.get_by_role('heading', name='Работы по автомобилю', exact=True)).to_be_hidden()
                 expect(task_row).to_be_hidden()
                 unfinished = handoff.get_by_text('Проверка кромки', exact=True)

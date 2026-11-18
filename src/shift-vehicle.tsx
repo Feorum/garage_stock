@@ -160,8 +160,13 @@ export function VehicleDetail({
   const canHandoff = order.status === 'published' && flow?.state === 'active' && flow.can_handoff;
   const showDraft = !!draft && !!canHandoff;
   useLayoutEffect(() => {
-    if (showDraft) checklistTitle.current?.focus();
-    else if (wasDraft.current) {
+    if (showDraft) {
+      checklistTitle.current?.focus();
+      const form = checklistTitle.current?.closest('form');
+      if (form && form.getBoundingClientRect().height <= document.documentElement.clientHeight) {
+        form.scrollIntoView({ block: 'nearest' });
+      }
+    } else if (wasDraft.current) {
       if (handoffButton.current) handoffButton.current.focus();
       else title.current?.focus({ preventScroll: true });
     }
