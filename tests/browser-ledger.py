@@ -149,13 +149,28 @@ def run(args):
             expect(page.get_by_role('button', name='Добавить запись', exact=True)).to_be_disabled()
             page.get_by_role('combobox', name='Раздел', exact=True).select_option('ledger')
             passed.append('Latest period, primary section, formula calculation, source evidence and audited override')
+            # Simulate moving straight to the price as soon as the editor is available.
+            # Its initial focus must already be in place before this interaction.
+            page.evaluate('''() => {
+                const observer = new MutationObserver(() => {
+                    const price = document.getElementById('ledger-field-B');
+                    if (!price) return;
+                    observer.disconnect();
+                    window.__ledgerOpeningFocus = document.activeElement.id;
+                    price.focus();
+                });
+                observer.observe(document.querySelector('.ledger-workspace'), {childList: true, subtree: true});
+            }''')
             page.get_by_role('button', name='Добавить запись', exact=True).click()
-            page.locator('#ledger-field-B').fill('30')
+            expect(page.locator('#ledger-field-B')).to_be_focused()
+            assert page.evaluate('window.__ledgerOpeningFocus') == 'ledger-field-A'
+            page.keyboard.insert_text('30')
             page.locator('#ledger-field-C').fill('Synthetic manual row')
             page.get_by_label('Причина изменения', exact=True).fill('New synthetic entry')
             page.locator('.ledger-form').get_by_role('button', name='Добавить запись', exact=True).click()
             expect(page.locator('.ledger-form')).to_have_count(0)
             created = page.evaluate('__garageLedgerState.sheets[1].rows.find(r => r.source_row === null)')
+            assert created['cells']['B']['value'] == 30
             assert not any(c.get('formula') for c in created['cells'].values())
             page.get_by_text('Текущие итоги по столбцам раздела', exact=True).click()
             expect(page.locator('.ledger-source-detail').filter(has=page.get_by_text('Текущие итоги по столбцам раздела', exact=True))).to_contain_text('200')

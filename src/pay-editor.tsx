@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { GarageClient } from './shift-model';
 import { decimal, hundredths, money, payRead, title, type PayItem } from './pay-model';
 
@@ -29,7 +29,7 @@ export function PayEditor({ item, client, close, saved }: Props) {
   const [latest, setLatest] = useState<PayItem | null>(null);
   const request = useRef({ fingerprint: '', id: '' });
   const poolField = useRef<HTMLInputElement>(null);
-  useEffect(() => { poolField.current?.focus(); }, []);
+  useLayoutEffect(() => { poolField.current?.focus(); }, []);
   const inFlight = useRef(false);
   const cents = hundredths(pool);
   const chosen = item.candidates.filter(person => person.mechanic_id in parts);

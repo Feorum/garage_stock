@@ -1,5 +1,5 @@
 import { h } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { actionError } from './order-shared.js';
 import { actionLabel, confirmations, dayLabel, instantLabel, isTerminal, mine, participantLabel, participants, primaryAction, taskLabel, taskName } from './shift-model';
 import type { GarageClient, Profile, TaskRow, TeamAction } from './shift-model';
@@ -40,8 +40,8 @@ export function TaskDetail({ row, profile, client, online, current, refresh, clo
   const input = useRef<HTMLTextAreaElement>(null);
   const primaryButton = useRef<HTMLButtonElement>(null);
   const submitButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => { mounted.current = true; title.current?.focus({ preventScroll: true }); return () => { mounted.current = false; }; }, [task.id]);
-  useEffect(() => { if (draft) (input.current || submitButton.current)?.focus(); }, [draft?.action]);
+  useLayoutEffect(() => { mounted.current = true; title.current?.focus({ preventScroll: true }); return () => { mounted.current = false; }; }, [task.id]);
+  useLayoutEffect(() => { if (draft) (input.current || submitButton.current)?.focus(); }, [draft?.action]);
   const locked = !online || !current || saving;
   const conflict = Boolean(draft && task.version !== draft.version && !uncertain);
 
@@ -98,7 +98,7 @@ export function TaskDetail({ row, profile, client, online, current, refresh, clo
     <div class="shift-detail-top"><button type="button" class="button shift-back" onClick={close} disabled={saving}>← К списку</button><span class="shift-code">{order.order_number}</span></div>
     <div class="shift-detail-head"><div class="shift-priority-line"><span class={`task-status status-${task.status}`}>{taskLabel[task.status] || 'Состояние уточняется'}</span>
       {order.priority === 'urgent' && <span class="priority priority-urgent">Срочно</span>}</div>
-      <h2 id="shift-task-title" ref={title} tabIndex={-1}>{taskName(task)}</h2><p class="shift-vehicle-name">{order.vehicle}</p>
+      <h2 data-route-heading id="shift-task-title" ref={title} tabIndex={-1}>{taskName(task)}</h2><p class="shift-vehicle-name">{order.vehicle}</p>
     </div>
     <div class="shift-actions" aria-label="Действия с работой">
       {!draft && !uncertain && <div class="shift-button-strip">

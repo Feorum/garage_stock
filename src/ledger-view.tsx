@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { createLedgerCalculator } from './ledger-calculations.js';
 import {
   ledgerHeaders,
@@ -134,10 +134,10 @@ export function LedgerView({ client }: { client: Client }) {
     setEditor({ row, history });
     setConflict(undefined);
   }
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (editor) {
       panel.current?.scrollIntoView({ block: 'start' });
-      panel.current?.querySelector<HTMLElement>('input,textarea,button')?.focus({ preventScroll: true });
+      panel.current?.querySelector<HTMLElement>(':is(input,textarea,select,button):enabled')?.focus({ preventScroll: true });
     }
   }, [editor]);
   const save: Save = async (name, args) => {

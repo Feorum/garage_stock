@@ -137,7 +137,8 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
     document.title = route.section.label + ' · Garage';
     if (previous.current === hash) return;
     previous.current = hash;
-    main.current?.focus({ preventScroll: true });
+    const target = main.current?.querySelector<HTMLElement>('[data-route-heading]') || main.current;
+    target?.focus({ preventScroll: true });
     window.scrollTo(0, positions.current.get(hash) ?? 0);
   }, [hash]);
   let screen;

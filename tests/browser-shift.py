@@ -42,10 +42,12 @@ def run(directory, chromium):
                 trigger.focus()
                 page.keyboard.press('Enter')
                 primary = page.get_by_role('button', name='Подтвердить свою работу', exact=True)
+                expect(page.get_by_role('heading', name='Оклейка капота', exact=True)).to_be_focused()
                 expect(primary).to_be_in_viewport(ratio=1)
                 assert primary.bounding_box()['height'] >= 44
                 page.get_by_role('button', name='Оставить заметку', exact=True).click()
                 text = page.get_by_label('Текст заметки', exact=True)
+                expect(text).to_be_focused()
                 text.fill('Проверить кромку перед выдачей')
                 context.set_offline(True)
                 expect(page.get_by_role('button', name='Сохранить заметку')).to_be_disabled()
