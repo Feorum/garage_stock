@@ -1,6 +1,7 @@
 export interface Profile {
   id: string;
   name: string;
+  color?: string;
   role: 'admin' | 'mechanic';
 }
 export type Navigate = (section: string, recordId?: string) => void;

@@ -8,20 +8,23 @@ from pathlib import Path
 import re
 import subprocess
 from time import monotonic, sleep
+from threading import Barrier
 from uuid import uuid4
 
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = 'postgres:17-bookworm@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994'
 OWNER, A, B, C = [f'00000000-0000-4000-8000-{number:012d}' for number in range(1, 5)]
-PEOPLE = {OWNER: 'Test Owner', A: 'Механик А', B: 'Механик Б', C: 'Механик В'}
+PEOPLE = {OWNER: 'Test Owner', A: 'Андрей', B: 'Миша', C: 'Механик В'}
 ROLE = 'set local role authenticated; select set_config(\'request.jwt.claim.sub\', :\'subject\', true) as subject \\gset'
 BOOTSTRAP = """
 create role anon nologin;
 create role authenticated nologin;
 create role service_role nologin bypassrls;
+create publication supabase_realtime;
 create schema auth;
-create table auth.users(id uuid primary key, email text not null, raw_user_meta_data jsonb not null default '{}');
+create table auth.users(id uuid primary key, email text not null, raw_user_meta_data jsonb not null default '{}',
+                        raw_app_meta_data jsonb not null default '{}');
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid
 $$;
@@ -40,10 +43,11 @@ RPC = {
     'garage_create_order', 'garage_task_action', 'garage_team_action', 'garage_save_team_order', 'garage_vehicle_action',
     'garage_order_financials', 'garage_record_team_omission', 'garage_quote_order',
     'garage_pay_worklist', 'garage_pay_history', 'garage_pay_save', 'garage_save_task_pricing',
-    'garage_owner_gift_offer', 'garage_save_order_with_gift',
+    'garage_owner_gift_offer', 'garage_save_order_with_gift', 'garage_owner_review_prices',
+    'garage_check_work', 'garage_submit_work',
 }
 PARAM_TYPES = {
-    'p_order_id': 'uuid', 'p_id': 'uuid', 'p_task_id': 'uuid', 'p_request_id': 'uuid',
+    'p_order_id': 'uuid', 'p_order_ids': 'uuid[]', 'p_id': 'uuid', 'p_task_id': 'uuid', 'p_request_id': 'uuid',
     'p_mechanic_id': 'uuid', 'p_replacement_id': 'uuid', 'p_assignee': 'uuid',
     'p_order': 'jsonb', 'p_tasks': 'jsonb', 'p_options': 'jsonb', 'p_mechanic_ids': 'uuid[]',
     'p_action': 'text', 'p_mode': 'text', 'p_note': 'text', 'p_vehicle': 'text', 'p_source': 'text',
@@ -102,11 +106,15 @@ class Database:
         for user_id, name in PEOPLE.items():
             self.sql("insert into auth.users values (:'id', :'email', jsonb_build_object('name', :'name'));",
                      {'id': user_id, 'email': f'{user_id}@example.invalid', 'name': name})
+        for user_id, color in ((A, 'red'), (B, 'blue')):
+            self.sql("update auth.users set raw_app_meta_data=jsonb_build_object('mechanic_color', :'color'::text) where id=:'id';",
+                     {'id': user_id, 'color': color})
         self.sql("update profiles set role='admin' where id=:'owner';", {'owner': OWNER})
         migrations = sorted((ROOT / 'supabase/migrations').glob('*.sql'))
         historical = [p for p in migrations if p.name.split('_')[0] < '20261118000001']
         team_pay_release = [p for p in migrations if '20261118000001' <= p.name.split('_')[0] <= '20261118174234']
-        vehicle_price_release = [p for p in migrations if p.name.split('_')[0] > '20261118174234']
+        vehicle_price_release = [p for p in migrations if '20261118174234' < p.name.split('_')[0] < '20261118223856']
+        inline_release = [p for p in migrations if p.name.split('_')[0] >= '20261118223856']
         for migration in historical:
             self.sql(migration.read_text())
         legacy = create(self, 'До перехода')
@@ -142,6 +150,10 @@ class Database:
         assert migrated['tasks'][0]['my_status'] == 'working'
         paid = next(item for item in self.rpc(OWNER, 'garage_pay_worklist') if item['task_id'] == settled_id)
         assert paid['pool_kopeks'] == 3222 and paid['version'] == 1 and paid['equal_split'] is False
+        for migration in inline_release:
+            self.sql(migration.read_text())
+        assert task(self, A, ongoing)['can_check_work']
+        assert task(self, OWNER, settled)['completed_at'] is not None
 
     def rpc(self, actor, method, **parameters):
         assert method in RPC, method
@@ -237,6 +249,60 @@ def check_handoff_race(db):
         vehicle_action(db, A, after, 'handoff')
         reviewed = order(db, OWNER, label)['vehicle_workflow']
         assert reviewed['handoff_tasks'][0]['status'] == 'completed'
+
+
+def check_inline_work(db):
+    label = create(db, 'Совместные отметки без бронирования')
+    available = order(db, A, label)
+    work_id = available['tasks'][0]['id']
+    assert available['tasks'][0]['can_check_work'] and not available['vehicle_workflow']['can_submit']
+    assert available['vehicle_workflow']['holder_id'] is None
+    requests = {actor: str(uuid4()) for actor in (A, B)}
+    ready = Barrier(2)
+
+    def check(actor):
+        ready.wait(timeout=10)
+        return db.rpc(actor, 'garage_check_work', p_task_id=work_id, p_request_id=requests[actor])
+
+    concurrent_pair(check)
+    finished = order(db, A, label)
+    item = finished['tasks'][0]
+    assert item['status'] == 'completed' and not item['can_check_work']
+    assert finished['vehicle_workflow']['can_submit']
+    people = [person for person in item['participants'] if person['status'] == 'confirmed']
+    assert len(people) == 2 and {person['mechanic_id'] for person in people} == {A, B}
+    assert {(p['name'], p['color'].lower()) for p in people} == {('Андрей','#ff939d'), ('Миша','#8ac4ff')}
+    assert db.sql("select count(*) from garage_task_completions where task_id=:'task';", {'task': work_id}) == '1'
+    assert len([row for row in db.rpc(OWNER, 'garage_pay_worklist') if row['task_id'] == work_id]) == 1
+    assert task(db, C, label)['can_check_work'] and not order(db, C, label)['vehicle_workflow']['can_submit']
+    for request in (requests[A], str(uuid4())):
+        assert db.rpc(A, 'garage_check_work', p_task_id=work_id, p_request_id=request)['status'] == 'completed'
+    assert order(db, A, label)['version'] == finished['version']
+    for actor in (A, B, C):
+        recipients = db.sql("begin;\n" + ROLE + "\nselect recipient_id from garage_board_updates; commit;",
+                            {'subject': actor}).splitlines()
+        assert recipients == [actor], recipients
+    assert db.sql("select tablename from pg_publication_tables where pubname='supabase_realtime';") == 'garage_board_updates'
+    expect_rejection(lambda: db.rpc(C, 'garage_submit_work', p_order_id=finished['id'],
+                                    p_expected_version=finished['version'], p_note='', p_request_id=str(uuid4())))
+    send = dict(p_order_id=finished['id'], p_expected_version=finished['version'],
+                p_note='Проверено двумя механиками', p_request_id=str(uuid4()))
+    receipt = db.rpc(B, 'garage_submit_work', **send)
+    assert receipt['state'] == 'review' and db.rpc(B, 'garage_submit_work', **send) == receipt
+    expect_rejection(lambda: db.rpc(C, 'garage_check_work', p_task_id=work_id, p_request_id=str(uuid4())))
+    assert db.rpc(A, 'garage_check_work', p_task_id=work_id, p_request_id=requests[A])['task_id'] == work_id
+    assert not task(db, C, label)['can_check_work']
+    revision = "select revision from garage_board_updates where recipient_id=:'id';"
+    before_private = db.sql(revision, {'id': C})
+    private = db.rpc(OWNER, 'garage_save_team_order', p_mode='new', p_id=None, p_expected_version=None,
+                     p_order={'source':'owner','vehicle':'Личная отметка','vehicle_group_code':'VG02'},
+                     p_tasks=[{'work_code':'W01','assigned_to':A,'mechanic_ids':[A]}], p_request_id=str(uuid4()))
+    mine = next(row for row in db.rpc(A, 'garage_list_orders') if row['id'] == private['order_id'])
+    assert mine['tasks'][0]['can_check_work'] and not order(db, C, 'Личная отметка')
+    expect_rejection(lambda: db.rpc(C, 'garage_check_work', p_task_id=mine['tasks'][0]['id'], p_request_id=str(uuid4())))
+    db.rpc(A, 'garage_check_work', p_task_id=mine['tasks'][0]['id'], p_request_id=str(uuid4()))
+    assert db.sql(revision, {'id': C}) == before_private
+    print('Passed simultaneous check-off, one completion/pay item, distinct credit, receipt replay, private eligibility and scoped notification rows.')
 
 
 def exercise_database(db):
@@ -351,6 +417,7 @@ if __name__ == '__main__':
             """)
             exercise_database(database)
             check_handoff_race(database)
+            check_inline_work(database)
             if not args.sql_only:
                 from team_browser import exercise_browser
                 from owner_browser import exercise_owner_order

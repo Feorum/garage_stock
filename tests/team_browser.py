@@ -1,4 +1,6 @@
 """Cross-session browser checks; SQL assertions use the same disposable database as the browsers."""
+import asyncio
+from threading import Barrier
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from uuid import uuid4
@@ -19,99 +21,103 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
     extra_task = next(t for t in record['tasks'] if t['work_code'] == 'W09')
     server, base = smoke.serve(directory.resolve())
     sessions = []
+    competing = Barrier(2)
+    first_checks = set()
+
+    revisions = {}
+
+    def board_revision(recipient):
+        # RLS applies to the synthetic Realtime transport just as it does to a subscriber.
+        value = db.sql(r"""begin; set local role authenticated;
+            select set_config('request.jwt.claim.sub', :'actor', true) as subject \gset
+            select revision from garage_board_updates where recipient_id=:'actor'; commit;""", {'actor': recipient})
+        return int(value or 0)
 
     def new_page(browser, subject, name, role, route):
+        revisions[subject] = board_revision(subject)
         context, page, errors, live = smoke.new_page(
-            browser, {'userId': subject, 'profile': {'id': subject, 'name': name, 'role': role, 'active': True}},
+            browser, {'userId': subject, 'profile': {'id': subject, 'name': name, 'role': role, 'active': True},
+                      'appMetadata': {'mechanic_color': {mechanic_a:'red', mechanic_b:'blue'}.get(subject)},
+                      'initialBoardRevision': revisions[subject]},
             {'width': 390 if role == 'mechanic' else 1440, 'height': 844},
         )
         sessions.append((context, errors, live))
-        page.expose_function('__garageRpcFixture', lambda method, params: db.transport(subject, method, params))
+        async def transport(method, params):
+            if method == 'garage_check_work' and params['p_task_id'] == task_id and subject not in first_checks:
+                first_checks.add(subject)
+                await asyncio.to_thread(competing.wait, 12)
+            result = await asyncio.to_thread(db.transport, subject, method, params)
+            if method in ('garage_check_work', 'garage_submit_work', 'garage_vehicle_action') and not result['error']:
+                recipients = list(revisions)
+                current_rows = await asyncio.gather(*(asyncio.to_thread(board_revision, recipient) for recipient in recipients))
+                for recipient, revision in zip(recipients, current_rows):
+                    revisions[recipient] = max(revisions[recipient], revision)
+            return result
+        page.expose_function('__garageReadFixtureRevision', lambda: revisions[subject])
+        page.expose_function('__garageRpcFixture', transport)
         page.goto(f'{base}/index.html#{route}')
         return page
 
-    def open_task(page, selected=task_id):
-        page.locator(f'[data-task-id="{selected}"]').get_by_role('button').first.click()
-
-    def confirm(page):
-        page.get_by_role('button', name='Подтвердить свою работу', exact=True).click()
-        page.get_by_role('button', name='Подтвердить выполнение', exact=True).click()
-
-    def wait_for_action(page):
-        expect(page.get_by_text('Ваше выполнение подтверждено.', exact=True)).to_be_visible()
+    def work(page, key=task_id):
+        return page.locator(f'[data-vehicle-id="{record["id"]}"] [data-task-id="{key}"]')
 
     def current():
         return next(row for row in db.rpc(owner, 'garage_list_orders') if row['id'] == record['id'])
 
-    def handoff(page, note):
+    def handoff(page, note, *, complete=False):
         page.get_by_role('button', name='Передать владельцу', exact=True).click()
-        comment = page.get_by_label('Комментарий владельцу')
+        form = page.locator('form.vehicle-handoff')
+        expect(form.get_by_role('heading', name='Передача владельцу', exact=True)).to_be_focused()
+        for task in record['tasks']:
+            item = form.get_by_text(task['work_name'], exact=True)
+            if complete or task['id'] != task_id:
+                expect(item).to_be_visible()
+            else:
+                expect(item).to_be_hidden()
+        comment = form.get_by_label('Комментарий владельцу')
         comment.fill(note)
-        confirm_handoff = page.get_by_role('button', name='Подтвердить передачу', exact=True)
+        confirm_handoff = form.get_by_role('button', name='Передать владельцу', exact=True)
         confirm_handoff.click()
-        success = page.get_by_text('Автомобиль передан владельцу на проверку.', exact=True)
-        review = page.get_by_role('button', name='Я проверил изменения', exact=True)
-        expect(success.or_(review)).to_be_visible()
+        notice = page.get_by_text('Автомобиль передан владельцу.', exact=True)
+        review = form.get_by_role('button', name='Я проверил изменения', exact=True)
+        expect(notice.or_(review)).to_be_visible()
         if review.is_visible():
             expect(comment).to_have_value(note)
             review.click()
             confirm_handoff.click()
-        expect(success).to_be_visible()
+        expect(notice).to_be_visible()
+        expect(form).to_be_hidden()
 
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(executable_path=chromium, headless=True, args=['--no-sandbox'])
             try:
-                a = new_page(browser, mechanic_a, 'Механик А', 'mechanic', 'manager-orders')
-                b = new_page(browser, mechanic_b, 'Механик Б', 'mechanic', 'manager-orders')
-                open_visit(a, record['id'], take=True)
-                open_task(a)
-                a.get_by_role('button', name='Начать работу', exact=True).click()
-                b.reload()
-                open_visit(b, record['id'])
-                open_task(b)
-                b.get_by_role('button', name='Присоединиться', exact=True).click()
-                expect(b.get_by_role('button', name='Подтвердить свою работу', exact=True)).to_be_visible()
-                a.goto(f'{base}/index.html#shift')
-                a.reload()
-                open_visit(a, record['id'])
-                open_task(a)
-                a.get_by_role('button', name='Приостановить', exact=True).click()
-                blocker = a.get_by_role('textbox', name='Причина', exact=True)
-                blocker.fill('Ждём выдачу материала')
-                b.get_by_role('button', name='Оставить заметку', exact=True).click()
-                b.get_by_role('textbox', name='Текст заметки', exact=True).fill('Командная заметка из браузера')
-                b.get_by_role('button', name='Сохранить заметку', exact=True).click()
-                expect(b.get_by_text('Заметка сохранена.', exact=True)).to_be_visible()
-                a.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
-                expect(blocker).to_have_value('Ждём выдачу материала')
-                expect(a.get_by_role('button', name='Я проверил изменения', exact=True)).to_be_visible()
-                a.get_by_role('button', name='Отмена', exact=True).click()
-                confirm(a)
-                wait_for_action(a)
-                assert next(t for t in current()['tasks'] if t['id'] == task_id)['status'] != 'completed'
-                assert db.sql("select count(*) from garage_task_completions where task_id=:'task';", {'task': task_id}) == '0'
+                a = new_page(browser, mechanic_a, 'Андрей', 'mechanic', 'manager-orders')
+                b = new_page(browser, mechanic_b, 'Миша', 'mechanic', 'manager-orders')
                 other = new_page(browser, colleague, 'Механик В', 'mechanic', 'manager-orders')
-                open_visit(other, record['id'])
-                open_task(other)
-                expect(other.get_by_text('Механик Б', exact=True)).to_be_visible()
-                expect(other.get_by_role('button', name='Присоединиться', exact=True)).to_have_count(0)
-                expect(other.get_by_text('Командная заметка из браузера', exact=True)).to_have_count(0)
-                b.goto(f'{base}/index.html#shift')
-                b.reload()
-                open_visit(b, record['id'])
-                open_task(b)
-                confirm(b)
-                wait_for_action(b)
-                assert next(t for t in current()['tasks'] if t['id'] == task_id)['status'] == 'completed'
-                assert db.sql("select count(*) from garage_task_completions where task_id=:'task';", {'task': task_id}) == '1'
-                for page in (a, b):
-                    page.goto(f'{base}/index.html#history')
+                for page in (a, b, other):
                     open_visit(page, record['id'])
-                    expect(page.locator(f'[data-task-id="{task_id}"]')).to_be_visible()
-                    assert not page.evaluate('__garageCalls.some(c => c.name?.startsWith("garage_pay_"))')
+                    expect(work(page).get_by_role('checkbox')).to_be_enabled()
+                # Both real RPC requests reach PostgreSQL together from the two independent accounts.
+                work(a).get_by_role('checkbox').click()
+                work(b).get_by_role('checkbox').click()
+                expect(work(a).locator(f'[data-mechanic-id="{mechanic_a}"]')).to_be_visible()
+                expect(work(b).locator(f'[data-mechanic-id="{mechanic_b}"]')).to_be_visible()
+                for page, recipient in ((a, mechanic_a), (b, mechanic_b), (other, colleague)):
+                    for person, name, color in ((mechanic_a,'Андрей','rgb(255, 147, 157)'), (mechanic_b,'Миша','rgb(138, 196, 255)')):
+                        marker = work(page).locator(f'[data-mechanic-id="{person}"]')
+                        expect(marker).to_be_visible(timeout=2000)
+                        assert name in marker.evaluate("el => [el.textContent,el.getAttribute('aria-label'),el.title].join(' ')")
+                        assert marker.evaluate("el => getComputedStyle(el, '::before').backgroundColor") == color
+                        if recipient == person:
+                            identity = page.locator(f'header [data-mechanic-id="{person}"]')
+                            expect(identity).to_have_text(name)
+                            assert identity.evaluate("el => getComputedStyle(el, '::before').backgroundColor") == color
+                    assert not page.evaluate("__garageCalls.some(c => ['garage_team_action','garage_vehicle_action','garage_pay_worklist','garage_order_financials','garage_owner_review_prices'].includes(c.name))")
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-                a.goto(f'{base}/index.html#shift/{record["id"]}')
+                assert db.sql("select count(*) from garage_task_completions where task_id=:'id';", {'id':task_id}) == '1'
+                assert len([row for row in db.rpc(owner,'garage_pay_worklist') if row['task_id'] == task_id]) == 1
+                assert {p['mechanic_id'] for p in next(t for t in current()['tasks'] if t['id'] == task_id)['participants']} == {mechanic_a,mechanic_b}
                 handoff(a, 'Проверить вторую услугу до выдачи')
                 pay = new_page(browser, owner, 'Test Owner', 'admin', 'orders/' + record['id'])
                 review = pay.get_by_role('region', name='Передача автомобиля', exact=True)
@@ -120,16 +126,13 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
                 workflow = current()['vehicle_workflow']
                 assert workflow['state'] == 'review' and workflow['unfinished_count'] == 1
                 assert not workflow['can_close']
-                review.get_by_label('Комментарий к решению', exact=True).fill('Закончить вторую услугу')
+                review.get_by_label('Механику при возврате (необязательно)', exact=True).fill('Закончить вторую услугу')
                 review.get_by_role('button', name='Вернуть в работу', exact=True).click()
                 expect(review.get_by_role('button', name='Вернуть в работу', exact=True)).to_have_count(0)
-                a.reload()
-                open_task(a, extra_task['id'])
-                a.get_by_role('button', name='Начать работу', exact=True).click()
-                confirm(a)
-                wait_for_action(a)
-                a.get_by_role('button', name='← К автомобилю', exact=True).click()
-                handoff(a, 'Все услуги проверены')
+                open_visit(a, record['id'])
+                work(a, extra_task['id']).get_by_role('checkbox').click()
+                expect(work(a,extra_task['id']).locator(f'[data-mechanic-id="{mechanic_a}"]')).to_be_visible()
+                handoff(a, 'Все услуги проверены', complete=True)
                 pay.reload()
                 expect(review.get_by_text('Все услуги проверены', exact=True)).to_be_visible()
                 review.get_by_role('button', name='Принять и закрыть заказ', exact=True).click()
@@ -156,4 +159,4 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
         server.server_close()
     for _, errors, requests in sessions:
         assert not errors and not requests, (errors, requests)
-    print('Passed four independent browser sessions covering team work, safe colleague visibility, draft recovery and Owner pay.')
+    print('Passed four independent browser sessions covering concurrent red/blue checkmarks, scoped live updates, partial/full handoff, return, closure and one Owner pay split.')

@@ -23,6 +23,7 @@ import {
 import { Price, SourceReference } from './owner-summary';
 import { PayoutSummary, TaskPricing } from './owner-pricing';
 import { OwnerHandoff } from './owner-handoff';
+import { ExecutorMarker } from './executor-marker';
 
 interface DetailProps {
   order: OwnerOrder;
@@ -121,7 +122,7 @@ function OwnerTask({
         {task.blocker_reason && task.status === 'blocked' && <p>Приостановлено: {task.blocker_reason}</p>}
         {members.map((m) => (
           <p key={m.mechanic_id}>
-            {m.name} · {participantLabel[m.status]}
+            {m.status === 'confirmed' ? <ExecutorMarker name={m.name} id={m.mechanic_id} color={m.color} /> : m.name} · {participantLabel[m.status]}
           </p>
         ))}
         {task.completed_at && <p>Выполнено: {instantLabel(task.completed_at)}</p>}

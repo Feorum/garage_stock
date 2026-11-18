@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright, expect
-from order_browser_helpers import navigate_section, open_visit, task_card
+from order_browser_helpers import navigate_section, open_visit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +50,7 @@ def rpc_calls(page, name):
 def safe_mechanic(page):
     assert not rpc_calls(page, 'garage_staff')
     assert not rpc_calls(page, 'garage_order_financials')
+    assert not rpc_calls(page, 'garage_owner_review_prices')
     assert not rpc_calls(page, 'garage_manager_intakes')
     assert not rpc_calls(page, 'garage_quote_order')
     assert not rpc_calls(page, 'garage_save_task_pricing')
@@ -86,7 +87,7 @@ def run(args):
         try:
             # The form offers the approved matrix and requires assignment for direct orders.
             context, page, errors, live = smoke.new_page(browser, {})
-            page.goto(base + '/index.html#orders')
+            page.goto(base + '/index.html#orders/tools')
             smoke.ready(page, 'Test Owner')
             page.get_by_role('button', name='Новый заказ', exact=True).click()
             page.get_by_label('Автомобиль', exact=True).fill('Synthetic assigned vehicle')
@@ -117,7 +118,7 @@ def run(args):
             finish_context(context, errors, live)
 
             context, page, errors, live = smoke.new_page(browser, {'rpcDelays': {'garage_save_team_order': 400}})
-            page.goto(base + '/index.html#orders')
+            page.goto(base + '/index.html#orders/tools')
             smoke.ready(page, 'Test Owner')
             fill_order(page, 'Synthetic tinted vehicle')
             page.get_by_role('checkbox', name='тонировка задней полусферы (5%,15%)', exact=True).check()
@@ -140,7 +141,7 @@ def run(args):
 
             # An acknowledgement lost after commit must not create a second vehicle order.
             context, page, errors, live = smoke.new_page(browser, {'loseCreateResponseOnce': True})
-            page.goto(base + '/index.html#orders')
+            page.goto(base + '/index.html#orders/tools')
             smoke.ready(page, 'Test Owner')
             fill_order(page, 'Synthetic retry vehicle')
             page.get_by_role('button', name='Отправить заказ', exact=True).click()
@@ -156,7 +157,7 @@ def run(args):
 
             # Manager-origin work is shared, with no forced assignee.
             context, page, errors, live = smoke.new_page(browser, {})
-            page.goto(base + '/index.html#orders')
+            page.goto(base + '/index.html#orders/tools')
             smoke.ready(page, 'Test Owner')
             fill_order(page, 'Synthetic manager vehicle', 'manager')
             page.get_by_role('button', name='Отправить заказ', exact=True).click()
@@ -173,7 +174,7 @@ def run(args):
             owner_order = order(10, tasks=[completed, pending])
             owner_order['vehicle_workflow'] = {'state': 'active', 'holder_id': ME}
             context, page, errors, live = smoke.new_page(browser, {'orders': [owner_order]})
-            page.goto(base + '/index.html#orders')
+            page.goto(base + '/index.html#orders/tools')
             smoke.ready(page, 'Test Owner')
             page.locator(f'[data-order-id="{owner_order["id"]}"]').click()
             card = page.locator(f'[data-task-id="{pending["id"]}"]')
@@ -199,6 +200,7 @@ def run(args):
             page.wait_for_function("__garageOrderState.orders[0].status === 'closed'")
             page.get_by_role('button', name='К списку заказов', exact=True).click()
             expect(page.get_by_role('region', name='Подробности заказа')).to_have_count(0)
+            page.get_by_role('link', name='Управление заказами', exact=True).click()
             page.get_by_role('combobox', name='Статус заказа', exact=True).select_option('closed')
             closed_row = page.locator(f'[data-order-id="{owner_order["id"]}"]')
             expect(closed_row.get_by_text('Закрыт', exact=True)).to_be_visible()
@@ -219,58 +221,41 @@ def run(args):
             smoke.ready(page, 'Test Mechanic')
             expect(page.get_by_text('Synthetic vehicle 1', exact=True)).to_be_visible()
             expect(page.get_by_text('Synthetic vehicle 2', exact=True)).to_have_count(0)
-            open_visit(page, assigned['id'], take=True)
-            card = task_card(page, assigned['tasks'][0]['id'])
-            card.get_by_role('button', name='Начать работу', exact=True).click()
-            expect(card.get_by_role('button', name='Подтвердить свою работу', exact=True)).to_be_visible()
-            expect(card.get_by_role('button', name='Вернуть в очередь', exact=True)).to_have_count(0)
-            card.get_by_role('button', name='Приостановить', exact=True).click()
-            card.get_by_label('Причина', exact=True).fill('Synthetic preparation blocker')
-            card.get_by_role('button', name='Сохранить причину', exact=True).click()
-            expect(card.get_by_role('button', name='Продолжить работу', exact=True)).to_be_visible()
-            expect(card.get_by_text('Synthetic preparation blocker', exact=True).first).to_be_visible()
-            card.get_by_role('button', name='Продолжить работу', exact=True).click()
-            expect(card.get_by_role('button', name='Подтвердить свою работу', exact=True)).to_be_visible()
-            page.evaluate('window.scrollTo(0, 0)')
+            private_card = open_visit(page, assigned['id'])
+            row = private_card.locator(f'[data-task-id="{assigned["tasks"][0]["id"]}"]')
+            row.get_by_role('checkbox').click()
+            expect(row.locator(f'[data-mechanic-id="{ME}"]')).to_be_visible()
+            expect(page.get_by_text('Synthetic vehicle 2', exact=True)).to_have_count(0)
             page.screenshot(path=str(args.output / 'mechanic-active-order.png'), full_page=True)
-            card.get_by_role('button', name='Подтвердить свою работу', exact=True).click()
-            card.get_by_role('button', name='Подтвердить выполнение', exact=True).click()
-            expect(card.get_by_role('button', name='Подтвердить выполнение', exact=True)).to_have_count(0)
-            navigate_section(page, 'История')
-            expect(page.get_by_text('Synthetic vehicle 1', exact=True)).to_be_visible()
-            assert page.evaluate("__garageOrderState.orders[0].tasks[0].status") == 'completed'
             safe_mechanic(page)
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-            passed.append('assigned mechanic starts, blocks, resumes and completes without financial access')
-            navigate_section(page, 'Общая очередь')
-            open_visit(page, shared['id'], take=True)
-            shared_card = task_card(page, shared['tasks'][0]['id'])
-            shared_card.get_by_role('button', name='Начать работу', exact=True).click()
-            navigate_section(page, 'Моя смена')
-            shared_card = task_card(page, shared['tasks'][0]['id'], shared['id'])
-            expect(shared_card.get_by_role('button', name='Подтвердить свою работу', exact=True)).to_be_visible()
-            shared_card.get_by_role('button', name='Вернуть в очередь', exact=True).click()
-            shared_card.get_by_label('Причина', exact=True).fill('Synthetic shared release reason')
-            shared_card.get_by_role('button', name='Подтвердить возврат', exact=True).click()
-            navigate_section(page, 'Общая очередь')
-            expect(task_card(page, shared['tasks'][0]['id'], shared['id']).get_by_role('button', name='Начать работу', exact=True)).to_be_visible()
+            passed.append('mechanic marks an assigned private service inline without seeing other private orders or finances')
+            page.get_by_role('link', name='Заказы менеджеров', exact=True).click()
+            shared_card = open_visit(page, shared['id'])
+            row = shared_card.locator(f'[data-task-id="{shared["tasks"][0]["id"]}"]')
+            row.get_by_role('checkbox').click()
+            expect(row.locator(f'[data-mechanic-id="{ME}"]')).to_be_visible()
+            assert [entry['args']['p_task_id'] for entry in rpc_calls(page, 'garage_check_work')] == [
+                assigned['tasks'][0]['id'], shared['tasks'][0]['id']]
+            assert not rpc_calls(page, 'garage_vehicle_action') and not rpc_calls(page, 'garage_team_action')
             safe_mechanic(page)
-            passed.append('mechanic self-claims and explicitly returns a Manager task without changing Owner assignments')
+            passed.append('shared Manager work can be checked without a reservation or membership request')
             finish_context(context, errors, live)
 
             # A late order response cannot paint private data over a different section or logout.
             context, page, errors, live = smoke.new_page(browser, {
                 'orders': [order(9)], 'rpcDelays': {'garage_list_orders': 600},
             })
-            page.goto(base + '/index.html#orders')
+            page.goto(base + '/index.html#orders/tools')
             smoke.ready(page, 'Test Owner')
             page.wait_for_function("(__garageCalls || []).some(call => call.name === 'garage_list_orders')")
-            navigate_section(page, 'Подключения таблиц')
+            page.get_by_role('link', name='Отчёты и история', exact=True).click()
+            page.get_by_role('link', name='Подключения таблиц', exact=True).click()
             expect(page.get_by_role('heading', name='Подключения таблиц', exact=True)).to_be_visible()
             page.wait_for_timeout(750)
             expect(page.get_by_role('heading', name='Подключения таблиц', exact=True)).to_be_visible()
             expect(page.get_by_text('Synthetic vehicle 9', exact=True)).to_have_count(0)
-            navigate_section(page, 'Заказы')
+            navigate_section(page, 'Все заказы')
             smoke.sign_out(page)
             expect(page.get_by_role('button', name='Войти', exact=True)).to_be_visible()
             page.wait_for_timeout(750)
@@ -291,6 +276,7 @@ def run(args):
                 order(41, tasks=[earlier]), order(42, tasks=[together]), order(43, tasks=[blocked])
             ]})
             page.goto(base + '/index.html#reports')
+            page.get_by_role('link', name='Отчёт по работам', exact=True).click()
             page.get_by_label('С даты', exact=True).fill('2026-11-13')
             page.get_by_label('По дату', exact=True).fill('2026-11-13')
             expect(page.get_by_text('1 за выбранный период', exact=True)).to_be_visible()
@@ -311,16 +297,23 @@ def run(args):
 
             # A failed staff fetch must have a working recovery path for order creation.
             context, page, errors, live = smoke.new_page(browser, {
-                'rpcErrors': {'garage_staff': {'times': 1, 'message': 'Temporary staff lookup failure'}},
+                'rpcErrors': {'garage_staff': 'Temporary staff lookup failure'},
             })
-            page.goto(base + '/index.html#orders')
+            page.goto(base + '/index.html#orders/tools')
             smoke.ready(page, 'Test Owner')
-            expect(page.get_by_role('button', name='Новый заказ', exact=True)).to_be_disabled()
+            staff_error = page.get_by_text('Не удалось загрузить механиков. Обновите список перед созданием заказа.', exact=True)
+            expect(staff_error).to_be_visible()
+            new_order = page.get_by_role('button', name='Новый заказ', exact=True)
+            expect(new_order).to_be_disabled()
+            # Mount and Realtime subscription can each refresh the roster.
+            failed_reads = len(rpc_calls(page, 'garage_staff'))
+            page.evaluate('delete __garageTest.rpcErrors.garage_staff')
             page.get_by_role('button', name='Обновить', exact=True).click()
-            expect(page.get_by_role('button', name='Новый заказ', exact=True)).to_be_enabled()
-            page.get_by_role('button', name='Новый заказ', exact=True).click()
+            expect(staff_error).to_have_count(0)
+            expect(new_order).to_be_enabled()
+            new_order.click()
             expect(page.get_by_role('combobox', name='Назначить механика', exact=True)).to_be_visible()
-            assert len(rpc_calls(page, 'garage_staff')) == 2
+            assert len(rpc_calls(page, 'garage_staff')) > failed_reads
             passed.append('transient staff lookup failure can recover without a page reload')
             finish_context(context, errors, live)
         finally:

@@ -98,7 +98,7 @@ def check_equal_preview(browser, base):
         save.click()
         expect(editor.get_by_role('status')).to_contain_text('не подтверждено')
         assert not fixture.saves[-1].get('p_equal_split')
-        editor.get_by_role('button', name='Разделить поровну между исполнителями').click()
+        editor.get_by_role('button', name='Вернуть равные доли').click()
         expect(first).to_contain_text(re.compile(r'3\s333,34'))
         assert not errors and not live, (errors, live)
     finally:

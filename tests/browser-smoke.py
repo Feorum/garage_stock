@@ -73,10 +73,10 @@ def check_no_private_data(page):
     assert not any(entry['method'] in ('insert', 'delete', 'upsert') for entry in calls), calls
     role = page.evaluate("globalThis.__garageTest?.profile?.role || 'admin'")
     rpc_names = {entry['name'] for entry in calls if entry['method'] == 'rpc'}
-    assert rpc_names <= {'garage_list_orders', 'garage_staff', 'garage_manager_intakes'}, rpc_names
-    if role == 'mechanic':
-        assert 'garage_staff' not in rpc_names
-        assert 'garage_manager_intakes' not in rpc_names
+    allowed = {'garage_list_orders'} if role == 'mechanic' else {
+        'garage_list_orders', 'garage_staff', 'garage_manager_intakes', 'garage_owner_review_prices',
+    }
+    assert rpc_names <= allowed, rpc_names
     body = page.locator('body').inner_text()
     assert not re.search(r'€|\bBYN\b|\bEUR\b|\bVAT\b', body), body
 
@@ -149,8 +149,8 @@ def run(args):
         try:
             # Both roles load only their own workspace navigation.
             for role, name, expected_links, forbidden in [
-                ('admin', 'Test Owner', ['Смена', 'Заказы', 'Отчёты', 'Распределение оплаты', 'Учёт бизнеса', 'Подключения таблиц'], 'История'),
-                ('mechanic', 'Test Mechanic', ['Моя смена', 'Общая очередь', 'История'], 'Отчёты'),
+                ('admin', 'Test Owner', ['На проверке', 'Все заказы', 'Отчёты и история'], 'История'),
+                ('mechanic', 'Test Mechanic', ['Заказы владельца', 'Заказы менеджеров', 'История'], 'Отчёты'),
             ]:
                 viewport = {'width': 320, 'height': 844} if role == 'mechanic' else None
                 context, page, errors, live = new_page(browser, {'profile': {'name': name, 'role': role}}, viewport)
@@ -168,9 +168,9 @@ def run(args):
                     page.screenshot(path=str(args.output / 'owner-workspace.png'), full_page=True)
                     expect(page.get_by_role('link', name='Approved works', exact=True)).to_have_count(0)
                     page.evaluate("location.hash = '#catalogue'")
-                    expect(page.get_by_role('heading', name='Смена', exact=True)).to_be_visible()
+                    expect(page.get_by_role('heading', name='На проверке', exact=True)).to_be_visible()
                     page.get_by_role('link', name='Перейти к содержимому', exact=True).evaluate('link => link.click()')
-                    expect(page.get_by_role('link', name='Смена', exact=True)).to_have_attribute('aria-current', 'page')
+                    expect(page.get_by_role('link', name='На проверке', exact=True)).to_have_attribute('aria-current', 'page')
                     assert page.evaluate("document.activeElement.id === 'main-content'")
                     check_no_private_data(page)
                 else:
@@ -211,7 +211,7 @@ def run(args):
             page.get_by_label('Пароль', exact=True).fill('not-a-real-password')
             page.get_by_role('button', name='Войти', exact=True).click()
             ready(page, 'Test Mechanic')
-            expect(page.get_by_role('link', name='Моя смена', exact=True)).to_be_visible()
+            expect(page.get_by_role('link', name='Заказы владельца', exact=True)).to_be_visible()
             expect(page.get_by_role('link', name='Отчёты', exact=True)).to_have_count(0)
             check_no_private_data(page)
             assert not errors, errors

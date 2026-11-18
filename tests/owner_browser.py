@@ -27,16 +27,17 @@ def exercise_owner_order(db, directory, chromium, owner, first, second):
                 }, {'width': 390, 'height': 844})
                 page.expose_function('__garageRpcFixture', transport)
                 page.goto(base + '/index.html#orders')
+                page.get_by_role('link', name='Управление заказами', exact=True).click()
                 page.get_by_role('button', name='Новый заказ').click()
                 page.get_by_label('Автомобиль', exact=True).fill(vehicle)
                 page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
                 page.locator('#new-work-W01').check()
-                for name in ['Механик А', 'Механик Б']:
+                for name in ['Андрей', 'Миша']:
                     page.get_by_role('checkbox', name=name, exact=True).check()
                 page.get_by_role('button', name='Отправить заказ', exact=True).click()
                 panel = page.get_by_role('region', name='Подробности заказа')
                 expect(panel.get_by_role('heading', name=vehicle)).to_be_visible()
-                for name in ['Механик А', 'Механик Б']:
+                for name in ['Андрей', 'Миша']:
                     expect(panel.get_by_text(name + ' · Назначено', exact=True)).to_be_visible()
                 panel.get_by_role('button', name='Изменить заказ', exact=True).click()
                 page.get_by_label('Цвет (необязательно)', exact=True).fill('Белый')
@@ -44,7 +45,7 @@ def exercise_owner_order(db, directory, chromium, owner, first, second):
                 panel.get_by_role('button', name='Добавить пропущенную выполненную работу').click()
                 page.get_by_role('combobox', name='Пропущенная работа из каталога', exact=True).select_option('W09')
                 page.get_by_role('combobox', name='Исполнитель', exact=True).select_option(first)
-                page.get_by_role('checkbox', name='Механик Б', exact=True).check()
+                page.get_by_role('checkbox', name='Миша', exact=True).check()
                 page.get_by_label('Дата и время выполнения').fill('2026-11-12T14:00')
                 page.get_by_label('Причина исправления').fill('Проверка предыдущей смены')
                 page.get_by_role('button', name='Записать выполненную работу').click()
