@@ -1,0 +1,63 @@
+.owner-handoff,
+.owner-task-price,
+.task-remuneration,
+.pay-card .payout-summary {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.owner-handoff {
+  border-inline-start: 0.25rem solid var(--accent);
+}
+.owner-handoff label,
+.owner-handoff fieldset,
+.owner-task-price fieldset {
+  display: grid;
+  min-width: 0;
+  gap: 0.6rem;
+}
+.handoff-snapshot,
+.task-price-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+  gap: 0.6rem 1rem;
+}
+.task-price-values dt,
+.quote-items span {
+  color: var(--muted);
+}
+.task-price-values dd {
+  margin: 0.2rem 0 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.owner-private-comment,
+.handoff-note {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.owner-task-price > button,
+.task-remuneration > a {
+  justify-self: start;
+}
+.pay-card .owner-task-price,
+.pay-card .payout-summary {
+  margin-top: 0.6rem;
+}
+.quote-items {
+  margin: 0.5rem 0;
+  padding: 0;
+  list-style: none;
+}
+.quote-items li {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--line);
+}

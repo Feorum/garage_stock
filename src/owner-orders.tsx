@@ -9,6 +9,7 @@ import {
   type OwnerOrder,
   type Staff,
 } from './owner-model';
+import type { GiftOffer } from './owner-gift';
 import { SourceReference } from './owner-summary';
 import { OwnerDetail } from './owner-detail';
 import { OrderEditor } from './owner-editor';
@@ -27,8 +28,18 @@ interface Snapshot {
   staff: Staff[];
   staffReady: boolean;
   intakeReady: boolean;
+  giftOffer: GiftOffer | null;
+  giftError: boolean;
 }
-const empty: Snapshot = { orders: [], intakes: [], staff: [], staffReady: false, intakeReady: false };
+const empty: Snapshot = {
+  orders: [],
+  intakes: [],
+  staff: [],
+  staffReady: false,
+  intakeReady: false,
+  giftOffer: null,
+  giftError: false,
+};
 const intakeIssues: Record<string, string> = {
   NO_APPROVED_TASKS: 'Выберите запрошенные менеджером работы из каталога.',
   INVALID_PLANNED_DATE: 'Укажите полную плановую дату.',
@@ -67,15 +78,18 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
     const turn = ++generation.current;
     if (showLoading) setLoading(true);
     try {
-      const [orders, intakes, staff] = await Promise.allSettled([
+      const [orders, intakes, staff, offer] = await Promise.allSettled([
         read<OwnerOrder[]>(client, 'garage_list_orders'),
         read<OwnerIntake[]>(client, 'garage_manager_intakes'),
         read<Staff[]>(client, 'garage_staff'),
+        read<GiftOffer | null>(client, 'garage_owner_gift_offer'),
       ]);
       if (orders.status === 'rejected') throw orders.reason;
       if (!Array.isArray(orders.value)) throw new Error('Invalid order list');
       const next = {
         orders: orders.value,
+        giftOffer: offer.status === 'fulfilled' ? offer.value : null,
+        giftError: offer.status === 'rejected',
         intakes:
           intakes.status === 'fulfilled' && Array.isArray(intakes.value)
             ? intakes.value
@@ -229,7 +243,8 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
                 onChange={(e) => setFilter(e.currentTarget.value)}
               >
                 <option value="open">Открытые</option>
-                <option value="review">На проверке</option>
+                <option value="handoff">Переданы владельцу</option>
+                <option value="review">Заявки на проверке</option>
                 <option value="closed">Закрытые</option>
                 <option value="all">Все заказы</option>
               </select>
@@ -296,7 +311,11 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
                     <span class="order-row-top">
                       <strong>{vehicle}</strong>
                       <span class="task-status">
-                        {row.intake ? 'На проверке' : statusText[row.order!.status]}
+                        {row.intake
+                          ? 'На проверке'
+                          : row.order?.vehicle_workflow?.state === 'review'
+                            ? 'Передан владельцу'
+                            : statusText[row.order!.status]}
                       </span>
                     </span>
                     <span class="order-row-meta">
@@ -304,6 +323,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
                         date,
                         Number.isFinite(row.row) && row.row ? 'Строка ' + row.row : '',
                         row.order?.order_number,
+                        row.order?.vehicle_workflow?.holder_name,
                         row.order?.manager_label || raw?.manager_label,
                       ]
                         .filter(Boolean)
@@ -322,6 +342,8 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
               <OrderEditor
                 key={editor.mode + '-' + (editor.order?.id || editor.intake?.id || '')}
                 seed={editor}
+                offer={data.giftOffer}
+                giftError={data.giftError}
                 client={client}
                 mutate={mutate}
                 staff={data.staff}
@@ -349,6 +371,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
               <OwnerDetail
                 key={activeOrder.id}
                 order={activeOrder}
+                offer={data.giftOffer}
                 intake={activeIntake}
                 client={client}
                 staff={data.staff}
@@ -357,7 +380,9 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
                   await refresh().catch(() => {});
                 }}
                 notify={setNotice}
-                edit={() => setEditor({ mode: 'edit', order: activeOrder, intake: activeIntake })}
+                edit={(promptGift = false) =>
+                  setEditor({ mode: 'edit', order: activeOrder, intake: activeIntake, promptGift })
+                }
                 omit={() => setOmission(activeOrder)}
                 back={back}
               />

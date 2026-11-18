@@ -294,3 +294,47 @@ input[type='checkbox'], input[type='radio'] { width: 1.1rem; height: 1.1rem; mar
   .owner-orders.has-detail .owner-order-index { display: none; }
 }
 .shift-team li > span > small { display: block; color: var(--muted); font-size: .8rem; }
+
+.vehicle-index-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: .8rem; padding: .2rem .35rem; }
+.vehicle-index-row.is-selected { background: var(--surface-raised); }
+.vehicle-index-button { flex: 1 1 17rem; width: auto; min-width: 0; grid-template-columns: minmax(0,1fr) auto; }
+.vehicle-index-button .shift-row-main { gap: .25rem; }
+.vehicle-take { margin: .25rem 0 .6rem; }
+.vehicle-status { display: inline-block; padding: .2rem .5rem; border-radius: .3rem; font-size: .8rem; font-weight: 650; line-height: 1.35; color: var(--muted); background: var(--surface-raised); }
+.vehicle-active, .vehicle-closed { color: var(--green); background: var(--green-soft); }
+.vehicle-available { color: var(--accent); background: #393024; }
+.vehicle-review { color: var(--info); background: #24363b; }
+.vehicle-controls { margin-block: .8rem; }
+.vehicle-handoff, .vehicle-receipt { display: grid; gap: .75rem; padding: .95rem; border: 1px solid var(--control-line); border-inline-start: 3px solid var(--accent); border-radius: .4rem; }
+.vehicle-handoff label { display: grid; gap: .25rem; }
+.vehicle-handoff textarea { min-height: 5rem; }
+.vehicle-receipt { margin-block: .75rem; border-inline-start-color: var(--info); }
+.vehicle-receipt p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.vehicle-checklist { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(13rem,100%),1fr)); gap: .7rem; }
+.vehicle-checklist section { padding: .65rem .75rem; background: var(--surface-raised); border-radius: .3rem; }
+.vehicle-checklist h4 { font-size: .9rem; }
+.vehicle-checklist ul { padding-inline-start: 1rem; margin: .4rem 0 0; }
+.vehicle-checklist li { margin: .3rem 0; overflow-wrap: anywhere; }
+.vehicle-checklist small { display: block; color: var(--muted); }
+.vehicle-task-row .task-status { text-align: center; }
+.shift-workspace > [role=status] > .button { margin: .3rem .45rem; }
+@media (max-width: 600px) {
+  .vehicle-index-row { padding-inline: 0; }
+  .vehicle-index-button { flex-basis: 100%; }
+  .vehicle-take, .vehicle-controls > .button { width: 100%; }
+  .vehicle-handoff { padding: .75rem; }
+  .vehicle-handoff .shift-button-strip > .button-primary { flex: 1 1 auto; }
+}
+
+.gift-dialog {
+  width: min(28rem, calc(100vw - 2rem));
+  padding: clamp(1rem, 4vw, 1.6rem);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+}
+.gift-dialog::backdrop { background: rgb(0 0 0 / 70%); }
+.gift-dialog h2 { margin-top: 0; }
+.gift-dialog p { line-height: 1.5; }
+.gift-selection { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }

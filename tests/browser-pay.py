@@ -61,6 +61,50 @@ class PayFixture:
         return {'data': [], 'error': None}
 
 
+def check_equal_preview(browser, base):
+    """Exact thirds split currency units independently of the displayed percentages."""
+    fixture = PayFixture()
+    people = [dict(person, former=False) for person in CANDIDATES]
+    fixture.item.update({
+        'candidates': people,
+        'catalogue_kopeks': 1_000_001, 'effective_kopeks': 0, 'override_kopeks': 0,
+        'private_version': 1, 'private_comment': 'Проверено',
+        'suggested_pool_kopeks': 1_000_001,
+        'suggested_shares': [dict(person, basis_points=bps, kopeks=cents) for person, bps, cents in
+                             zip(people, [3334, 3333, 3333], [333334, 333334, 333333])],
+    })
+    context, page, errors, live = smoke.new_page(browser, {'profile': {'name': 'Владелец', 'role': 'admin'}})
+    try:
+        page.expose_function('__garageRpcFixture', fixture.rpc)
+        page.goto(base + '/index.html#pay/team')
+        expect(page.locator('.pay-card')).to_have_count(1)
+        editor = page.locator('.pay-editor')
+        expect(editor.get_by_label('Сумма для распределения, BYN')).to_have_value('10000,01')
+        first = editor.locator('.pay-person').filter(has_text=people[0]['name'])
+        third = editor.locator('.pay-person').filter(has_text=people[2]['name'])
+        expect(first).to_contain_text(re.compile(r'3\s333,34'))
+        expect(third).to_contain_text(re.compile(r'3\s333,33'))
+        save = editor.get_by_role('button', name='Сохранить распределение')
+        fixture.fail_once = True
+        save.click()
+        expect(editor.get_by_role('status')).to_contain_text('не подтверждено')
+        assert fixture.saves[-1]['p_equal_split'] is True
+
+        # Explicitly re-entering the rounded weights selects percentage-based allocation.
+        first.get_by_role('textbox').fill('33.34')
+        expect(first).to_contain_text(re.compile(r'3\s334,01'))
+        expect(third).to_contain_text(re.compile(r'3\s333,00'))
+        fixture.fail_once = True
+        save.click()
+        expect(editor.get_by_role('status')).to_contain_text('не подтверждено')
+        assert not fixture.saves[-1].get('p_equal_split')
+        editor.get_by_role('button', name='Разделить поровну между исполнителями').click()
+        expect(first).to_contain_text(re.compile(r'3\s333,34'))
+        assert not errors and not live, (errors, live)
+    finally:
+        context.close()
+
+
 def run(directory, output, chromium):
     output.mkdir(parents=True, exist_ok=True)
     server, base = smoke.serve(directory.resolve())
@@ -68,6 +112,7 @@ def run(directory, output, chromium):
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(executable_path=chromium, args=['--no-sandbox'])
             try:
+                check_equal_preview(browser, base)
                 fixture = PayFixture()
                 context, page, errors, live = smoke.new_page(browser, {'profile': {'name': 'Владелец', 'role': 'admin'}})
                 page.expose_function('__garageRpcFixture', fixture.rpc)

@@ -158,7 +158,7 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
         screen = <SheetsView client={client} navigate={navigate} />;
         break;
       case 'pay':
-        screen = <PayView client={client} profile={profile} />;
+        screen = <PayView client={client} profile={profile} recordId={route.record} />;
         break;
       default:
         screen = <ShiftView {...props} section="shift" />;

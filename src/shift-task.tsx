@@ -27,7 +27,8 @@ export function TaskDetail({ row, profile, client, online, current, refresh, clo
   const originLabel = { mechanic: 'Подтверждено механиком', historical: 'Историческая запись', owner_recorded: 'Учтено владельцем' };
   const progress = confirmations(task);
   const primary = primaryAction(row, profile.id);
-  const terminal = isTerminal(task) || order.status !== 'published';
+  const visitReadOnly = !owner && order.vehicle_workflow?.state !== 'active';
+  const terminal = isTerminal(task) || order.status !== 'published' || visitReadOnly;
   const canTalk = Boolean(task.can_see_notes && (owner || personal) && !terminal);
   const [draft, setDraft] = useState<ActionDraft | null>(null);
   const [saving, setSaving] = useState(false);
@@ -56,7 +57,7 @@ export function TaskDetail({ row, profile, client, online, current, refresh, clo
     requestAnimationFrame(() => (primaryButton.current || title.current)?.focus({ preventScroll: true }));
   }
   async function execute(change: ActionDraft) {
-    if (locks.current || !online || !current) return;
+    if (locks.current || !online || !current || (terminal && change !== uncertain)) return;
     const note = change.reassign ? reassignPrefix + change.note.trim() : change.note.trim();
     const args = { p_task_id: task.id, p_action: change.action, p_expected_version: change.version, p_note: note };
     const fingerprint = JSON.stringify(args);
@@ -95,7 +96,7 @@ export function TaskDetail({ row, profile, client, online, current, refresh, clo
   const managerText = order.manager_comment;
   const separateInstructions = order.instructions && order.instructions !== managerText && !(order.instructions_from_manager && order.manager_comment_updated_at);
   return <article class="shift-detail" aria-labelledby="shift-task-title" data-task-detail={task.id}>
-    <div class="shift-detail-top"><button type="button" class="button shift-back" onClick={close} disabled={saving}>← К списку</button><span class="shift-code">{order.order_number}</span></div>
+    <div class="shift-detail-top"><button type="button" class="button shift-back" onClick={close} disabled={saving}>{owner ? '← К списку' : '← К автомобилю'}</button><span class="shift-code">{order.order_number}</span></div>
     <div class="shift-detail-head"><div class="shift-priority-line"><span class={`task-status status-${task.status}`}>{taskLabel[task.status] || 'Состояние уточняется'}</span>
       {order.priority === 'urgent' && <span class="priority priority-urgent">Срочно</span>}</div>
       <h2 data-route-heading id="shift-task-title" ref={title} tabIndex={-1}>{taskName(task)}</h2><p class="shift-vehicle-name">{order.vehicle}</p>
@@ -106,7 +107,9 @@ export function TaskDetail({ row, profile, client, online, current, refresh, clo
         {!owner && personal === 'working' && !terminal && <button class="button" disabled={locked} onClick={() => begin('block')}>{actionLabel.block}</button>}
       </div>}
       {!owner && !draft && !uncertain && personal === 'confirmed' && <p class="shift-hint">{terminal ? 'Ваше выполнение учтено.' : 'Вы подтвердили свою работу. Ожидаем остальных участников.'}</p>}
-      {draft && !uncertain && <form class="shift-action-form" onSubmit={e => { e.preventDefault(); if (!conflict) void execute(draft); }}>
+      {visitReadOnly && order.vehicle_workflow?.state === 'available' && <p class="shift-hint">Возьмите автомобиль в работу, чтобы выполнять его задания.</p>}
+      {visitReadOnly && order.vehicle_workflow?.state === 'review' && <p class="shift-hint">Автомобиль передан владельцу на проверку.</p>}
+      {draft && !terminal && !uncertain && <form class="shift-action-form" onSubmit={e => { e.preventDefault(); if (!conflict) void execute(draft); }}>
         {draft.action === 'confirm' ? <p>Подтвердите выполнение своей части работы на автомобиле <strong>{order.vehicle}</strong>.</p> : <label>{draft.reassign ? 'Причина запроса на переназначение' : draft.action === 'note' ? 'Текст заметки' : 'Причина'}
           <textarea ref={input} value={draft.note} required maxLength={draft.reassign ? 2000 - reassignPrefix.length : 2000} onInput={e => setDraft({ ...draft, note: e.currentTarget.value })}/></label>}
         {conflict && <div class="notice notice-error" role="alert">Работа изменилась. Проверьте состав и состояние. Введённый текст сохранён.

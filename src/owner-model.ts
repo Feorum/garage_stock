@@ -1,3 +1,4 @@
+import type { PrivatePricing, Payout } from './pay-model';
 import type { GarageClient, Order, Task } from './shift-model';
 import { participants } from './shift-model';
 import { WORKS, AVAILABLE_WORKS } from './catalogue.js';
@@ -62,11 +63,25 @@ export interface Draft {
 }
 export type Mode = 'new' | 'intake' | 'edit';
 export interface EditorSeed {
+  promptGift?: boolean;
   mode: Mode;
   order?: OwnerOrder;
   intake?: OwnerIntake;
 }
+export interface TaskPrice extends PrivatePricing {
+  task_id?: string;
+  work_code?: string;
+  status?: string;
+  net_amount?: number | null;
+  gross_amount?: number | null;
+  payout?: Payout | null;
+}
 export interface Money {
+  effective_total_kopeks?: number | null;
+  effective_tax_kopeks?: number | null;
+  effective_gross_kopeks?: number | null;
+  items?: TaskPrice[];
+  tasks?: TaskPrice[];
   status: string;
   net_amount?: number | null;
   vat_amount?: number | null;
@@ -178,6 +193,7 @@ export function listEntries(orders: OwnerOrder[], intakes: OwnerIntake[], query:
   for (const order of orders) {
     if (
       filter === 'review' ||
+      (filter === 'handoff' && order.vehicle_workflow?.state !== 'review') ||
       (filter === 'open' && order.status !== 'published') ||
       (filter === 'closed' && order.status === 'published')
     )
@@ -195,7 +211,7 @@ export function listEntries(orders: OwnerOrder[], intakes: OwnerIntake[], query:
     });
   }
   for (const intake of intakes) {
-    if (intake.order_id || intake.status !== 'pending' || filter === 'closed') continue;
+    if (intake.order_id || intake.status !== 'pending' || ['closed', 'handoff'].includes(filter)) continue;
     const raw = intake.latest || intake.original || {};
     if (!matches([raw.vehicle, raw.vin, raw.manager_label, intake.source_name])) continue;
     rows.push({

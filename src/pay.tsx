@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { GarageClient, Profile } from './shift-model';
 import { date, decimal, money, payRead, title, type PayItem, type Revision } from './pay-model';
+import { PayoutSummary, TaskPricing } from './owner-pricing';
 import { PayEditor } from './pay-editor';
 import './pay.css';
 
-interface Props { client: GarageClient; profile: Profile }
+interface Props { client: GarageClient; profile: Profile; recordId?: string }
 type Filter = 'pending' | 'allocated' | 'all';
 
 function History({ item, client }: { item: PayItem; client: GarageClient }) {
@@ -29,11 +30,11 @@ function History({ item, client }: { item: PayItem; client: GarageClient }) {
   </li>)}</ol>;
 }
 
-function Worklist({ client }: { client: GarageClient }) {
+function Worklist({ client, recordId }: { client: GarageClient; recordId?: string }) {
   const [items, setItems] = useState<PayItem[]>([]);
   const [filter, setFilter] = useState<Filter>('pending');
   const [search, setSearch] = useState('');
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(recordId || null);
   const [history, setHistory] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [notice, setNotice] = useState('');
@@ -52,13 +53,18 @@ function Worklist({ client }: { client: GarageClient }) {
   }
   useEffect(() => { active.current = true; void refresh(); return () => { active.current = false; ++generation.current; }; }, [client]);
   const visible = items.filter(item => {
+    if (recordId) return item.task_id === recordId;
     const names = [item.order_number, item.work_name, item.vehicle, ...item.candidates.map(person => person.name)];
     return (filter === 'all' || (filter === 'pending') === (item.pool_kopeks === null))
       && names.some(name => name.toLocaleLowerCase('ru').includes(search.trim().toLocaleLowerCase('ru')));
   });
   const pending = items.filter(item => item.pool_kopeks === null).length;
   return <section class="pay-workspace" aria-label="Распределение оплаты">
-    <div class="pay-toolbar">
+    {recordId ? <div class="button-row">
+      <a class="button" href="#pay">Все работы</a>
+      {visible[0]?.order_id && <a class="button" href={'#orders/' + encodeURIComponent(visible[0].order_id)}>К заказу</a>}
+      <button type="button" class="button" disabled={status === 'loading'} onClick={() => void refresh()}>Обновить</button>
+    </div> : <div class="pay-toolbar">
       <label>Показать
         <select ref={filterField} value={filter} disabled={Boolean(editing)} onChange={event => setFilter(event.currentTarget.value as Filter)}>
           <option value="pending">Ожидают распределения ({pending})</option>
@@ -68,10 +74,10 @@ function Worklist({ client }: { client: GarageClient }) {
       <label>Поиск<input type="search" value={search} disabled={Boolean(editing)} placeholder="Автомобиль, заказ, механик"
         onInput={event => setSearch(event.currentTarget.value)} /></label>
       <button class="button" type="button" disabled={Boolean(editing) || status === 'loading'} onClick={() => { setNotice(''); void refresh(); }}>Обновить</button>
-    </div>
+    </div>}
     <div role="status">{status === 'loading' ? 'Загружаем работы…' : status === 'failed'
       ? 'Не удалось обновить список. Проверьте подключение и нажмите «Обновить».' : notice}</div>
-    {status === 'ready' && !visible.length && <p class="pay-empty">{search ? 'По вашему запросу ничего не найдено.' :
+    {status === 'ready' && !visible.length && <p class="pay-empty">{recordId ? 'Работа недоступна для распределения.' : search ? 'По вашему запросу ничего не найдено.' :
       filter === 'pending' ? 'Все завершённые работы распределены. Новые появятся здесь после завершения.' : 'Подходящих завершённых работ пока нет.'}</p>}
     <ul class="pay-list">{visible.map(item => <li key={item.task_id} class="pay-card" data-task-id={item.task_id}>
       <div class="pay-summary">
@@ -79,6 +85,8 @@ function Worklist({ client }: { client: GarageClient }) {
           <p>{item.candidates.filter(person => !person.former).map(person => person.name).join(', ')}</p></div>
         <strong>{item.pool_kopeks === null ? 'Ожидает распределения' : money(item.pool_kopeks)}</strong>
       </div>
+      {item.private_version != null && <TaskPricing client={client} taskId={item.task_id} value={item} reload={refresh} />}
+      {item.pool_kopeks === null && <PayoutSummary payout={item} />}
       {item.shares.length > 0 && <ul class="pay-lines">{item.shares.map(share => <li key={share.mechanic_id}>
         <span>{share.name} {share.former && <small>(прежний участник)</small>}</span>
         <span>{decimal(share.basis_points)}% · {money(share.kopeks)}</span>
@@ -102,6 +110,6 @@ function Worklist({ client }: { client: GarageClient }) {
   </section>;
 }
 
-export function PayView({ client, profile }: Props) {
-  return profile.role === 'admin' ? <Worklist key={profile.id} client={client} /> : null;
+export function PayView({ client, profile, recordId }: Props) {
+  return profile.role === 'admin' ? <Worklist key={profile.id + '/' + (recordId || '')} client={client} recordId={recordId} /> : null;
 }

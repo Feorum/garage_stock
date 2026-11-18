@@ -37,7 +37,29 @@ export interface Task {
   roster_locked?: boolean;
   notes?: TaskNote[];
 }
+export type VehicleState = 'available' | 'active' | 'review' | 'closed' | 'cancelled';
+export type HandoffTask = Pick<Task, 'id' | 'work_name' | 'work_code' | 'options' | 'status'>;
+export interface VehicleWorkflow {
+  state: VehicleState;
+  origin?: 'explicit' | 'existing_work' | null;
+  holder_id?: string | null;
+  holder_name?: string | null;
+  taken_at?: string | null;
+  handed_at?: string | null;
+  handoff_note?: string | null;
+  returned_at?: string | null;
+  return_note?: string | null;
+  completed_count: number;
+  unfinished_count: number;
+  can_take: boolean;
+  can_handoff: boolean;
+  can_return: boolean;
+  can_close: boolean;
+  handoff_tasks?: HandoffTask[];
+}
 export interface Order {
+  version: number;
+  vehicle_workflow?: VehicleWorkflow;
   id: string;
   order_number: string;
   vehicle: string;
@@ -85,7 +107,7 @@ export const participantLabel: Record<ParticipantStatus, string> = {
 export const taskLabel: Record<string, string> = {
   pending: 'Ожидает начала', in_progress: 'В работе', blocked: 'Приостановлено', completed: 'Выполнено', cancelled: 'Отменено'
 };
-export function taskName(task: Task) {
+export function taskName(task: Pick<Task, 'work_name' | 'work_code' | 'options'>) {
   const tint = task.work_code === 'W19' && task.options?.tint_percent;
   return tint ? `${task.work_name} · ${tint}%` : task.work_name;
 }
@@ -109,10 +131,10 @@ export function confirmations(task: Task) {
   return { count: team.filter(person => person.status === 'confirmed').length, total: team.length };
 }
 export function mayJoin({ order, task }: TaskRow, id: string) {
-  return order.source === 'manager' && order.status === 'published' && !isTerminal(task) && !task.roster_locked && !mine(task, id);
+  return order.vehicle_workflow?.state === 'active' && order.source === 'manager' && order.status === 'published' && !isTerminal(task) && !task.roster_locked && !mine(task, id);
 }
 export function primaryAction(row: TaskRow, id: string): TeamAction | null {
-  if (row.order.status !== 'published' || isTerminal(row.task)) return null;
+  if (row.order.status !== 'published' || row.order.vehicle_workflow?.state !== 'active' || isTerminal(row.task)) return null;
   const status = mine(row.task, id);
   if (status === 'assigned') return 'start';
   if (status === 'blocked') return 'resume';
@@ -135,17 +157,96 @@ export function instantLabel(value?: string) {
   const instant = new Date(value);
   return Number.isNaN(instant.getTime()) ? '' : localTimestamp.format(instant);
 }
-function priorityRank(priority: string) { return priority === 'urgent' ? 0 : priority === 'high' ? 1 : 2; }
-export function sortWork(rows: TaskRow[]) {
-  return [...rows].sort((a, b) => priorityRank(a.order.priority) - priorityRank(b.order.priority) ||
-    (a.order.due_date || '9999').localeCompare(b.order.due_date || '9999') ||
-    (a.order.planned_date || '9999').localeCompare(b.order.planned_date || '9999') ||
-    (a.order.order_number || '').localeCompare(b.order.order_number || '', 'ru', { numeric: true }));
+const vehicleLabels: Record<VehicleState, string> = {
+  available: 'Можно взять', active: 'В работе', review: 'Передан владельцу', closed: 'Закрыт', cancelled: 'Отменён'
+};
+export function vehicleLabel(order: Order) {
+  const state = order.vehicle_workflow?.state;
+  if (state === 'available' && !order.vehicle_workflow?.can_take) return 'Ожидает механика';
+  if (state) return vehicleLabels[state];
+  return order.status === 'closed' ? 'Закрыт' : order.status === 'cancelled' ? 'Отменён' : 'Статус недоступен';
 }
-export function matchesWork(row: TaskRow, query: string) {
-  return [row.order.order_number, row.order.vin, row.order.vehicle, taskName(row.task)].some(value =>
-    value?.toLocaleLowerCase('ru-RU').includes(query.trim().toLocaleLowerCase('ru-RU')));
+export function visibleProgress(order: Order) {
+  return { completed: order.vehicle_workflow?.completed_count ?? order.tasks.filter(task => task.status === 'completed').length,
+    unfinished: order.vehicle_workflow?.unfinished_count ?? order.tasks.filter(task => !isTerminal(task)).length };
+}
+function priorityRank(priority: string) { return priority === 'urgent' ? 0 : priority === 'high' ? 1 : 2; }
+export function sortVisits(orders: Order[]) {
+  return [...orders].sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) ||
+    (a.due_date || '9999').localeCompare(b.due_date || '9999') ||
+    (a.planned_date || '9999').localeCompare(b.planned_date || '9999') ||
+    (a.order_number || '').localeCompare(b.order_number || '', 'ru', { numeric: true }));
+}
+export function matchesVisit(order: Order, query: string) {
+  const needle = query.trim().toLocaleLowerCase('ru-RU');
+  return !needle || [order.order_number, order.vehicle, order.vin, ...order.tasks.map(taskName)].some(value => value?.toLocaleLowerCase('ru-RU').includes(needle));
 }
 export function finishedAt(task: Task, id: string) {
   return participants(task).find(person => person.mechanic_id === id)?.confirmed_at || task.completed_at || '';
+}
+
+interface Group {
+  title: string;
+  orders: Order[];
+}
+function historyTime(order: Order, id: string) {
+  const times = order.tasks.filter((task) => mine(task, id) === 'confirmed').map((task) => finishedAt(task, id));
+  if (order.vehicle_workflow?.holder_id === id && order.vehicle_workflow.handed_at)
+    times.push(order.vehicle_workflow.handed_at);
+  return times.sort().pop() || '';
+}
+export function vehicleGroups(section: Section, orders: Order[], id: string): Group[] {
+  const groups = new Map<string, Order[]>();
+  function add(title: string, order: Order) {
+    const group = groups.get(title) || [];
+    group.push(order);
+    groups.set(title, group);
+  }
+  const queueTitles = ['Можно взять', 'Уже в работе', 'Переданы владельцу'];
+  const shiftTitles = [
+    'Мои автомобили в работе',
+    'Работаю в команде',
+    'Назначенные автомобили',
+    'Можно взять',
+    'Переданы владельцу',
+    'Завершённые автомобили',
+  ];
+  for (const order of sortVisits(orders)) {
+    const workflow = order.vehicle_workflow;
+    const member = order.tasks.some((task) => mine(task, id));
+    const holder = workflow?.holder_id === id;
+    const historical =
+      order.tasks.some((task) => mine(task, id) === 'confirmed') || (holder && !!workflow?.handed_at);
+    if (section === 'history') {
+      if (historical) add('История по автомобилям', order);
+      continue;
+    }
+    if (section === 'manager-orders') {
+      if (order.source !== 'manager' || order.status !== 'published') continue;
+      if (workflow?.state === 'available' && workflow.can_take) add('Можно взять', order);
+      else if (workflow?.state === 'active') add('Уже в работе', order);
+      else if (workflow?.state === 'review' && (member || holder)) add('Переданы владельцу', order);
+      continue;
+    }
+    if (section === 'assigned' && order.source !== 'owner') continue;
+    if (order.status !== 'published') {
+      if (section === 'my-work' && historical) add('Завершённые автомобили', order);
+    } else if (workflow?.state === 'active' && holder) add('Мои автомобили в работе', order);
+    else if (workflow?.state === 'active' && member) add('Работаю в команде', order);
+    else if (workflow?.state === 'review' && (member || holder)) add('Переданы владельцу', order);
+    else if (workflow?.can_take) add(order.source === 'owner' ? 'Назначенные автомобили' : 'Можно взять', order);
+    else if (!workflow && member) add('Назначенные автомобили', order);
+  }
+  if (section === 'history')
+    return [
+      {
+        title: 'История по автомобилям',
+        orders: (groups.get('История по автомобилям') || []).sort((a, b) =>
+          historyTime(b, id).localeCompare(historyTime(a, id)),
+        ),
+      },
+    ];
+  return (section === 'manager-orders' ? queueTitles : shiftTitles)
+    .filter((title) => groups.has(title))
+    .map((title) => ({ title, orders: groups.get(title)! }));
 }

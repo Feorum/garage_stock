@@ -2,16 +2,32 @@ import type { GarageClient } from './shift-model';
 
 export interface Candidate { mechanic_id: string; name: string; former: boolean }
 export interface Share extends Candidate { basis_points: number; kopeks: number }
-export interface PayItem {
+export interface ProposedShare extends Candidate { basis_points: number; kopeks: number | null }
+export interface Payout {
+  pool_kopeks: number | null;
+  shares: Share[];
+  suggested_pool_kopeks?: number | null;
+  suggested_shares?: ProposedShare[];
+  equal_split?: boolean;
+}
+export interface PrivatePricing {
+  catalogue_kopeks?: number | null;
+  override_kopeks?: number | null;
+  effective_kopeks?: number | null;
+  effective_tax_kopeks?: number | null;
+  effective_gross_kopeks?: number | null;
+  private_version?: number;
+  private_comment?: string;
+}
+export interface PayItem extends Payout, PrivatePricing {
   task_id: string;
   version: number;
+  order_id?: string;
   order_number: string;
   vehicle: string;
   work_name: string;
   options: { tint_percent?: number };
   completed_at: string;
-  pool_kopeks: number | null;
-  shares: Share[];
   candidates: Candidate[];
 }
 export interface Revision { version: number; actor_name: string; saved_at: string; pool_kopeks: number; shares: Share[]; reason: string }

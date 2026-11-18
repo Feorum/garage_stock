@@ -38,6 +38,7 @@ export function createClient() {
     { id: '22222222-2222-4222-8222-222222222222', name: 'Other Mechanic' },
   ]);
   const receipts = new Map();
+  const pricing = new Map();
   const errorCounts = new Map();
   let serial = 0;
   let lostCreateResponse = false;
@@ -63,10 +64,58 @@ export function createClient() {
       roster_locked: participants.some(person => person.status === 'confirmed'),
       notes: can_see_notes ? clone(task.notes || []) : [], blocker_reason: can_see_notes ? task.blocker_reason : '' };
   }
+  function workflow(order) {
+    const tasks = order.tasks || [];
+    const activeTask = tasks.find(task => ['in_progress', 'blocked'].includes(task.status));
+    const activeMember = activeTask && members(activeTask).find(member => ['working', 'blocked'].includes(member.status));
+    return order.vehicle_workflow ||= {
+      state: order.status === 'published' ? (activeTask ? 'active' : 'available') : order.status,
+      holder_id: activeTask?.working_mechanic_id || activeMember?.mechanic_id || null,
+      origin: activeTask ? 'existing_work' : null, taken_at: null, handed_at: null, handoff_note: '', handoff_tasks: [],
+    };
+  }
+  function readableWorkflow(order, tasks) {
+    const current = workflow(order);
+    const owner = currentRole() === 'admin';
+    const mine = current.holder_id === user.id;
+    const completed = tasks.filter(task => task.status === 'completed').length;
+    const unfinished = tasks.filter(task => !['completed', 'cancelled'].includes(task.status)).length;
+    return { ...clone(current), holder_name: current.holder_id ? memberName(current.holder_id) : null,
+      completed_count: completed, unfinished_count: unfinished,
+      can_take: !owner && current.state === 'available' && tasks.some(task => task.status !== 'cancelled' &&
+        (order.source === 'manager' && task.status !== 'completed' || taskVisible(task))),
+      can_handoff: !owner && current.state === 'active' && mine,
+      can_return: owner && current.state === 'review',
+      can_close: owner && ['available', 'review'].includes(current.state) && !unfinished && completed > 0,
+      handoff_note: owner || mine ? current.handoff_note : '',
+      handoff_tasks: owner || mine ? (current.handoff_tasks || []).filter(snapshot => tasks.some(task => task.id === snapshot.id)) : [],
+      return_note: owner || mine ? current.return_note || '' : '',
+    };
+  }
+  function withTaskPricing(summary) {
+    const itemKey = 'tasks' in summary ? 'tasks' : 'items';
+    const items = (summary[itemKey] || []).map(item => {
+      const stored = pricing.get(item.task_id);
+      const catalogue = item.catalogue_kopeks ?? (item.net_amount != null ? Math.round(item.net_amount * 100) : null);
+      const override = stored?.override_kopeks ?? null;
+      const effective = override ?? catalogue;
+      const tax = effective !== null && item.net_amount != null ? Math.round(effective * (item.vat_rate ?? .2)) : null;
+      return {...item, catalogue_kopeks: catalogue, effective_kopeks: effective,
+        effective_tax_kopeks: tax, effective_gross_kopeks: tax !== null ? effective + tax : null,
+        override_kopeks: override, private_comment: stored?.private_comment || '', private_version: stored?.version || 0};
+    });
+    const total = items.length && items.every(item => item.effective_kopeks != null)
+      ? items.reduce((sum, item) => sum + item.effective_kopeks, 0) : null;
+    const tax = items.length && items.every(item => item.effective_tax_kopeks != null)
+      ? items.reduce((sum, item) => sum + item.effective_tax_kopeks, 0) : null;
+    return {...summary, [itemKey]: items, effective_total_kopeks: total, effective_tax_kopeks: tax,
+      effective_gross_kopeks: tax !== null && total !== null ? total + tax : null};
+  }
   const visibleOrders = () => orders.flatMap(order => {
     const showAll = currentRole() === 'admin' || order.source === 'manager' && order.status === 'published';
     const tasks = (order.tasks || []).filter(task => showAll || taskVisible(task)).map(readable);
-    return tasks.length ? [{ ...clone(order), tasks }] : [];
+    const holding = order.status === 'published' && workflow(order).holder_id === user.id;
+    return tasks.length || holding ? [{ ...clone(order), tasks, vehicle_workflow: readableWorkflow(order, tasks) }] : [];
   });
   globalThis.__garageOrderState = { orders, receipts, staff, managerIntakes };
   globalThis.__garageSheetState = { sources: sheetSources };
@@ -135,17 +184,20 @@ export function createClient() {
       return { data: clone(source), error: null };
     }
     if (name === 'garage_list_orders') return { data: visibleOrders(), error: null };
+    if (name === 'garage_owner_gift_offer') return owner ? { data: clone(fixture.giftOffer || null), error: null } : errorResult('Owner access required.', '42501');
     if (name === 'garage_manager_intakes') return owner ? { data: clone(managerIntakes), error: null } : errorResult('Owner access required.', '42501');
     if (name === 'garage_staff') return owner ? { data: clone(staff), error: null } : errorResult('Owner access required.', '42501');
     if (name === 'garage_order_financials') {
       if (!owner) return errorResult('Owner access required.', '42501');
-      return { data: clone(fixture.financials || { status: 'needs_pricing', currency: 'BYN', items: [], totals: null }), error: null };
+      const order = orders.find(item => item.id === args.p_order_id);
+      const items = (order?.tasks || []).map(task => ({ task_id: task.id, work_code: task.work_code, status: 'needs_pricing' }));
+      return { data: withTaskPricing(clone(fixture.financials || { status: 'needs_pricing', currency: 'BYN', tasks: items, totals: null })), error: null };
     }
     if (name === 'garage_quote_order') {
       if (!owner) return errorResult('Owner access required.', '42501');
       const count = args.p_tasks?.length || 0;
-      return { data: clone(fixture.quote || { status: 'priced', currency: 'BYN', net_amount: count * 100, vat_amount: count * 20, gross_amount: count * 120,
-        items: (args.p_tasks || []).map(task => ({ task_id: task.id || null, work_code: task.work_code, status: 'priced', net_amount: 100, vat_amount: 20, gross_amount: 120 })) }), error: null };
+      return { data: withTaskPricing(clone(fixture.quote || { status: 'priced', currency: 'BYN', net_amount: count * 100, vat_amount: count * 20, gross_amount: count * 120,
+        items: (args.p_tasks || []).map(task => ({ task_id: task.id || null, work_code: task.work_code, status: 'priced', net_amount: 100, vat_amount: 20, gross_amount: 120 })) })), error: null };
     }
     const request = args.p_request_id;
     const fingerprint = JSON.stringify({ name, ...args });
@@ -239,10 +291,38 @@ export function createClient() {
         completed_at: args.p_completed_at, mechanic_ids: args.p_mechanic_ids, blocker_reason: '', version: 1 });
       order.version += 1;
       result = { data: { order_id: order.id, order_number: order.order_number, order_version: order.version, task_id: taskId }, error: null };
+    } else if (name === 'garage_save_task_pricing') {
+      if (!owner) return errorResult('Owner access required.', '42501');
+      const old = pricing.get(args.p_task_id);
+      if ((old?.version || 0) !== args.p_expected_version) return errorResult('Private price changed.', '40001');
+      const version = args.p_expected_version + 1;
+      pricing.set(args.p_task_id, { version, override_kopeks: args.p_override_kopeks, private_comment: args.p_private_comment });
+      result = { data: version, error: null };
+    } else if (name === 'garage_vehicle_action') {
+      const order = orders.find(item => item.id === args.p_order_id);
+      if (!order || (order.source === 'owner' && !owner && workflow(order).holder_id !== user.id &&
+          !order.tasks.some(taskVisible))) return errorResult('Vehicle unavailable.', '42501');
+      if (order.version !== args.p_expected_version) return errorResult('Vehicle version changed.', '40001');
+      const current = workflow(order);
+      const allowed = readableWorkflow(order, order.tasks);
+      if (!allowed['can_' + args.p_action]) return errorResult('Vehicle action unavailable.', '42501');
+      if (args.p_action === 'take') {
+        current.state = 'active'; current.origin = 'explicit'; current.holder_id = user.id; current.taken_at = new Date().toISOString();
+      } else if (args.p_action === 'handoff') {
+        current.state = 'review'; current.handed_at = new Date().toISOString();
+        current.handoff_note = args.p_note || '';
+        current.handoff_tasks = order.tasks.map(({id, work_name, status}) => ({id, work_name, status}));
+      } else if (args.p_action === 'return') {
+        current.state = 'active'; current.return_note = args.p_note || '';
+      }
+      else if (args.p_action === 'close') { current.state = 'closed'; order.status = 'closed'; }
+      order.version += 1;
+      result = { data: { order_id: order.id, version: order.version, state: current.state }, error: null };
     } else if (name === 'garage_team_action') {
       const order = orders.find(row => row.tasks.some(task => task.id === args.p_task_id));
       const task = order?.tasks.find(row => row.id === args.p_task_id);
       if (!task || task.version !== args.p_expected_version) return errorResult('Task version changed.', '40001');
+      if (!owner && workflow(order).state !== 'active') return errorResult('Take or reopen the vehicle first.', '42501');
       const participants = members(task);
       const me = participants.find(p => p.mechanic_id === user.id);
       const target = participants.find(p => p.mechanic_id === args.p_mechanic_id);

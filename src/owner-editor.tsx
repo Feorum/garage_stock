@@ -1,4 +1,5 @@
-import { useState, useRef } from 'preact/hooks';
+import { GiftDialog, qualifies, type GiftOffer } from './owner-gift';
+import { useCallback, useEffect, useState, useRef } from 'preact/hooks';
 import { WORKS, VEHICLE_GROUPS } from './catalogue.js';
 import type { GarageClient } from './shift-model';
 import {
@@ -14,6 +15,7 @@ import {
   type Draft,
   type EditorSeed,
   type Mutate,
+  type Money,
   type OrderFields,
   type Staff,
 } from './owner-model';
@@ -21,6 +23,8 @@ import { Quote, SourceReference } from './owner-summary';
 
 interface EditorProps {
   seed: EditorSeed;
+  offer: GiftOffer | null;
+  giftError: boolean;
   client: GarageClient;
   staff: Staff[];
   mutate: Mutate;
@@ -87,7 +91,17 @@ function compareDraft(
   }
   return { result, changes };
 }
-export function OrderEditor({ seed, client, staff, mutate, close, reload, saved }: EditorProps) {
+export function OrderEditor({
+  seed,
+  client,
+  staff,
+  mutate,
+  close,
+  reload,
+  saved,
+  offer,
+  giftError,
+}: EditorProps) {
   const [base, setBase] = useState(seed);
   const [draft, setDraft] = useState<Draft>(() => initialDraft(seed));
   const [defaultWorker, setDefaultWorker] = useState('');
@@ -103,6 +117,48 @@ export function OrderEditor({ seed, client, staff, mutate, close, reload, saved 
   const mandatory = draft.fields.source === 'owner';
   const ambiguous = resolving && (base.intake?.row_numbers?.length || 0) > 1;
   const options = availableWorks(draft.fields.vehicle_group_code);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [gift, setGift] = useState<{ code: string; added: boolean } | null>(null);
+  const touchedWork = useRef(false);
+  const wasEligible = useRef(false);
+  const requestedGift = useRef(Boolean(seed.promptGift));
+  const quote = useRef<Money | null>(null);
+  const acceptQuote = useCallback((value: Money | null) => {
+    quote.current = value;
+  }, []);
+  const eligible = qualifies(
+    offer,
+    draft.fields.vehicle_group_code,
+    draft.choices.map((c) => c.work_code),
+  );
+  useEffect(() => {
+    if (eligible && !wasEligible.current && (requestedGift.current || !editing || touchedWork.current)) {
+      setDialogOpen(true);
+      requestedGift.current = false;
+    }
+    wasEligible.current = eligible;
+    if (!eligible) {
+      setDialogOpen(false);
+      if (gift) {
+        if (gift.added)
+          setDraft((d) => ({ ...d, choices: d.choices.filter((c) => c.work_code !== gift.code) }));
+        setGift(null);
+        setMessage('Состав заказа изменился. Предложение подарка снято.');
+      }
+    }
+  }, [eligible, editing, gift]);
+  function chooseGift(accept: boolean) {
+    setDialogOpen(false);
+    if (!accept || !eligible || !offer) return;
+    const code = offer.work_code;
+    const found = draft.choices.some((c) => c.work_code === code);
+    if (!found) toggleWork(code, true);
+    setGift({ code, added: !found });
+  }
+  function undoGift() {
+    if (gift?.added) toggleWork(gift.code, false);
+    setGift(null);
+  }
   function field(key: keyof OrderFields, value: string) {
     setMessage('');
     setDraft((d) => {
@@ -127,6 +183,8 @@ export function OrderEditor({ seed, client, staff, mutate, close, reload, saved 
   }
   function toggleWork(code: string, checked: boolean) {
     setMessage('');
+    touchedWork.current = true;
+    if (!checked && gift?.code === code) setGift(null);
     setDraft((d) => {
       let choices = d.choices.filter(
         (c) => c.work_code !== code && !(checked && hood.has(code) && hood.has(c.work_code)),
@@ -190,18 +248,33 @@ export function OrderEditor({ seed, client, staff, mutate, close, reload, saved 
     setPending(true);
     setMessage('');
     try {
-      const result = await mutate<{ order_id: string }>('garage_save_team_order', {
-        p_mode: base.mode,
-        p_id: base.order?.id || base.intake?.id || null,
-        p_expected_version: base.order?.version || base.intake?.version || null,
-        p_order: {
-          ...draft.fields,
-          planned_date: draft.fields.planned_date || null,
-          due_date: draft.fields.due_date || null,
-          manager_label: mandatory ? '' : draft.fields.manager_label,
+      const selectedGift =
+        eligible && gift ? draft.choices.find((c) => c.work_code === gift.code) : undefined;
+      let giftVersion = 0;
+      if (selectedGift?.id) {
+        const current = quote.current?.items?.find((item) => item.task_id === selectedGift.id);
+        if (current?.private_version == null) {
+          setMessage('Дождитесь актуального расчёта цены подарка и повторите сохранение.');
+          return;
+        }
+        giftVersion = current.private_version;
+      }
+      const result = await mutate<{ order_id: string }>(
+        selectedGift ? 'garage_save_order_with_gift' : 'garage_save_team_order',
+        {
+          ...(selectedGift ? { p_gift_expected_version: giftVersion } : {}),
+          p_mode: base.mode,
+          p_id: base.order?.id || base.intake?.id || null,
+          p_expected_version: base.order?.version || base.intake?.version || null,
+          p_order: {
+            ...draft.fields,
+            planned_date: draft.fields.planned_date || null,
+            due_date: draft.fields.due_date || null,
+            manager_label: mandatory ? '' : draft.fields.manager_label,
+          },
+          p_tasks: draft.choices.map((c) => (mandatory ? c : { ...c, assigned_to: null, mechanic_ids: [] })),
         },
-        p_tasks: draft.choices.map((c) => (mandatory ? c : { ...c, assigned_to: null, mechanic_ids: [] })),
-      });
+      );
       await saved(
         result.order_id,
         editing
@@ -448,7 +521,25 @@ export function OrderEditor({ seed, client, staff, mutate, close, reload, saved 
               onInput={(e) => field('instructions', e.currentTarget.value)}
             />
           </label>
+          {giftError && <p role="status">Не удалось проверить предложения для этого заказа.</p>}
+          {eligible &&
+            offer &&
+            (gift ? (
+              <div class="gift-selection">
+                <p>Подарок клиенту · {workName(gift.code)}</p>
+                <button type="button" class="button" onClick={undoGift}>
+                  Отменить подарок
+                </button>
+              </div>
+            ) : (
+              <button type="button" class="button" onClick={() => setDialogOpen(true)}>
+                Выбрать подарок
+              </button>
+            ))}
+          {dialogOpen && eligible && offer && <GiftDialog offer={offer} choose={chooseGift} />}
           <Quote
+            giftCode={eligible && gift ? gift.code : undefined}
+            onQuote={acceptQuote}
             client={client}
             group={draft.fields.vehicle_group_code}
             choices={draft.choices}
@@ -491,6 +582,7 @@ export function OrderEditor({ seed, client, staff, mutate, close, reload, saved 
                   type="button"
                   class="button"
                   onClick={() => {
+                    setGift(null);
                     setBase(conflict);
                     setDraft(merged.result);
                     setConflict(null);

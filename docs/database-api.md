@@ -92,6 +92,36 @@ The server checks membership and roster state again while holding those locks.
 A racing join either joins before the first confirmation or receives a closed
 roster result. Profile locks protect against deactivation during assignment.
 
+## Vehicle handoff
+
+`garage_list_orders()` includes `vehicle_workflow` for each visible visit. Its
+counts and handoff checklist respect the caller's task visibility.
+`garage_vehicle_action(p_order_id,p_action,p_expected_version,p_request_id,p_note)`
+supports `take`, `handoff`, `return` and `close`. Taking a visit establishes its
+holder. Team members start and confirm their own eligible services. The holder
+can hand back a partially completed visit. While it awaits review, the database
+rejects mechanic changes from both current and cached clients. The Owner can
+return the visit for outstanding work, or close a handed-off visit with at
+least one completed service and no unfinished services.
+
+## Owner calculations
+
+The private order quote and detail include each original catalogue amount,
+the effective customer price, and recalculated tax and gross totals.
+`garage_save_task_pricing` saves a versioned override in integer kopeks and a private
+Owner comment. An explicit zero makes the customer charge zero. Clearing the
+override restores the original rate. Unpriced work stays unknown until priced.
+On eligible completions, the full listed pre-VAT price proposes a pay pool
+split equally among confirmed contributors. Each kopek is allocated, and
+saved distributions retain the Owner's chosen amount and percentages.
+
+`garage_owner_gift_offer` reads the workshop's privately configured promotion.
+The Owner can accept or decline it in the order editor. Accepting calls
+`garage_save_order_with_gift`, which verifies eligibility and records both the
+service and its zero customer charge in one transaction. Existing task
+assignments, original rate, pay proposal and private memo are preserved.
+Mechanic RPCs and spreadsheet feedback carry only operational information.
+
 ## Financial import and confidentiality
 
 Owner-only tables are `garage_price_lists`, `garage_price_matrix`, and
