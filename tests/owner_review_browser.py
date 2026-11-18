@@ -94,7 +94,7 @@ def exercise_owner_review(browser, base, smoke, output):
             nav.get_by_role('link', name=labels[1]).click()
             for order_id in (ready, missing, zero, unavailable, partial, active, current, previous, cancelled):
                 expect(order_link(page, order_id)).to_be_visible()
-            expect(order_card(page, partial)).to_contain_text('Передан с остатком')
+            expect(order_card(page, partial)).to_contain_text('На проверке · осталось 1')
             expect(page.get_by_role('link', name='Управление заказами')).to_have_attribute('href', '#orders/tools')
             order_link(page, partial).click()
             expect(page.get_by_role('region', name='Подробности заказа')).to_contain_text('Belgee X50')
