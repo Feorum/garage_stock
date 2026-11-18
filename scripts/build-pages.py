@@ -1,47 +1,21 @@
-"""Build the allowlisted static site using only public Supabase configuration."""
+"""Bundle the two Garage entries, then publish only their validated public assets."""
 import argparse
-import base64
 import hashlib
 import json
 import os
-import re
 from pathlib import Path
-from urllib.parse import urlsplit
+import re
+import subprocess
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = (
-    'index.html', 'styles.css', 'ledger.css', 'app.js', 'account.html', 'account.js', 'sw.js',
-    'src/supabase.js', 'src/auth.js', 'src/ui.js', 'src/navigation.js', 'src/locale.js',
-    'src/views.js', 'src/orders.js', 'src/order-editor.js', 'src/order-list.js',
-    'src/ledger.js', 'src/ledger-table.js', 'src/ledger-editor.js', 'src/ledger-history.js', 'src/ledger-shared.js',
-    'src/ledger-calculations.js', 'src/ledger-formula-parser.js',
-    'src/order-shared.js', 'src/order-tasks.js', 'src/order-completion.js', 'src/sheets.js', 'src/catalogue.js', 'manifest.webmanifest',
-    'icons/icon-192.png', 'icons/icon-512.png',
-)
-CONFIG_FILE = 'src/supabase.js'
-PUBLIC_OUTPUT = frozenset((*FILES, '.nojekyll', 'release.json'))
+ICONS = {'icons/icon-192.png', 'icons/icon-512.png'}
+STATIC = {'index.html', 'account.html', 'manifest.webmanifest', 'sdk.js', 'sw.js'} | ICONS
+BUNDLE_NAME = re.compile(r'assets/[A-Za-z0-9_-]+-[A-Za-z0-9_-]{8}\.(?:css|js|woff2)')
 
 
-def browser_configuration():
-    url = os.environ.get('SUPABASE_URL', '').rstrip('/')
-    key = os.environ.get('SUPABASE_PUBLISHABLE_KEY') or os.environ.get('SUPABASE_ANON_KEY', '')
-    parsed = urlsplit(url)
-    if (parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password
-            or parsed.path or parsed.query or parsed.fragment or not key):
-        raise SystemExit('Set SUPABASE_URL to an HTTPS origin and a public SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY).')
-    if re.fullmatch(r'sb_publishable_[A-Za-z0-9_-]+', key):
-        return url, key
-    try:
-        parts = key.split('.')
-        if len(parts) != 3 or any(not part for part in parts) or any(c.isspace() for c in key):
-            raise ValueError()
-        payload = parts[1]
-        claims = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
-        if claims.get('role') != 'anon':
-            raise ValueError()
-    except (ValueError, AttributeError, UnicodeDecodeError):
-        raise SystemExit('Only a public publishable key or anon JWT may be deployed.') from None
-    return url, key
+def public_asset(name):
+    return isinstance(name, str) and (name in STATIC or BUNDLE_NAME.fullmatch(name) is not None)
 
 
 def release_identity(value):
@@ -52,63 +26,103 @@ def release_identity(value):
     return value.lower()
 
 
-def public_files(url, key, release=None):
-    assets = {}
-    cache_version = None
-    for name in FILES:
-        data = (ROOT / name).read_bytes()
-        if name == CONFIG_FILE:
-            source = data.decode()
-            old_url, old_key = "'https://YOUR-PROJECT.supabase.co'", "'YOUR-ANON-PUBLIC-KEY'"
-            if source.count(old_url) != 1 or source.count(old_key) != 1:
-                raise SystemExit(f'{name}: expected exactly one public configuration placeholder pair.')
-            data = source.replace(old_url, json.dumps(url)).replace(old_key, json.dumps(key)).encode()
-        if name == 'sw.js':
-            source = data.decode()
-            marker = re.compile(r"^const RELEASE = '([A-Za-z0-9._-]+)';(?=\r?$)", re.MULTILINE)
-            matches = marker.findall(source)
-            if len(matches) != 1:
-                raise SystemExit('sw.js: expected exactly one cache release marker.')
-            cache_version = 'sha-' + release if release else matches[0]
-            data = marker.sub('const RELEASE = ' + json.dumps(cache_version) + ';', source).encode()
-        if name.endswith(('.js', '.html', '.css')) and (
-                b'YOUR-PROJECT.supabase.co' in data or b'YOUR-ANON-PUBLIC-KEY' in data):
-            raise SystemExit(f'{name}: unresolved public configuration placeholder.')
-        assets[name] = data
-    assets['release.json'] = (json.dumps({
-        'commit': release,
-        'cache': 'garage-log-' + cache_version,
-        'assets': {name: hashlib.sha256(data).hexdigest() for name, data in assets.items()},
-    }, indent=2, sort_keys=True) + '\n').encode()
+def entry_files(manifest, *entries):
+    """Collect both static and lazy dependencies from Vite's private build manifest."""
+    pending = list(entries)
+    visited, files = set(), set()
+    while pending:
+        key = pending.pop()
+        if key in visited:
+            continue
+        visited.add(key)
+        item = manifest[key]
+        files.add(item['file'])
+        files.update(item.get('css', []))
+        files.update(item.get('assets', []))
+        pending.extend(item.get('imports', []))
+        pending.extend(item.get('dynamicImports', []))
+    if not all(public_asset(name) for name in files):
+        raise SystemExit('Unexpected asset outside the public bundle format.')
+    return files
+
+
+def bundle(staging, release):
+    vite = ROOT / 'node_modules' / 'vite' / 'bin' / 'vite.js'
+    if not vite.is_file():
+        raise SystemExit('Run npm ci to install the locked frontend tools before building.')
+    result = subprocess.run(['node', str(vite), 'build', '--outDir', str(staging), '--emptyOutDir'], cwd=ROOT)
+    if result.returncode:
+        raise SystemExit(result.returncode)
+    manifest = json.loads((staging / '.vite/manifest.json').read_text())
+    shell = entry_files(manifest, 'index.html', 'src/supabase.js') | {'index.html', 'manifest.webmanifest'} | ICONS
+    public = shell | entry_files(manifest, 'account.html') | STATIC
+    generated = {path.relative_to(staging).as_posix() for path in staging.rglob('*') if path.is_file()}
+    if generated - public - {'.vite/manifest.json'}:
+        raise SystemExit('Unexpected build output outside the public entry graphs.')
+    for icon in ICONS:
+        (staging / icon).parent.mkdir(exist_ok=True)
+        (staging / icon).write_bytes((ROOT / icon).read_bytes())
+    assets = {name: (staging / name).read_bytes() for name in sorted(public - {'sw.js'})}
+    # Local rebuilds also get a new cache when a bundled module or public setting changes.
+    worker = (ROOT / 'sw.js').read_text()
+    digest = hashlib.sha256(worker.encode())
+    for name in sorted(shell):
+        digest.update(name.encode())
+        digest.update(hashlib.sha256(assets[name]).digest())
+    version = 'sha-' + release if release else 'local-' + digest.hexdigest()[:16]
+    worker = worker.replace("'__GARAGE_RELEASE__'", json.dumps(version))
+    worker = worker.replace('__GARAGE_SHELL__', json.dumps(['./'] + ['./' + path for path in sorted(shell)]))
+    assets['sw.js'] = worker.encode()
+    digests = {name: hashlib.sha256(data).hexdigest() for name, data in assets.items()}
+    metadata = {'commit': release, 'cache': 'garage-log-' + version, 'assets': digests}
+    assets['release.json'] = (json.dumps(metadata, indent=2, sort_keys=True) + '\n').encode()
+    assets['.nojekyll'] = b''
     return assets
 
 
+def previous_files(output):
+    if not output.exists():
+        return set()
+    if not output.is_dir() or any(path.is_symlink() for path in output.rglob('*')):
+        raise SystemExit('Use a dedicated output directory without symbolic links.')
+    existing = {path.relative_to(output).as_posix() for path in output.rglob('*') if path.is_file()}
+    if not existing:
+        return existing
+    try:
+        old = json.loads((output / 'release.json').read_text())['assets']
+    except (OSError, ValueError, KeyError, TypeError):
+        old = None
+    if not isinstance(old, dict) or existing != set(old) | {'.nojekyll', 'release.json'}:
+        raise SystemExit('Use a new empty directory or an existing Garage bundle for output.')
+    for name, digest in old.items():
+        # An existing pre-Vite dist can be rebuilt in place. Only retire prior
+        # generated files whose content still matches its recorded release.
+        legacy = name in {'styles.css', 'ledger.css', 'app.js', 'account.js'} or re.fullmatch(r'src/[a-z0-9-]+\.js', name)
+        if (not public_asset(name) and not legacy) or hashlib.sha256((output / name).read_bytes()).hexdigest() != digest:
+            raise SystemExit('Output contains files outside its recorded release. Use a new empty directory.')
+    return existing
+
+
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=ROOT / 'dist')
-    parser.add_argument('--release', default=os.environ.get('GARAGE_RELEASE_SHA'),
-                        help='Full Git commit SHA; defaults to GARAGE_RELEASE_SHA.')
+    parser.add_argument('--release', default=os.environ.get('GARAGE_RELEASE_SHA'))
     args = parser.parse_args()
     release = release_identity(args.release)
-    url, key = browser_configuration()
     output = args.output.resolve()
-    if (output == ROOT or output in ROOT.parents
-            or any(output == ROOT / name or output in (ROOT / name).parents for name in FILES)):
-        raise SystemExit('Use a dedicated output directory, not the checkout or a source directory.')
-    if output.exists():
-        if not output.is_dir() or any(path.is_symlink() for path in output.rglob('*')):
-            raise SystemExit('Use a dedicated output directory containing no symbolic links.')
-        unexpected = [path.relative_to(output).as_posix() for path in output.rglob('*')
-                      if path.is_file() and path.relative_to(output).as_posix() not in PUBLIC_OUTPUT]
-        if unexpected:
-            raise SystemExit('Output contains files outside the public build allowlist; use a new empty directory.')
-    assets = public_files(url, key, release)
+    if output == ROOT or output in ROOT.parents or args.output.is_symlink():
+        raise SystemExit('Use a dedicated output directory.')
+    previous = previous_files(output)
+    with tempfile.TemporaryDirectory(prefix='garage-vite-build-') as temporary:
+        assets = bundle(Path(temporary), release)
+    # Vite never runs emptyOutDir on a user-supplied directory.
     for name, data in assets.items():
-        target = output / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-    (output / '.nojekyll').write_text('')
-    print(f'Built {len(assets)} public site files in {output}; no private keys or database seed files included.')
+        path = output / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    for name in previous - assets.keys():
+        (output / name).unlink()
+    print(f'Built {len(assets)} public files in {output}.')
 
 
 if __name__ == '__main__':

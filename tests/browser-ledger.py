@@ -59,8 +59,7 @@ def fixture(**options):
 def open_page(browser, base, data, viewport=None):
     context, page, errors, live = smoke.new_page(browser, data, viewport=viewport)
     page.goto(base + '/index.html#ledger')
-    expect(page.get_by_role('button', name='Выйти', exact=True)).to_be_visible()
-    expect(page.get_by_text(data.get('profile', {}).get('name', 'Test Owner'), exact=True).first).to_be_visible()
+    smoke.ready(page, data.get('profile', {}).get('name', 'Test Owner'))
     if data.get('profile', {}).get('role', 'admin') == 'admin':
         expect(page.locator('[data-ledger-row="row-2"]')).to_be_visible()
         expect(page.locator('.ledger-workspace')).to_have_attribute('aria-busy', 'false')
@@ -106,9 +105,9 @@ def run(args):
         browser = playwright.chromium.launch(executable_path=args.chromium, headless=True)
         try:
             context, page, errors, live = open_page(browser, base, fixture())
-            expect(page.get_by_label('Лист / период', exact=True)).to_have_value('sheet-11')
-            expect(page.get_by_label('Раздел', exact=True)).to_have_value('ledger')
-            expect(page.get_by_label('Раздел', exact=True).locator('option:checked')).to_have_text('Основные записи')
+            expect(page.get_by_role('combobox', name='Лист / период', exact=True)).to_have_value('sheet-11')
+            expect(page.get_by_role('combobox', name='Раздел', exact=True)).to_have_value('ledger')
+            expect(page.get_by_role('combobox', name='Раздел', exact=True).locator('option:checked')).to_have_text('Основные записи')
             expect(entry(page).locator('.ledger-row-date')).to_have_text('02.11.2026')
             expect(entry(page).locator('.ledger-row-description')).to_have_text('Synthetic hood film')
             page.get_by_text('Замечания к исходным данным: 2', exact=True).click()
@@ -122,6 +121,13 @@ def run(args):
             expect(record.locator('.ledger-source-detail')).to_contain_text('B · Price')
             expect(record).to_contain_text('=B2*0.5')
             passed.append('Russian labels, dates and warning explanations preserve original source text and formula evidence')
+            review_filter = page.get_by_role('button', name='Требуют проверки', exact=False)
+            review_filter.click()
+            expect(entry(page, 'row-2')).to_have_count(0)
+            expect(entry(page, 'row-3')).to_have_count(1)
+            review_filter.click()
+            expect(entry(page, 'row-2')).to_have_count(1)
+            passed.append('Review filter opens only rows with current issues and restores the full section')
             form = edit(page)
             form.locator('#ledger-field-B').fill('120')
             save(page)
@@ -138,30 +144,45 @@ def run(args):
             assert stored(page, 'H', 'row-3')['override'] is True
             assert stored(page, 'H', 'row-3')['formula'] == '=#REF!'
             expect(entry(page, 'row-3')).to_contain_text('Вручную: 1')
-            page.get_by_label('Раздел', exact=True).select_option('source_headers')
+            page.get_by_role('combobox', name='Раздел', exact=True).select_option('source_headers')
             expect(expand(page, 'header-1').get_by_role('button', name='Изменить запись', exact=True)).to_have_count(0)
             expect(page.get_by_role('button', name='Добавить запись', exact=True)).to_be_disabled()
-            page.get_by_label('Раздел', exact=True).select_option('ledger')
+            page.get_by_role('combobox', name='Раздел', exact=True).select_option('ledger')
             passed.append('Latest period, primary section, formula calculation, source evidence and audited override')
+            # Simulate moving straight to the price as soon as the editor is available.
+            # Its initial focus must already be in place before this interaction.
+            page.evaluate('''() => {
+                const observer = new MutationObserver(() => {
+                    const price = document.getElementById('ledger-field-B');
+                    if (!price) return;
+                    observer.disconnect();
+                    window.__ledgerOpeningFocus = document.activeElement.id;
+                    price.focus();
+                });
+                observer.observe(document.querySelector('.ledger-workspace'), {childList: true, subtree: true});
+            }''')
             page.get_by_role('button', name='Добавить запись', exact=True).click()
-            page.locator('#ledger-field-B').fill('30')
+            expect(page.locator('#ledger-field-B')).to_be_focused()
+            assert page.evaluate('window.__ledgerOpeningFocus') == 'ledger-field-A'
+            page.keyboard.insert_text('30')
             page.locator('#ledger-field-C').fill('Synthetic manual row')
             page.get_by_label('Причина изменения', exact=True).fill('New synthetic entry')
             page.locator('.ledger-form').get_by_role('button', name='Добавить запись', exact=True).click()
             expect(page.locator('.ledger-form')).to_have_count(0)
             created = page.evaluate('__garageLedgerState.sheets[1].rows.find(r => r.source_row === null)')
+            assert created['cells']['B']['value'] == 30
             assert not any(c.get('formula') for c in created['cells'].values())
             page.get_by_text('Текущие итоги по столбцам раздела', exact=True).click()
             expect(page.locator('.ledger-source-detail').filter(has=page.get_by_text('Текущие итоги по столбцам раздела', exact=True))).to_contain_text('200')
-            page.get_by_label('Раздел', exact=True).select_option('ledger_totals')
+            page.get_by_role('combobox', name='Раздел', exact=True).select_option('ledger_totals')
             expect(entry(page, 'row-5').locator('.ledger-row-amount')).to_have_text('170')
             expect(page.get_by_role('button', name='Добавить запись', exact=True)).to_be_disabled()
-            page.get_by_label('Раздел', exact=True).select_option('ledger')
+            page.get_by_role('combobox', name='Раздел', exact=True).select_option('ledger')
             expand(page, created['id']).get_by_role('button', name='История / архив', exact=True).click()
             page.get_by_label('Причина архивации или восстановления', exact=True).fill('Archive duplicate')
             page.get_by_role('button', name='В архив', exact=True).click()
             expect(entry(page, created['id'])).to_have_count(0)
-            page.get_by_label('Записи', exact=True).select_option('all')
+            page.get_by_role('combobox', name='Записи', exact=True).select_option('all')
             expand(page, created['id']).get_by_role('button', name='История и восстановление', exact=True).click()
             page.get_by_label('Причина архивации или восстановления', exact=True).fill('Recover manual entry')
             page.locator('.ledger-history li').filter(has_text='New synthetic entry').get_by_role('button', name='Восстановить эту версию', exact=True).click()
@@ -213,9 +234,9 @@ def run(args):
             data['ledger']['sheets'][1]['rows'][0]['cells']['B']['value'] = None
             context, page, errors, live = open_page(browser, base, data, {'width': 390, 'height': 844})
             expect(expand(page)).to_contain_text('Цена не указана. Пустая цена остаётся неизвестной.')
-            page.get_by_label('Лист / период', exact=True).select_option('sheet-10')
+            page.get_by_role('combobox', name='Лист / период', exact=True).select_option('sheet-10')
             expect(page.get_by_text('Журнал недоступен', exact=True)).to_be_visible()
-            expect(page.get_by_label('Лист / период', exact=True)).to_have_value('sheet-11')
+            expect(page.get_by_role('combobox', name='Лист / период', exact=True)).to_have_value('sheet-11')
             expect(page.get_by_role('button', name='Добавить запись', exact=True)).to_be_enabled()
             edit(page)
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Mobile viewport overflow'
@@ -246,7 +267,7 @@ def run(args):
                 assert 'Synthetic business workbook' not in page.locator('body').inner_text()
                 finished(context, errors, live)
             context, page, errors, live = open_page(browser, base, fixture())
-            page.get_by_role('button', name='Выйти', exact=True).click()
+            smoke.sign_out(page)
             expect(page.locator('.ledger-workspace')).to_have_count(0)
             assert 'Synthetic business workbook' not in page.locator('body').inner_text()
             passed.append('Owner-only navigation/RPC guard and private ledger cleared on sign-out')

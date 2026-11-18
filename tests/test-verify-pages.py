@@ -14,10 +14,11 @@ VERIFY = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(VERIFY)
 COMMIT = 'a' * 40
 BASE = 'https://site.example.invalid/garage_stock/'
+ASSETS = VERIFY.BUILD.STATIC | {'assets/app-abcdefgh.js', 'assets/account-abcdefgh.js'}
 
 
 def fixture():
-    files = {name: ('Synthetic public asset: ' + name).encode() for name in VERIFY.BUILD.FILES}
+    files = {name: ('Synthetic public asset: ' + name).encode() for name in ASSETS}
     manifest = {'commit': COMMIT, 'cache': 'garage-log-sha-' + COMMIT,
                 'assets': {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}}
     files['release.json'] = json.dumps(manifest).encode()
@@ -37,7 +38,7 @@ class VerifyPagesTests(unittest.TestCase):
         files, _ = fixture()
         calls = []
         result = VERIFY.verify_release(BASE, COMMIT, reader(files, calls))
-        self.assertEqual(result['assets_verified'], len(VERIFY.BUILD.FILES))
+        self.assertEqual(result['assets_verified'], len(ASSETS))
         self.assertEqual(result['commit'], COMMIT)
         self.assertTrue(all(url.endswith('?release=' + COMMIT) for url in calls))
 
@@ -57,8 +58,8 @@ class VerifyPagesTests(unittest.TestCase):
 
     def test_detects_a_changed_asset_even_with_matching_release_metadata(self):
         files, _ = fixture()
-        files['src/orders.js'] = b'Unexpected old or modified JavaScript'
-        with self.assertRaisesRegex(ValueError, 'src/orders.js'):
+        files['assets/app-abcdefgh.js'] = b'Unexpected old or modified JavaScript'
+        with self.assertRaisesRegex(ValueError, 'assets/app-abcdefgh.js'):
             VERIFY.verify_release(BASE, COMMIT, reader(files, []))
 
     def test_retries_a_stale_cdn_response_and_then_verifies_the_full_release(self):
@@ -76,8 +77,18 @@ class VerifyPagesTests(unittest.TestCase):
 
         with contextlib.redirect_stdout(io.StringIO()):
             result = VERIFY.verify_with_retry(BASE, COMMIT, 2, 0, fetch, pauses.append)
-        self.assertEqual(result['assets_verified'], len(VERIFY.BUILD.FILES))
+        self.assertEqual(result['assets_verified'], len(ASSETS))
         self.assertEqual(pauses, [0])
+
+    def test_compares_the_manifest_to_the_ci_artifact(self):
+        files, _ = fixture()
+        tested = hashlib.sha256(files['release.json']).hexdigest()
+        VERIFY.verify_release(BASE, COMMIT, reader(files, []), tested)
+        files['release.json'] += b' '
+        calls = []
+        with self.assertRaisesRegex(ValueError, 'tested public artifact'):
+            VERIFY.verify_release(BASE, COMMIT, reader(files, calls), tested)
+        self.assertEqual(len(calls), 1)
 
     def test_unsafe_urls_fail_without_a_request(self):
         for url in ('http://site.example.invalid/', 'https://user:password@site.example.invalid/',

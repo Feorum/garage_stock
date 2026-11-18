@@ -17,6 +17,7 @@ export function createAuthController(client, { onChange }) {
   let signingIn = false;
   let signingOut = false;
   let destroyed = false;
+  let verifiedId = null;
 
   function cancelScheduled() {
     clearTimeout(scheduled);
@@ -24,6 +25,7 @@ export function createAuthController(client, { onChange }) {
   }
 
   function emit(state) {
+    verifiedId = state.status === 'ready' ? state.profile.id : null;
     if (!destroyed) onChange(state);
   }
 
@@ -33,12 +35,12 @@ export function createAuthController(client, { onChange }) {
     emit({ status: 'signed_out', message });
   }
 
-  async function refresh() {
+  async function refresh(quiet = false) {
     if (destroyed || signingOut) return;
     cancelScheduled();
     const request = ++revision;
     const current = () => !destroyed && request === revision && !signingOut;
-    emit({ status: 'loading' });
+    if (!quiet) emit({ status: 'loading' });
     try {
       const session = await client.auth.getSession();
       if (!current()) return;
@@ -79,14 +81,16 @@ export function createAuthController(client, { onChange }) {
     }
   }
 
-  function authChanged(event) {
+  function authChanged(event, session) {
     if (destroyed) return;
     if (event === 'SIGNED_OUT') return signedOut();
     if (signingIn || signingOut || event === 'INITIAL_SESSION') return;
     if (['SIGNED_IN', 'TOKEN_REFRESHED', 'USER_UPDATED'].includes(event)) {
       cancelScheduled();
       // Do not await SDK requests in its auth callback: they share the session lock.
-      scheduled = setTimeout(() => refresh(), 0);
+      const sameUser = Boolean(verifiedId && verifiedId === session?.user?.id);
+      if (!sameUser) emit({ status: 'loading' });
+      scheduled = setTimeout(() => refresh(sameUser), 0);
     }
   }
 

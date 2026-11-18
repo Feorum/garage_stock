@@ -22,11 +22,14 @@ jobs:
   build:
     name: Test and build
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
+    outputs:
+      manifest_sha256: ${{ steps.manifest.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.14'
@@ -34,6 +37,10 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
+      - name: Install locked frontend dependencies and typecheck
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
       - name: Check integration boundaries and release tooling
         run: |
           node --test tests/*.test.mjs
@@ -77,6 +84,18 @@ jobs:
           python tests/browser-sheets.py --directory dist --output /tmp/garage-browser-sheets --chromium "$CHROMIUM"
           python tests/browser-owner-editing.py --directory dist --output /tmp/garage-browser-owner --chromium "$CHROMIUM"
           python tests/browser-ledger.py --directory dist --output /tmp/garage-browser-ledger --chromium "$CHROMIUM"
+          python tests/browser-shift.py --directory dist --chromium "$CHROMIUM"
+          python tests/browser-pay.py --directory dist --output /tmp/garage-browser-pay --chromium "$CHROMIUM"
+      - name: Check team workflow against isolated PostgreSQL
+        env:
+          CHROMIUM: ${{ steps.browser.outputs.chromium }}
+        run: |
+          docker pull postgres:17-bookworm@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994
+          bash tests/run-feedback-tests.sh
+          python tests/test-team-workflow.py --directory dist --chromium "$CHROMIUM"
+      - name: Identify the verified build manifest
+        id: manifest
+        run: echo "sha256=$(sha256sum dist/release.json | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Upload only the tested public build
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
@@ -107,4 +126,5 @@ jobs:
       - name: Verify the live commit and every public asset
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
-        run: python3 scripts/verify-pages.py --url "$PAGE_URL" --commit "$GITHUB_SHA"
+          TESTED_MANIFEST: ${{ needs.build.outputs.manifest_sha256 }}
+        run: python3 scripts/verify-pages.py --url "$PAGE_URL" --commit "$GITHUB_SHA" --manifest-sha256 "$TESTED_MANIFEST"

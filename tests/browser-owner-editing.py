@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
+from order_browser_helpers import task_card
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('garage_owner_editor_smoke', ROOT / 'tests/browser-smoke.py')
@@ -47,10 +48,10 @@ def calls(page, name):
     return page.evaluate('(name) => (__garageCalls || []).filter(c => c.name === name)', name)
 
 def expand(page, selector):
-    row = page.locator(selector)
-    if row.get_attribute('open') is None:
-        row.locator(':scope > summary').click()
-    return row
+    page.locator(selector).click()
+    panel = page.get_by_role('region', name='Подробности заказа', exact=True)
+    expect(panel).to_be_visible()
+    return panel
 
 def finish(context, errors, live):
     assert not errors, errors
@@ -95,53 +96,55 @@ def run(args):
                     before_server.shutdown(); before_server.server_close()
             for width in [390, 1440, 1728]:
                 context, page, errors, live = smoke.new_page(browser, fixture, {'width': width, 'height': 1000})
-                page.goto(base + '/index.html')
+                page.goto(base + '/index.html#orders')
                 smoke.ready(page, 'Test Owner')
                 expect(page.locator('.compact-order')).to_have_count(4)
                 sequence = page.locator('.compact-order').evaluate_all('(rows) => rows.map(row => row.dataset.intakeId || row.dataset.orderId)')
                 assert sequence == [fixture['orders'][2]['id'], INTAKE, fixture['orders'][0]['id'], fixture['orders'][1]['id']], sequence
-                assert page.locator('.compact-order[open]').count() == 0
+                expect(page.locator('.owner-order-pane')).to_have_count(0)
                 expect(page.get_by_role('link', name='Утверждённые работы', exact=True)).to_have_count(0)
-                measurement = page.locator('.order-summary').first.evaluate('(node) => ({height:node.getBoundingClientRect().height,width:node.getBoundingClientRect().width,overflow:document.documentElement.scrollWidth>innerWidth})')
+                measurement = page.locator('.order-index-row').first.evaluate('(node) => ({height:node.getBoundingClientRect().height,width:node.getBoundingClientRect().width,overflow:document.documentElement.scrollWidth>innerWidth})')
                 assert measurement['height'] >= 44 and not measurement['overflow'], measurement
                 layouts.append({'viewport': width, **measurement})
                 page.screenshot(path=str(args.output / f'compact-orders-{width}.png'), full_page=True)
                 capture(page,width,'closed')
-                page.locator(f'[data-intake-id="{INTAKE}"] > summary').focus()
+                intake_row = page.locator(f'[data-intake-id="{INTAKE}"]')
+                intake_row.focus()
                 page.keyboard.press('Enter')
-                expect(page.locator(f'[data-intake-id="{INTAKE}"]')).to_have_attribute('open', '')
-                expand(page,f'[data-order-id="{fixture["orders"][2]["id"]}"]')
+                expect(page).to_have_url(base + '/index.html#orders/' + INTAKE)
+                expect(page.locator('.owner-order-pane')).to_be_visible()
                 capture(page,width,'expanded')
-                page.locator(f'[data-intake-id="{INTAKE}"]').get_by_role('button',name='Изменить заказ',exact=True).click()
+                page.locator('.owner-order-pane').get_by_role('button',name='Изменить заказ',exact=True).click()
                 page.evaluate('window.scrollTo(0,0)')
                 capture(page,width,'editor')
                 page.get_by_role('button',name='Закрыть форму',exact=True).click()
-                page.get_by_label('Статус заказа', exact=True).select_option('review')
+                page.get_by_role('button',name='К списку заказов',exact=True).click()
+                page.get_by_role('combobox', name='Статус заказа', exact=True).select_option('review')
                 expect(page.locator('.compact-order')).to_have_count(1)
                 finish(context, errors, live)
             passed.append('draft and published requests share source-row order at 390,1440,1728; disclosure is keyboard accessible')
 
             context, page, errors, live = smoke.new_page(browser, {'managerIntakes': [intake()]})
-            page.goto(base + '/index.html')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             draft = expand(page, f'[data-intake-id="{INTAKE}"]')
             draft.get_by_role('button', name='Изменить заказ', exact=True).click()
             form = page.locator('.new-order-form')
             expect(page.get_by_label('Автомобиль', exact=True)).to_have_value('S50')
-            expect(page.get_by_label('Группа автомобилей', exact=True)).to_have_value('VG02')
+            expect(page.get_by_role('combobox', name='Группа автомобилей', exact=True)).to_have_value('VG02')
             expect(page.get_by_label('Указания (необязательно)', exact=True)).to_have_value('')
             form.get_by_text('Исходная заявка менеджера · только владельцу', exact=True).click()
             expect(form.get_by_text('Free-written custom request', exact=True)).to_be_visible()
             expect(form.get_by_text('Private synthetic reference BYN 900', exact=True)).to_be_visible()
             for code in ['W01', 'W09', 'W19']:
                 page.locator(f'#new-work-{code}').check()
-            page.get_by_label('Светопропускание', exact=True).select_option('15')
+            page.get_by_role('combobox', name='Светопропускание', exact=True).select_option('15')
             expect(form.get_by_text('360,00 BYN', exact=True)).to_be_visible()
             page.get_by_label('Указания (необязательно)', exact=True).fill('Only approved operational instructions')
             page.get_by_role('button', name='Опубликовать заказ', exact=True).click()
             expect(page.locator('[data-intake-id]')).to_have_count(0)
             expect(page.locator('[data-order-id]')).to_have_count(1)
-            sent = calls(page, 'garage_publish_manager_intake')
+            sent = calls(page, 'garage_save_team_order')
             assert len(sent) == 1 and sent[0]['args']['p_expected_version'] == 1
             assert [item['work_code'] for item in sent[0]['args']['p_tasks']] == ['W01', 'W09', 'W19']
             assert sent[0]['args']['p_order']['instructions'] == 'Only approved operational instructions'
@@ -151,55 +154,60 @@ def run(args):
             finish(context, errors, live)
 
             protected = task('W19', 'in_progress', 7)
-            protected['assigned_to'] = ME
-            protected['assigned_name'] = 'Test Mechanic'
+            # Active Manager work has a worker and no mandatory assignee.
             existing = order(172, 7, [protected, task(number=8)])
             linked = intake(172)
             linked.update({'order_id': existing['id'], 'status': 'owner_managed', 'owner_managed': True, 'source_changed': True})
             context, page, errors, live = smoke.new_page(browser, {'orders': [existing], 'managerIntakes': [linked],
-                'rpcDelays': {'garage_edit_order': 150}})
-            page.goto(base + '/index.html')
+                'rpcDelays': {'garage_save_team_order': 150}})
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             card = expand(page, '[data-order-id]')
             expect(card.get_by_text('Текст таблицы изменился после проверки владельцем. Выбранные работы сохранены.', exact=True)).to_be_visible()
             card.get_by_role('button', name='Изменить заказ', exact=True).click()
-            expect(page.get_by_label('Группа автомобилей', exact=True)).to_be_disabled()
+            expect(page.get_by_role('combobox', name='Группа автомобилей', exact=True)).to_be_disabled()
             expect(page.locator('#new-work-W19')).to_be_checked()
             expect(page.locator('#new-work-W19')).to_be_disabled()
-            expect(page.get_by_label('Светопропускание', exact=True)).to_have_value('15')
-            expect(page.get_by_label('Светопропускание', exact=True)).to_be_disabled()
+            expect(page.get_by_role('combobox', name='Светопропускание', exact=True)).to_have_value('15')
+            expect(page.get_by_role('combobox', name='Светопропускание', exact=True)).to_be_disabled()
             page.locator('#new-work-W09').check()
             page.get_by_label('Цвет (необязательно)', exact=True).fill('Blue')
             page.get_by_role('button', name='Сохранить изменения', exact=True).click()
             expect(page.get_by_text('Заказ обновлён. Выбранные работы сохранятся при последующих изменениях таблицы.', exact=True)).to_be_visible()
             expect(page.locator('.new-order-form')).to_have_count(0)
-            sent = calls(page, 'garage_edit_order')[0]['args']
+            sent = calls(page, 'garage_save_team_order')[0]['args']
             kept = next(item for item in sent['p_tasks'] if item['work_code'] == 'W19')
             assert kept['id'] == protected['id'] and kept['options'] == {'tint_percent': 15}
             assert kept['instructions'] == protected['instructions']
-            assert kept['assigned_to'] == ME
+            assert kept['assigned_to'] is None and kept['mechanic_ids'] == []
             assert any(item['work_code'] == 'W09' and 'id' not in item for item in sent['p_tasks'])
             assert calls(page, 'garage_quote_order')[-1]['args']['p_order_id'] == existing['id']
             assert page.evaluate('__garageOrderState.orders[0].colour') == 'Blue'
             passed.append('existing Owner edit preserves active task IDs/options/instructions and quotes against recorded order snapshots')
             finish(context, errors, live)
 
-            context, page, errors, live = smoke.new_page(browser, {'orders': [order(180)], 'rpcErrors': {'garage_edit_order': 'This order version changed'}})
-            page.goto(base + '/index.html')
+            context, page, errors, live = smoke.new_page(browser, {'orders': [order(180)]})
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             expand(page, '[data-order-id]').get_by_role('button', name='Изменить заказ', exact=True).click()
             page.get_by_label('Автомобиль', exact=True).fill('Keep my draft edits')
+            page.evaluate('__garageOrderState.orders[0].version++; __garageOrderState.orders[0].colour = "External correction"')
             page.get_by_role('button', name='Сохранить изменения', exact=True).click()
-            expect(page.get_by_text('Заказ или заявка менеджера изменились. Ваши правки сохранены в форме. Закройте форму и снова нажмите «Изменить заказ», чтобы проверить актуальную версию.', exact=True)).to_be_visible()
+            expect(page.get_by_role('button', name='Применить к актуальной версии', exact=True)).to_be_visible()
             expect(page.get_by_label('Автомобиль', exact=True)).to_have_value('Keep my draft edits')
-            passed.append('stale Owner edit keeps entered values and asks to reopen latest version')
+            page.get_by_role('button', name='Применить к актуальной версии', exact=True).click()
+            page.get_by_role('button', name='Сохранить изменения', exact=True).click()
+            expect(page.locator('.new-order-form')).to_have_count(0)
+            saved = page.evaluate('__garageOrderState.orders[0]')
+            assert saved['vehicle'] == 'Keep my draft edits' and saved['colour'] == 'External correction'
+            passed.append('stale Owner edit preserves draft and merges independent field edits against current version')
             finish(context, errors, live)
 
             context, page, errors, live = smoke.new_page(browser, {'rpcDelays': {'garage_quote_order': 500}})
-            page.goto(base + '/index.html')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             page.get_by_role('button', name='Новый заказ', exact=True).click()
-            page.get_by_label('Группа автомобилей', exact=True).select_option('VG02')
+            page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
             page.locator('#new-work-W01').check()
             page.locator('#new-work-W09').check()
             expect(page.locator('.order-price-preview').get_by_text('240,00 BYN', exact=True)).to_be_visible()
@@ -213,11 +221,11 @@ def run(args):
             finish(context, errors, live)
 
             context, page, errors, live = smoke.new_page(browser, {'rpcErrors': {'garage_quote_order': {'times':1,'message':'Temporary calculation failure'}}})
-            page.goto(base + '/index.html')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             page.get_by_role('button', name='Новый заказ', exact=True).click()
             page.get_by_label('Автомобиль', exact=True).fill('Keep choices after quote failure')
-            page.get_by_label('Группа автомобилей', exact=True).select_option('VG02')
+            page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
             page.locator('#new-work-W01').check()
             page.get_by_role('button', name='Повторить расчёт', exact=True).click()
             expect(page.locator('.order-price-preview').get_by_text('120,00 BYN', exact=True)).to_be_visible()
@@ -234,7 +242,7 @@ def run(args):
             duplicated['observations'] = [{'row_number':169,'raw':{**duplicated['original'],'notes':'Latest first occurrence'}},
                                          {'row_number':170,'raw':{**duplicated['original'],'notes':'Latest second occurrence'}}]
             context, page, errors, live = smoke.new_page(browser, {'managerIntakes':[duplicated]})
-            page.goto(base + '/index.html')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             card = expand(page, f'[data-intake-id="{INTAKE}"]')
             card.get_by_text('Исходная заявка менеджера · только владельцу',exact=True).click()
@@ -247,7 +255,7 @@ def run(args):
             context, page, errors, live = smoke.new_page(browser, {'profile': {'name': 'Test Mechanic', 'role': 'mechanic'}, 'managerIntakes': [intake()], 'orders': [order(168)]}, {'width':390,'height':844})
             page.goto(base + '/index.html#manager-orders')
             smoke.ready(page, 'Test Mechanic')
-            expect(page.locator('[data-order-id]')).to_have_count(1)
+            expect(page.locator('[data-task-id]')).to_have_count(1)
             assert not calls(page, 'garage_manager_intakes') and not calls(page, 'garage_quote_order')
             assert 'Free-written custom request' not in page.locator('body').inner_text()
             expect(page.get_by_role('button', name='Изменить заказ', exact=True)).to_have_count(0)
@@ -260,16 +268,16 @@ def run(args):
                 existing['status'] = 'closed'
                 original_tasks = json.loads(json.dumps(existing['tasks']))
                 context, page, errors, live = smoke.new_page(browser, {'orders': [existing], 'loseCompletionResponseOnce': lost_response})
-                page.goto(base + '/index.html')
+                page.goto(base + '/index.html#orders')
                 smoke.ready(page, 'Test Owner')
-                page.get_by_label('Статус заказа', exact=True).select_option('all')
+                page.get_by_role('combobox', name='Статус заказа', exact=True).select_option('all')
                 card = expand(page, f'[data-order-id="{existing["id"]}"]')
                 card.get_by_role('button', name='Добавить пропущенную выполненную работу', exact=True).click()
                 expect(page.locator('.completion-form')).to_be_visible()
-                assert page.locator('#completion-work option[value="W01"]').is_disabled()
-                assert page.locator('#completion-work option[value="W19"]').is_disabled()
-                page.get_by_label('Пропущенная работа из каталога', exact=True).select_option('W10')
-                page.get_by_label('Исполнитель', exact=True).select_option(ME)
+                expect(page.locator('#completion-work option[value="W01"]')).to_have_js_property('disabled', True)
+                expect(page.locator('#completion-work option[value="W19"]')).to_have_js_property('disabled', True)
+                page.get_by_role('combobox', name='Пропущенная работа из каталога', exact=True).select_option('W10')
+                page.get_by_role('combobox', name='Исполнитель', exact=True).select_option(ME)
                 page.get_by_label('Дата и время выполнения', exact=True).fill('2026-11-12T13:45')
                 page.get_by_label('Причина исправления', exact=True).fill('Owner confirmed omitted completed A-pillar work.')
                 expect(page.locator('.completion-form').get_by_text('120,00 BYN', exact=True)).to_be_visible()
@@ -281,14 +289,14 @@ def run(args):
                 save = page.get_by_role('button', name='Записать выполненную работу', exact=True)
                 save.click()
                 if lost_response:
-                    expect(page.get_by_text('Изменение не подтверждено', exact=True)).to_be_visible()
+                    expect(page.locator('.completion-form').get_by_role('alert')).to_be_visible()
                     save.click()
                 expect(page.get_by_text('Пропущенная выполненная работа добавлена. История остальных работ сохранена.', exact=True)).to_be_visible()
                 expect(page.locator('.completion-form')).to_have_count(0)
-                submitted = calls(page, 'garage_record_omitted_completion')
+                submitted = calls(page, 'garage_record_team_omission')
                 assert len(submitted) == (2 if lost_response else 1)
                 assert submitted[0]['args']['p_work_code'] == 'W10'
-                assert submitted[0]['args']['p_mechanic_id'] == ME
+                assert submitted[0]['args']['p_mechanic_ids'] == [ME]
                 assert submitted[0]['args']['p_note'] == 'Owner confirmed omitted completed A-pillar work.'
                 assert not any(key in submitted[0]['args'] for key in ['price', 'net_amount', 'gross_amount'])
                 if lost_response:
@@ -307,14 +315,14 @@ def run(args):
                 current['manager_comment_updated_at'] = '2026-11-15T12:00:00Z'
                 context, page, errors, live = smoke.new_page(browser, {'orders': [current],
                     'profile': {'name': 'Test Owner' if role == 'admin' else 'Test Mechanic', 'role': role}}, {'width': 390, 'height': 844})
-                page.goto(base + ('/index.html' if role == 'admin' else '/index.html#manager-orders'))
+                page.goto(base + ('/index.html#orders' if role == 'admin' else '/index.html#manager-orders'))
                 smoke.ready(page, 'Test Owner' if role == 'admin' else 'Test Mechanic')
-                expect(page.locator('[data-order-id]')).to_have_count(1)
-                card = expand(page, f'[data-order-id="{current["id"]}"]')
-                expect(card.get_by_label('Комментарий менеджера', exact=True)).to_contain_text(current['manager_comment'])
+                card = (expand(page, f'[data-order-id="{current["id"]}"]') if role == 'admin'
+                        else task_card(page, current['tasks'][0]['id']))
+                expect(card.get_by_text(current['manager_comment'], exact=True)).to_be_visible()
                 assert card.locator('.order-manager-comment b').count() == 0
                 page.evaluate("__garageOrderState.orders[0].manager_comment = 'New Manager detail after Owner review'; __garageOrderState.orders[0].manager_comment_updated_at = '2026-11-15T12:15:00Z'")
-                page.get_by_role('button', name='Обновить', exact=True).click()
+                page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
                 expect(card.get_by_text('New Manager detail after Owner review', exact=True)).to_be_visible()
                 expect(card.get_by_text('Указания по работе', exact=True)).to_be_visible()
                 page.screenshot(path=str(args.output / f'{role}-manager-comment-mobile.png'), full_page=True)
@@ -332,12 +340,11 @@ def run(args):
             context, page, errors, live = smoke.new_page(browser, {'orders': [current], 'profile': {'name': 'Test Mechanic', 'role': 'mechanic'}})
             page.goto(base + '/index.html#manager-orders')
             smoke.ready(page, 'Test Mechanic')
-            expect(page.locator('[data-order-id]')).to_have_count(1)
-            card = expand(page, f'[data-order-id="{current["id"]}"]')
+            card = task_card(page, current['tasks'][0]['id'])
             expect(card.get_by_text('Current Manager text', exact=True)).to_be_visible()
             expect(card.get_by_text('Outdated automatic Manager text', exact=True)).to_have_count(0)
             page.evaluate("__garageOrderState.orders[0].manager_comment = ''; __garageOrderState.orders[0].manager_comment_updated_at = '2026-11-15T12:15:00Z'")
-            page.get_by_role('button', name='Обновить', exact=True).click()
+            page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
             expect(card.get_by_label('Комментарий менеджера', exact=True)).to_have_count(0)
             expect(card.get_by_text('Outdated automatic Manager text', exact=True)).to_have_count(0)
             passed.append('replaced or deleted Manager comments do not resurrect earlier automatic instructions')

@@ -1,7 +1,3 @@
-import { element } from './ui.js';
-
-export const clone = value => JSON.parse(JSON.stringify(value));
-export const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 export const columnOrder = value => [...value].reduce((number, char) => number * 26 + char.charCodeAt(0) - 64, 0);
 const LABELS = {
   Date: 'Дата', Price: 'Цена', Description: 'Описание', 'Exchange rate': 'Курс', Area: 'Площадь',
@@ -43,14 +39,6 @@ export function ledgerReadOnly(sheet, section, row) {
   const selected = sheet.metadata?.sections?.find(item => item.id === section);
   return /^(header|template)$/.test(row?.metadata?.role || row?.role || '')
     || /header|template/i.test(selected?.kind || '') || /(^|_)(headers?|templates?)($|_)/i.test(section);
-}
-export function ledgerButton(label, action, primary = false) {
-  return element('button', { type: 'button', class: `button button-small${primary ? ' button-primary' : ''}`,
-    'data-ledger-action': '', onclick: action }, label);
-}
-export function ledgerField(label, control, hint = '') {
-  return element('div', { class: 'ledger-control' }, element('label', { for: control.id }, label), control,
-    hint ? element('p', { class: 'field-hint' }, hint) : null);
 }
 export function ledgerHeaders(sheet, section, rows = []) {
   const selected = sheet.metadata?.sections?.find(item => item.id === section);

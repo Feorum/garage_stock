@@ -26,12 +26,17 @@ CACHE_CHECK = importlib.util.module_from_spec(CACHE_SPEC)
 CACHE_SPEC.loader.exec_module(CACHE_CHECK)
 
 
+def fake_browser_module():
+    return SDK + '\nexport const sb = createClient();\nexport const publicApiOrigin = sb.supabaseUrl;\n'
+
+
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
     def translate_path(self, path):
         # Match the production GitHub Pages subdirectory, not only a root host.
+        self.directory = str(getattr(self.server, 'release_root', self.directory))
         if path.startswith('/garage_stock/'):
             return super().translate_path(path[len('/garage_stock'):])
         return str(Path(self.directory) / '__outside_test_mount__')
@@ -39,15 +44,18 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         # Worker fetches are not reliably intercepted by browser network routing.
         # Serve the same fake SDK locally for this one cache-lifecycle scenario.
-        if getattr(self.server, 'stub_config', False) and urlsplit(self.path).path.endswith('/src/supabase.js'):
-            body = SDK.replace('export function createClient()', 'function createClient()')
-            data = (body + '\nexport const sb = createClient();\n').encode()
+        if getattr(self.server, 'stub_config', False) and urlsplit(self.path).path in (
+                '/garage_stock/sdk.js', '/garage_stock/src/supabase.js'):
+            data = fake_browser_module().encode()
             self.send_response(200)
             self.send_header('Content-Type', 'text/javascript')
             self.send_header('Content-Length', str(len(data)))
             self.end_headers()
             self.wfile.write(data)
             return
+        # Simulated deployments may replace the worker twice within one second.
+        if getattr(self.server, 'release_root', None) and 'If-Modified-Since' in self.headers:
+            del self.headers['If-Modified-Since']
         return super().do_GET()
 
 
@@ -81,8 +89,8 @@ def new_page(browser, fixture, viewport=None, service_workers='block'):
     context.add_init_script('globalThis.__garageTest = ' + json.dumps(fixture) + ';')
     errors = []
     live_requests = []
-    context.route('https://cdn.jsdelivr.net/**', lambda route: route.fulfill(
-        content_type='text/javascript', body=SDK))
+    context.route('**/garage_stock/sdk.js', lambda route: route.fulfill(
+        content_type='text/javascript', body=fake_browser_module()))
 
     def reject_live(route):
         live_requests.append(route.request.url)
@@ -94,16 +102,44 @@ def new_page(browser, fixture, viewport=None, service_workers='block'):
     return context, page, errors, live_requests
 
 
+def check_bundled_client(browser, base):
+    # The remaining scenarios use a fixture. Exercise the actual published SDK
+    # with empty browser storage and block every request outside the local origin.
+    external = []
+    with browser.new_context(service_workers='block') as context:
+        def local_only(route):
+            if urlsplit(route.request.url).netloc == urlsplit(base).netloc:
+                route.continue_()
+            else:
+                external.append(urlsplit(route.request.url).netloc)
+                route.abort()
+
+        context.route('**/*', local_only)
+        page = context.new_page()
+        page.goto(base + '/index.html')
+        expect(page.get_by_role('button', name='Войти', exact=True)).to_be_visible()
+        assert page.evaluate("""async () => {
+          const {sb, publicApiOrigin} = await import('./sdk.js');
+          return new URL(publicApiOrigin).protocol === 'https:' &&
+            (await sb.auth.getSession()).data.session === null;
+        }""")
+    assert not external, external
+
+
 def ready(page, name):
-    expect(page.get_by_role('button', name='Выйти', exact=True)).to_be_visible()
-    expect(page.get_by_text(name, exact=True).first).to_be_visible()
+    expect(page.locator('.account-menu > summary')).to_have_text(name)
+
+
+def sign_out(page):
+    page.locator('.account-menu > summary').click()
+    page.get_by_role('button', name='Выйти', exact=True).click()
 
 
 def run(args):
     built = args.directory.resolve()
     assert (built / 'index.html').exists(), 'Build the site first.'
     cache_name = json.loads((built / 'release.json').read_text())['cache']
-    assert re.fullmatch(r'garage-log-(?:v[0-9]+|sha-[0-9a-f]{40})', cache_name), cache_name
+    assert re.fullmatch(r'garage-log-(?:local-[0-9a-f]{16}|sha-[0-9a-f]{40})', cache_name), cache_name
     args.output.mkdir(parents=True, exist_ok=True)
     server, base = serve(built)
     passed = []
@@ -113,8 +149,8 @@ def run(args):
         try:
             # Both roles load only their own workspace navigation.
             for role, name, expected_links, forbidden in [
-                ('admin', 'Test Owner', ['Заказы', 'Отчёты', 'Учёт бизнеса', 'Подключения таблиц'], 'Назначено владельцем'),
-                ('mechanic', 'Test Mechanic', ['Назначено владельцем', 'Заказы менеджеров', 'Мои работы'], 'Отчёты'),
+                ('admin', 'Test Owner', ['Смена', 'Заказы', 'Отчёты', 'Распределение оплаты', 'Учёт бизнеса', 'Подключения таблиц'], 'История'),
+                ('mechanic', 'Test Mechanic', ['Моя смена', 'Общая очередь', 'История'], 'Отчёты'),
             ]:
                 viewport = {'width': 320, 'height': 844} if role == 'mechanic' else None
                 context, page, errors, live = new_page(browser, {'profile': {'name': name, 'role': role}}, viewport)
@@ -132,15 +168,15 @@ def run(args):
                     page.screenshot(path=str(args.output / 'owner-workspace.png'), full_page=True)
                     expect(page.get_by_role('link', name='Approved works', exact=True)).to_have_count(0)
                     page.evaluate("location.hash = '#catalogue'")
-                    expect(page.get_by_role('heading', name='Заказы', exact=True)).to_be_visible()
+                    expect(page.get_by_role('heading', name='Смена', exact=True)).to_be_visible()
                     page.get_by_role('link', name='Перейти к содержимому', exact=True).evaluate('link => link.click()')
-                    expect(page.get_by_role('link', name='Заказы', exact=True)).to_have_attribute('aria-current', 'page')
+                    expect(page.get_by_role('link', name='Смена', exact=True)).to_have_attribute('aria-current', 'page')
                     assert page.evaluate("document.activeElement.id === 'main-content'")
                     check_no_private_data(page)
                 else:
                     page.screenshot(path=str(args.output / 'mechanic-workspace.png'), full_page=True)
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-                page.get_by_role('button', name='Выйти', exact=True).click()
+                sign_out(page)
                 expect(page.get_by_role('button', name='Войти', exact=True)).to_be_visible()
                 expect(page.get_by_role('navigation')).to_have_count(0)
                 expect(page.get_by_text(name, exact=True)).to_have_count(0)
@@ -175,13 +211,24 @@ def run(args):
             page.get_by_label('Пароль', exact=True).fill('not-a-real-password')
             page.get_by_role('button', name='Войти', exact=True).click()
             ready(page, 'Test Mechanic')
-            expect(page.get_by_role('link', name='Назначено владельцем', exact=True)).to_be_visible()
+            expect(page.get_by_role('link', name='Моя смена', exact=True)).to_be_visible()
             expect(page.get_by_role('link', name='Отчёты', exact=True)).to_have_count(0)
             check_no_private_data(page)
             assert not errors, errors
             assert not live, live
             passed.append('successful sign-in opens the verified mechanic workspace')
             context.close()
+
+            context, page, errors, live = new_page(browser, {'signedIn': False})
+            page.goto(base + '/index.html')
+            page.get_by_role('button', name='Восстановить пароль', exact=True).click()
+            page.get_by_label('Электронная почта', exact=True).fill('mechanic@example.invalid')
+            page.get_by_role('button', name='Получить ссылку', exact=True).click()
+            expect(page.get_by_role('status')).to_contain_text('Если учётная запись существует')
+            assert page.evaluate("__garageCalls.find(c => c.method === 'resetPasswordForEmail').redirectTo") == base + '/account.html'
+            assert not errors and not live
+            context.close()
+            passed.append('Password reset targets the persistent account callback and hides account existence')
 
             # Missing, unsupported and inactive accounts cannot receive a workspace.
             for profile in (None, {'name': 'Unexpected User', 'role': 'manager'},
@@ -239,8 +286,10 @@ def run(args):
             passed.append('unsupported and failed account callbacks rejected and scrubbed')
 
             # Real service-worker upgrade: install a minimal v5 worker on the same scope first.
+            check_bundled_client(browser, base)
+            passed.append('real bundled SDK starts with an empty session and no external requests')
             CACHE_CHECK.check_cache_upgrade(browser, server, base, new_page, cache_name)
-            passed.append('v5 to built-release service-worker upgrade, sibling-cache preservation and account exclusions')
+            passed.append('production v8 upgrade and rollback, offline shell, sibling-cache preservation and account exclusions')
         finally:
             browser.close()
             server.shutdown()

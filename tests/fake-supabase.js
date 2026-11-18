@@ -47,11 +47,26 @@ export function createClient() {
   const currentRole = () => (fixture.profile === undefined ? 'admin' : fixture.profile?.role);
   const errorResult = (message, code = 'P0001') => ({ data: null, error: { message, code } });
   const workName = code => ({ W01: 'капот полностью', W02: 'Бампер', W10: 'Стойки лобового (2шт)', W13: 'Зеркала', W19: 'тонировка задней полусферы (5%,15%)' }[code] || code);
-  const taskVisible = task => task.assigned_to === user.id || task.working_mechanic_id === user.id;
+  const memberName = id => staff.find(row => row.id === id)?.name || (id === user.id ? fixture.profile?.name : '') || 'Механик';
+  function members(task) {
+    if (task.participants) return clone(task.participants);
+    const ids = task.mechanic_ids || [task.working_mechanic_id || task.assigned_to].filter(Boolean);
+    const status = { pending: 'assigned', in_progress: 'working', blocked: 'blocked', completed: 'confirmed' }[task.status] || 'assigned';
+    return ids.map(mechanic_id => ({ mechanic_id, name: memberName(mechanic_id), status, confirmed_at: task.completed_at || null }));
+  }
+  const taskVisible = task => members(task).some(person => person.mechanic_id === user.id);
+  function readable(task) {
+    const participants = members(task);
+    const me = participants.find(person => person.mechanic_id === user.id);
+    const can_see_notes = currentRole() === 'admin' || Boolean(me);
+    return { ...clone(task), participants, my_status: me?.status || null, can_see_notes,
+      roster_locked: participants.some(person => person.status === 'confirmed'),
+      notes: can_see_notes ? clone(task.notes || []) : [], blocker_reason: can_see_notes ? task.blocker_reason : '' };
+  }
   const visibleOrders = () => orders.flatMap(order => {
-    if (currentRole() === 'admin' || order.source === 'manager') return [clone(order)];
-    const tasks = order.tasks.filter(taskVisible);
-    return tasks.length ? [{ ...clone(order), tasks: clone(tasks) }] : [];
+    const showAll = currentRole() === 'admin' || order.source === 'manager' && order.status === 'published';
+    const tasks = (order.tasks || []).filter(task => showAll || taskVisible(task)).map(readable);
+    return tasks.length ? [{ ...clone(order), tasks }] : [];
   });
   globalThis.__garageOrderState = { orders, receipts, staff, managerIntakes };
   globalThis.__garageSheetState = { sources: sheetSources };
@@ -66,10 +81,11 @@ export function createClient() {
       const count = errorCounts.get(name) || 0;
       errorCounts.set(name, count + 1);
       if (typeof configuredError === 'string' || count < (configuredError.times || 1)) {
-        return errorResult(typeof configuredError === 'string' ? configuredError : configuredError.message);
+        return errorResult(typeof configuredError === 'string' ? configuredError : configuredError.message, configuredError.code || 'P0001');
       }
     }
     if (!session && !(fixture.allowLateRpcResponse && authenticatedAtRequest)) return errorResult('Sign in to continue.', '42501');
+    if (globalThis.__garageRpcFixture) return globalThis.__garageRpcFixture(name, args);
     const owner = currentRole() === 'admin';
     if (name.startsWith('garage_ledger_') && ledgerRpc) return ledgerRpc(name, args, owner);
     if (['garage_sheet_pull_sources', 'garage_connect_sheet_pull', 'garage_sheet_pull_reviews', 'garage_prepare_sheet_reader', 'garage_set_sheet_active'].includes(name)) {
@@ -137,6 +153,18 @@ export function createClient() {
       const receipt = receipts.get(request);
       return receipt.fingerprint === fingerprint ? clone(receipt.result) : errorResult('Request ID was already used for another action.');
     }
+    // Translate the team editor payload to the same synthetic order store used by the legacy scenarios.
+    if (name === 'garage_save_team_order') {
+      const mode = args.p_mode;
+      name = { new: 'garage_create_order', edit: 'garage_edit_order', intake: 'garage_publish_manager_intake' }[mode];
+      args = { ...args, p_order_id: args.p_id, p_intake_id: args.p_id };
+      if (mode === 'new') {
+        for (const [key, value] of Object.entries(args.p_order)) args['p_' + key] = value;
+      }
+    } else if (name === 'garage_record_team_omission') {
+      name = 'garage_record_omitted_completion';
+      args = { ...args, p_mechanic_id: args.p_mechanic_ids[0] };
+    }
     let result;
     let publishedIntake;
     if (name === 'garage_publish_manager_intake') {
@@ -164,7 +192,7 @@ export function createClient() {
         tasks: args.p_tasks.map((task, index) => ({
           id: `bbbbbbbb-bbbb-4bbb-8bbb-${String(serial * 100 + index).padStart(12, '0')}`,
           work_code: task.work_code, work_name: workName(task.work_code), options: task.options || {},
-          status: 'pending', assigned_to: task.assigned_to || null,
+          status: 'pending', mechanic_ids: task.mechanic_ids, assigned_to: task.assigned_to || null,
           assigned_name: staff.find(row => row.id === task.assigned_to)?.name || null,
           working_mechanic_id: null, working_name: null, blocker_reason: '', version: 1, completed_at: null,
         })),
@@ -175,7 +203,7 @@ export function createClient() {
         order.source_row_number = publishedIntake.row_numbers[0];
         publishedIntake.order_id = order.id; publishedIntake.status = 'owner_managed'; publishedIntake.owner_managed = true; publishedIntake.version += 1;
       }
-      result = { data: clone(order), error: null };
+      result = { data: { ...clone(order), order_id: order.id, order_version: order.version }, error: null };
     } else if (name === 'garage_edit_order') {
       if (!owner) return errorResult('Owner access required.', '42501');
       const order = orders.find(row => row.id === args.p_order_id);
@@ -196,7 +224,7 @@ export function createClient() {
       order.version += 1;
       const intake = managerIntakes.find(row => row.order_id === order.id);
       if (intake) { intake.owner_managed = true; intake.status = 'owner_managed'; intake.version += 1; }
-      result = { data: clone(order), error: null };
+      result = { data: { ...clone(order), order_id: order.id, order_version: order.version }, error: null };
     } else if (name === 'garage_record_omitted_completion') {
       if (!owner) return errorResult('Owner access required.', '42501');
       const order = orders.find(row => row.id === args.p_order_id);
@@ -208,9 +236,45 @@ export function createClient() {
       order.tasks.push({ id: taskId, work_code: args.p_work_code, work_name: workName(args.p_work_code),
         options: args.p_options || {}, instructions: '', status: 'completed', assigned_to: null, assigned_name: null,
         working_mechanic_id: args.p_mechanic_id, working_name: staff.find(row => row.id === args.p_mechanic_id).name,
-        completed_at: args.p_completed_at, blocker_reason: '', version: 1 });
+        completed_at: args.p_completed_at, mechanic_ids: args.p_mechanic_ids, blocker_reason: '', version: 1 });
       order.version += 1;
       result = { data: { order_id: order.id, order_number: order.order_number, order_version: order.version, task_id: taskId }, error: null };
+    } else if (name === 'garage_team_action') {
+      const order = orders.find(row => row.tasks.some(task => task.id === args.p_task_id));
+      const task = order?.tasks.find(row => row.id === args.p_task_id);
+      if (!task || task.version !== args.p_expected_version) return errorResult('Task version changed.', '40001');
+      const participants = members(task);
+      const me = participants.find(p => p.mechanic_id === user.id);
+      const target = participants.find(p => p.mechanic_id === args.p_mechanic_id);
+      const action = args.p_action;
+      const person = id => ({ mechanic_id: id, name: memberName(id), status: 'assigned', confirmed_at: null });
+      if (action === 'join' && order.source === 'manager' && !me && !participants.some(p => p.status === 'confirmed')) {
+        participants.push({ ...person(user.id), status: 'working' });
+      } else if (action === 'start' && me?.status === 'assigned') me.status = 'working';
+      else if (action === 'block' && me?.status === 'working' && args.p_note?.trim()) me.status = 'blocked';
+      else if (action === 'resume' && me?.status === 'blocked') me.status = 'working';
+      else if (action === 'confirm' && me?.status === 'working') {
+        me.status = 'confirmed'; me.confirmed_at = new Date().toISOString();
+      } else if (action === 'leave' && me && order.source === 'manager' && !participants.some(p => p.status === 'confirmed')) {
+        participants.splice(participants.indexOf(me), 1);
+      } else if (owner && action === 'assign' && !target) participants.push(person(args.p_mechanic_id));
+      else if (owner && ['replace', 'remove'].includes(action) && target && args.p_note?.trim()) {
+        participants.splice(participants.indexOf(target), 1);
+        if (action === 'replace') participants.push(person(args.p_replacement_id));
+      } else if (!(action === 'note' && me && args.p_note?.trim())) return errorResult('Action unavailable.', '42501');
+      if (args.p_note) {
+        task.notes ||= [];
+        task.notes.push({ id: crypto.randomUUID(), mechanic_id: user.id, name: memberName(user.id),
+          note: args.p_note, created_at: new Date().toISOString(), action });
+      }
+      task.participants = participants;
+      task.status = !participants.length || participants.every(p => p.status === 'assigned') ? 'pending'
+        : participants.every(p => p.status === 'confirmed') ? 'completed'
+        : participants.every(p => p.status === 'blocked') ? 'blocked' : 'in_progress';
+      task.blocker_reason = action === 'block' ? args.p_note : '';
+      if (task.status === 'completed') task.completed_at = new Date().toISOString();
+      task.version += 1; order.version += 1;
+      result = { data: { task_id: task.id, status: task.status, version: task.version }, error: null };
     } else if (name === 'garage_task_action') {
       const order = orders.find(row => row.tasks.some(task => task.id === args.p_task_id));
       const task = order?.tasks.find(row => row.id === args.p_task_id);
@@ -256,7 +320,7 @@ export function createClient() {
         }
       }
       order.version += 1;
-      result = { data: clone(order), error: null };
+      result = { data: { ...clone(order), order_id: order.id, order_version: order.version }, error: null };
     } else return errorResult(`Unexpected test RPC: ${name}`);
     if (request) receipts.set(request, { fingerprint, result: clone(result) });
     if (name === 'garage_create_order' && fixture.loseCreateResponseOnce && !lostCreateResponse) {
@@ -303,6 +367,10 @@ export function createClient() {
         session = { user };
         queueMicrotask(() => emit('SIGNED_IN', session));
         return { data: { user, session }, error: null };
+      },
+      async resetPasswordForEmail(email, { redirectTo }) {
+        calls.push({ method: 'resetPasswordForEmail', redirectTo });
+        return { data: {}, error: null };
       },
       async signOut() {
         calls.push({ method: 'signOut' });

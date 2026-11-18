@@ -6,12 +6,18 @@ snapshots occupy separate Owner-only tables. Historical spreadsheet copies have
 been analyzed privately. The Manager integration now reads a full operational
 copy in the existing table layout; the original remains untouched.
 
+## Team-workflow release
+
+The replacement Preact frontend, team-task database API and private pay review are implemented together. The Owner's shift, private assignments, Manager queue, confirmation history, Minsk-based reports and editable ledger use the same work-order identities. Operational completion and Owner compensation are independent. Deployment and the workshop acceptance run are tracked per release.
+
+A later increment can populate the Owner's existing Word form from a completed order. Use the order and task IDs, the recorded completion and dated participant history as inputs. Field mapping, repeated rows and document output depend on the supplied example templates and a correctly filled example.
+
 ## Rules to preserve
 
 - Two application roles: Owner and Mechanic. Keep the existing `admin` role in
   the database and display it as Owner. Managers use Google Sheets, not app accounts.
 - Valid Manager submissions publish automatically into a shared queue.
-  Mechanics choose a vehicle order and claim one available authorized task.
+  Mechanics choose a vehicle order and may work together on an available task until sign-off begins.
 - Owner orders for other clients are mandatory assignments to specific mechanics.
   They never enter the shared queue. Mechanics may report blockers or request
   reassignment; the Owner controls transfers.
@@ -29,7 +35,7 @@ copy in the existing table layout; the original remains untouched.
 | 1 — delivered | Sign-in, verified profile/role, workspace navigation, approved catalogue | Both role shells work; failed/unknown/inactive profiles do not open a workspace |
 | 2 — delivered | Additive order/task schema, RLS and transactional operations | Mandatory assignment, shared claims, private financial access and retry invariants have isolated database checks |
 | 3 — delivered | Owner creates, assigns and publishes an order; mechanic starts/blocks/completes | Another mechanic cannot access mandatory work; completion is recorded once |
-| 4 — delivered | Manager shared queue and concurrent task claiming | Two mechanics claiming one task produce one winner; Owner registers Manager requests |
+| 4 — delivered | Manager shared queue and concurrent task claiming | Original single-claim workflow delivered, then extended to personal team participation and unanimous completion |
 | 5 — delivered | Existing-layout working copy, catalogue parsing, automatic requests, private identities/retries, Owner review and completion feedback | Manager input stays unchanged; upgraded authorized sync writes verified results to I/J |
 | 6 — partial | Owner interpretation/editing, compact source-ordered rows, operational reports, immutable rate snapshots and automatic website deployment | Owner corrections, snapshot reports and tested releases from main are delivered; accounting remains later work |
 | 7 | Pilot, legacy history, controlled cutover and installed-client update | Existing identities/job history reconcile; old clients cannot bypass ordered work |
@@ -43,8 +49,7 @@ Legacy direct job writes are revoked by the order migration and tested. A new
 interface alone cannot stop an old cached client using old permissions. Keep rollback capable
 of preserving new orders/completions rather than deleting them.
 
-Remaining decisions include workshop reporting timezone, commercial meaning of the source
-rates, and any promotion/dependency rules. Actual rates and the source financial
+The workshop uses Europe/Minsk. Remaining business decisions include the commercial interpretation of source rates and any promotion or dependency rules. Actual rates and the source financial
 workbook remain in restricted project notes, outside this public repository.
 
 The supplied operational sheet uses a completed checkbox, not a submission flag.

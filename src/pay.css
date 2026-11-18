@@ -1,0 +1,27 @@
+.pay-workspace { display: grid; gap: 1rem; color: var(--ink); }
+.pay-toolbar { display: flex; align-items: end; flex-wrap: wrap; gap: .75rem; }
+.pay-toolbar > label { flex: 1 1 12rem; }
+.pay-workspace label { display: grid; gap: .35rem; margin: 0; }
+.pay-workspace input, .pay-workspace select, .pay-workspace textarea { width: 100%; min-width: 0; margin: 0; }
+.pay-list, .pay-lines, .pay-revisions { padding: 0; margin: 0; list-style: none; }
+.pay-list { display: grid; gap: .75rem; }
+.pay-card,.pay-empty { padding: 1rem; border: 1px solid var(--line); border-radius: var(--radius, 12px); background: var(--surface); }
+.pay-card h2 { margin: .25rem 0; font-size: 1.1rem; }
+.pay-summary, .pay-lines li, .pay-buttons { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.pay-summary > div { min-width: 0; overflow-wrap: anywhere; }
+.pay-buttons { justify-content: flex-start; margin-top: .75rem; }
+.pay-lines li, .pay-revisions > li { padding: .6rem 0; border-bottom: 1px solid var(--line); }
+.pay-editor { border-top: 1px solid var(--line); padding-top: 1rem; margin-top: .75rem; }
+.pay-editor fieldset { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: .75rem; }
+.pay-editor legend { padding: 0 0 .6rem; font-weight: 700; }
+.pay-workspace .pay-person { display: grid; gap: .35rem; align-content: end; }
+.pay-workspace .pay-check { display: flex; align-items: center; gap: .5rem; min-height: 44px; }
+.pay-workspace .pay-check input { width: 1.1rem; height: 1.1rem; min-height: 0; }
+.pay-error { color: var(--danger); }
+.pay-error:empty { display: none; }
+.pay-conflict { padding: .75rem; border: 1px solid var(--line); }
+@media(min-width: 45rem) {
+  .pay-pool { max-width: 26rem; }
+  .pay-shares { grid-template-columns: repeat(auto-fit,minmax(12rem,1fr)); }
+  .pay-shares > p { grid-column: 1 / -1; }
+}

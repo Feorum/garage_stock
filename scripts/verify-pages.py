@@ -32,12 +32,15 @@ def fetch_bytes(url):
     return data
 
 
-def verify_release(base, commit, fetch=fetch_bytes):
+def verify_release(base, commit, fetch=fetch_bytes, expected_manifest_sha256=None):
     base = public_base(base)
     if not re.fullmatch(r'[0-9a-f]{40}', commit):
         raise ValueError('Expected commit must be a full lowercase Git SHA.')
     query = '?' + urlencode({'release': commit})
-    manifest = json.loads(fetch(base + 'release.json' + query))
+    raw = fetch(base + 'release.json' + query)
+    if expected_manifest_sha256 and hashlib.sha256(raw).hexdigest() != expected_manifest_sha256:
+        raise ValueError('The served manifest differs from the tested public artifact.')
+    manifest = json.loads(raw)
     if not isinstance(manifest, dict) or set(manifest) != {'commit', 'cache', 'assets'}:
         raise ValueError('The site has no recognized release manifest.')
     if manifest['commit'] != commit:
@@ -45,7 +48,8 @@ def verify_release(base, commit, fetch=fetch_bytes):
     if manifest['cache'] != 'garage-log-sha-' + commit:
         raise ValueError('The release cache does not match the expected commit.')
     assets = manifest['assets']
-    if (not isinstance(assets, dict) or set(assets) != set(BUILD.FILES)
+    if (not isinstance(assets, dict) or not BUILD.STATIC.issubset(assets)
+            or not all(BUILD.public_asset(name) for name in assets)
             or any(not isinstance(value, str) or not re.fullmatch(r'[0-9a-f]{64}', value)
                    for value in assets.values())):
         raise ValueError('The release asset list does not match the public build allowlist.')
@@ -56,13 +60,13 @@ def verify_release(base, commit, fetch=fetch_bytes):
     return {'commit': commit, 'assets_verified': len(assets), 'url': base}
 
 
-def verify_with_retry(base, commit, attempts=12, interval=10, fetch=fetch_bytes, pause=time.sleep):
+def verify_with_retry(base, commit, attempts=12, interval=10, fetch=fetch_bytes, pause=time.sleep, expected_manifest_sha256=None):
     public_base(base)
     if not 1 <= attempts <= 30 or not 0 <= interval <= 60:
         raise ValueError('Use 1–30 attempts and an interval of 0–60 seconds.')
     for attempt in range(1, attempts + 1):
         try:
-            return verify_release(base, commit, fetch)
+            return verify_release(base, commit, fetch, expected_manifest_sha256)
         except (OSError, ValueError) as error:
             if attempt == attempts:
                 raise
@@ -74,11 +78,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', required=True)
     parser.add_argument('--commit', required=True)
+    parser.add_argument('--manifest-sha256', help='SHA-256 of the tested release.json from CI.')
     parser.add_argument('--attempts', type=int, default=12)
     parser.add_argument('--interval', type=float, default=10)
     args = parser.parse_args()
     try:
-        result = verify_with_retry(args.url, args.commit.lower(), args.attempts, args.interval)
+        result = verify_with_retry(args.url, args.commit.lower(), args.attempts, args.interval,
+                                   expected_manifest_sha256=args.manifest_sha256)
     except (OSError, ValueError) as error:
         raise SystemExit(f'Public release verification failed: {error}') from None
     print(json.dumps(result, sort_keys=True))
