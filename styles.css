@@ -110,6 +110,29 @@ input[type='checkbox'], input[type='radio'] { width: 1.1rem; height: 1.1rem; mar
 .login-form label:not(:first-child) { margin-top: .55rem; }
 .login-form .button, .login-panel > .button { margin-top: 1rem; }
 .login-panel > .button { width: 100%; }
+.login-layout .wordmark { margin-bottom: 1rem; font-size: 1.5rem; }
+.login-layout .login-panel > .button {
+  display: block;
+  width: fit-content;
+  min-height: 44px;
+  margin: .35rem auto 0;
+  padding: 0 .25rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: .23em;
+}
+.login-layout .login-panel > .button:enabled:hover { color: var(--accent); }
+@media (max-width: 540px) {
+  .login-layout {
+    align-items: start;
+    padding: max(env(safe-area-inset-top), clamp(1.25rem, 14svh, 7rem)) max(1.5rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left));
+    background: var(--paper);
+  }
+  .login-layout > .login-panel { padding: 0; border: 0; border-radius: 0; background: transparent; }
+}
 .startup { margin: 12vh auto; }
 .startup > * + * { margin-top: 1rem; }
 
