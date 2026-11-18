@@ -79,7 +79,7 @@ function ChecklistItems({ tasks }: { tasks: HandoffTask[] }) {
   );
 }
 
-function WorkChecklist({ tasks, confirmation = false }: { tasks: HandoffTask[]; confirmation?: boolean }) {
+export function WorkChecklist({ tasks, confirmation = false }: { tasks: HandoffTask[]; confirmation?: boolean }) {
   const complete = tasks.filter((task) => task.status === 'completed');
   const open = tasks.filter((task) => !['completed', 'cancelled'].includes(task.status));
   if (confirmation) {

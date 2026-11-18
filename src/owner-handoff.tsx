@@ -87,9 +87,14 @@ export function OwnerHandoff({
         </p>
       )}
       {workflow.handed_at && <p>Передача · {instantLabel(workflow.handed_at)}</p>}
-      {workflow.handoff_note && <p class="handoff-note">{workflow.handoff_note}</p>}
+      {workflow.handoff_note && (
+        <div class="handoff-note">
+          <strong>От механика</strong>
+          <p>{workflow.handoff_note}</p>
+        </div>
+      )}
       {workflow.returned_at && <p>Последний возврат · {instantLabel(workflow.returned_at)}</p>}
-      {workflow.return_note && <p class="handoff-note">Комментарий владельца · {workflow.return_note}</p>}
+      {workflow.return_note && <p class="handoff-note">Механику при возврате · {workflow.return_note}</p>}
       {(review || workflow.handed_at) && (
         <div class="handoff-snapshot">
           <SnapshotList
@@ -112,7 +117,9 @@ export function OwnerHandoff({
         <fieldset disabled={busy}>
           <legend class="sr-only">Решение владельца</legend>
           <label>
-            Комментарий к решению
+            {workflow.can_close
+              ? workflow.can_return ? 'Комментарий к решению (необязательно)' : 'Комментарий к закрытию (необязательно)'
+              : 'Механику при возврате (необязательно)'}
             <textarea
               maxLength={1000}
               value={note}
@@ -122,6 +129,7 @@ export function OwnerHandoff({
               }}
             />
           </label>
+          {workflow.can_close && workflow.can_return && <p class="field-hint">При возврате комментарий увидит механик.</p>}
           {review && !workflow.can_close && (
             <p class="muted">
               {workflow.unfinished_count

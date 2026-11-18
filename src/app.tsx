@@ -4,10 +4,10 @@ import { createAuthController } from './auth.js';
 import { getSections, resolveRoute } from './navigation.js';
 import { installRussianValidation } from './locale.js';
 import type { Section as ShiftSection } from './shift-model';
-import { ShiftView } from './shift';
-import { OwnerOrders } from './owner-orders';
+import { MechanicBoard } from './mechanic-board';
+import { OwnerWorkspace } from './owner-workspace';
+import { ExecutorMarker } from './executor-marker';
 import { PayView } from './pay';
-import { Reports } from './reports';
 import { LedgerView } from './ledger-view';
 import { SheetsView } from './sheets-view';
 import type { Client, Profile, Navigate } from './workspace-types';
@@ -93,12 +93,24 @@ function SignIn({ auth, client, message }: { auth: Auth; client: Client; message
   );
 }
 
+function TabIcon({ icon }: { icon: string }) {
+  if (icon === 'B' || icon === 'G') return <span class="nav-letter" aria-hidden="true">{icon}</span>;
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+      {icon === 'review' && <><rect x="3.5" y="3.5" width="17" height="17" rx="3" /><path d="m7.5 12 3 3 6-6" /></>}
+      {icon === 'orders' && <path d="M4 6h16M4 12h16M4 18h16" />}
+      {icon === 'book' && <path d="M12 5.5C9 3.8 5.5 3.7 2.5 4.5v15c3-.8 6.5-.7 9.5 1 3-1.7 6.5-1.8 9.5-1v-15c-3-.8-6.5-.7-9.5 1Zm0 0v15" />}
+      {icon === 'history' && <path d="M3 12a9 9 0 1 0 2.7-6.4L3 8.3m0-4.5v4.6h4.6M12 7v5l3.4 2" />}
+    </svg>
+  );
+}
+
 function Workspace({ auth, client, profile }: { auth: Auth; client: Client; profile: Profile }) {
   const [hash, setHash] = useState(location.hash);
   const [online, setOnline] = useState(navigator.onLine);
   const positions = useRef(new Map<string, number>());
   const main = useRef<HTMLElement>(null);
-  const nav = useRef<HTMLElement>(null);
   const previous = useRef(hash);
   const route = resolveRoute(profile.role, hash);
   const navigate: Navigate = (section, recordId) => {
@@ -120,37 +132,20 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
     };
   }, []);
   useLayoutEffect(() => {
-    const revealActive = () => {
-      const strip = nav.current;
-      const selected = strip?.querySelector('a[aria-current="page"]');
-      if (!strip || !selected || strip.scrollWidth <= strip.clientWidth) return;
-      const row = strip.getBoundingClientRect(),
-        tab = selected.getBoundingClientRect();
-      if (tab.left < row.left) strip.scrollLeft += tab.left - row.left;
-      else if (tab.right > row.right) strip.scrollLeft += tab.right - row.right;
-    };
-    revealActive();
-    window.addEventListener('resize', revealActive);
-    return () => window.removeEventListener('resize', revealActive);
-  }, [route.section.id]);
-  useLayoutEffect(() => {
-    document.title = route.section.label + ' · Garage';
+    document.title = route.label + ' · Garage';
     if (previous.current === hash) return;
+    const prior = resolveRoute(profile.role, previous.current);
     previous.current = hash;
+    // Inline rows retain their focus and scroll position when opened or folded.
+    if (profile.role === 'mechanic' && prior.id === route.id) return;
     const target = main.current?.querySelector<HTMLElement>('[data-route-heading]') || main.current;
     target?.focus({ preventScroll: true });
     window.scrollTo(0, positions.current.get(hash) ?? 0);
-  }, [hash]);
+  }, [hash, profile.role]);
   let screen;
   const props = { client, profile, navigate, section: route.id, recordId: route.record };
   if (profile.role === 'admin') {
     switch (route.id) {
-      case 'orders':
-        screen = <OwnerOrders {...props} />;
-        break;
-      case 'reports':
-        screen = <Reports {...props} />;
-        break;
       case 'ledger':
         screen = <LedgerView client={client} />;
         break;
@@ -161,59 +156,52 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
         screen = <PayView client={client} profile={profile} recordId={route.record} />;
         break;
       default:
-        screen = <ShiftView {...props} section="shift" />;
+        screen = <OwnerWorkspace {...props} />;
     }
-  } else screen = <ShiftView {...props} section={route.id as ShiftSection} />;
+  } else screen = <MechanicBoard {...props} section={route.id as ShiftSection} />;
   const roleName = profile.role === 'admin' ? 'Владелец' : 'Механик';
   return (
     <div class="workspace">
-      <aside class="sidebar">
-        <a class="brand-link" href="#shift" aria-label="Garage — смена">
-          {brand}
-        </a>
-        <nav
-          ref={nav}
-          class="workspace-nav"
-          aria-label={profile.role === 'admin' ? 'Кабинет владельца' : 'Кабинет механика'}
-          data-workspace-role={profile.role}
-        >
-          {getSections(profile.role).map((item) => (
-            <a
-              key={item.id}
-              class="nav-link"
-              href={'#' + item.id}
-              aria-current={route.section.id === item.id ? 'page' : undefined}
-            >
-              {item.label}
-            </a>
-          ))}
-        </nav>
-      </aside>
       <div class="workspace-body">
         <header class="workspace-header">
+          <div class="account-identity">
+            {profile.role === 'mechanic' && <span>Механик</span>}
+            <details class="account-menu">
+              <summary>
+                {profile.role === 'mechanic'
+                  ? <ExecutorMarker name={profile.name || roleName} color={profile.color} id={profile.id} />
+                  : profile.name || roleName}
+              </summary>
+              <div>
+                <span>{roleName}</span>
+                <a class="account-link" href="account.html">
+                  Учётная запись
+                </a>
+                <button class="button button-small" type="button" onClick={() => auth.signOut()}>
+                  Выйти
+                </button>
+              </div>
+            </details>
+          </div>
           <span class={'connection' + (online ? '' : ' is-offline')} role="status">
-            {online ? 'В сети' : 'Нет сети · изменения требуют подключения'}
+            {online ? 'В сети' : 'Нет сети'}
           </span>
-          <details class="account-menu">
-            <summary>{profile.name || roleName}</summary>
-            <div>
-              <span>{roleName}</span>
-              <a class="account-link" href="account.html">
-                Учётная запись
-              </a>
-              <button class="button button-small" type="button" onClick={() => auth.signOut()}>
-                Выйти
-              </button>
-            </div>
-          </details>
         </header>
         <main ref={main} tabIndex={-1} id="main-content" class="workspace-main">
-          <div class="page-heading">
-            <h1>{route.section.label}</h1>
-          </div>
+          {profile.role === 'admin' && ['pay', 'ledger', 'sheets'].includes(route.id) && (
+            <div class="page-heading"><h1>{route.label}</h1></div>
+          )}
           {screen}
         </main>
       </div>
+      <nav class="workspace-nav" aria-label={profile.role === 'admin' ? 'Кабинет владельца' : 'Кабинет механика'} data-workspace-role={profile.role}>
+        {getSections(profile.role).map(item => (
+          <a key={item.id} class="nav-link" href={'#' + item.id} aria-label={item.label} title={item.label}
+            aria-current={route.section.id === item.id ? 'page' : undefined}>
+            <TabIcon icon={item.icon} />
+          </a>
+        ))}
+      </nav>
     </div>
   );
 }

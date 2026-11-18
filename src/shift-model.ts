@@ -4,6 +4,7 @@ export type ParticipantStatus = 'assigned' | 'working' | 'blocked' | 'confirmed'
 export interface Participant {
   mechanic_id: string;
   name: string;
+  color?: string | null;
   status: ParticipantStatus;
   confirmed_at?: string;
   confirmation_origin?: 'mechanic' | 'historical' | 'owner_recorded';

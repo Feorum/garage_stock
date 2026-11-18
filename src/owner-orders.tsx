@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { dayLabel, taskName, type GarageClient, type Profile } from './shift-model';
+import { dayLabel, taskName } from './shift-model';
+import type { Client, Profile } from './workspace-types';
+import { subscribeBoardUpdates } from './board-updates';
 import {
   listEntries,
   read,
@@ -16,7 +18,7 @@ import { OrderEditor } from './owner-editor';
 import { Omission } from './owner-omission';
 
 interface Props {
-  client: GarageClient;
+  client: Client;
   profile: Profile;
   section: string;
   recordId?: string;
@@ -121,12 +123,14 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
       if (document.visibilityState === 'visible') void refresh().catch(() => {});
     };
     void refresh(true).catch(() => {});
+    const unsubscribe = subscribeBoardUpdates(client, profile.id, silent);
     const interval = setInterval(silent, 30000);
     window.addEventListener('focus', silent);
     window.addEventListener('online', silent);
     document.addEventListener('visibilitychange', silent);
     return () => {
       mounted.current = false;
+      unsubscribe();
       generation.current++;
       clearInterval(interval);
       drafts.current.clear();

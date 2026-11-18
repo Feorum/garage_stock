@@ -96,15 +96,24 @@ roster result. Profile locks protect against deactivation during assignment.
 
 `garage_list_orders()` includes `vehicle_workflow` for each visible visit. Its
 counts and handoff checklist respect the caller's task visibility.
-`garage_vehicle_action(p_order_id,p_action,p_expected_version,p_request_id,p_note)`
-supports `take`, `handoff`, `return` and `close`. Taking a visit establishes its
-holder. Team members start and confirm their own eligible services. The holder
-can hand back a partially completed visit. While it awaits review, the database
-rejects mechanic changes from both current and cached clients. The Owner can
-return the visit for outstanding work, or close a handed-off visit with at
-least one completed service and no unfinished services.
+The inline boards use `garage_check_work(p_task_id,p_request_id)` to record the
+signed-in mechanic on a visible service. Two mechanics can confirm the same service
+with one completion and one pay item. The operation can be retried with the same
+request ID. The order exposes the confirmed executors and their display colors.
+
+A contributor calls `garage_submit_work(p_order_id,p_expected_version,p_request_id,p_note)`
+to submit the vehicle directly from the list, including partially finished work.
+The database freezes mechanic edits during review. The Owner can return the
+vehicle for more work or close it when it has at least one completion and no
+unfinished services. Cached clients retain the `garage_vehicle_action` API.
+Board updates signal authorized recipients to refresh their own order view.
 
 ## Owner calculations
+
+`garage_owner_review_prices(p_order_ids)` accepts up to 100 order IDs per call.
+Each non-cancelled service contributes its original pre-VAT catalogue amount
+once, in integer kopeks. A missing snapshot amount is null. The Owner’s review
+and history screens distinguish an unknown total from an explicitly zero rate.
 
 The private order quote and detail include each original catalogue amount,
 the effective customer price, and recalculated tax and gross totals.

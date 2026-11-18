@@ -13,6 +13,7 @@ def exercise_gift_offer(page, db, base, owner, mechanic):
     vehicle = 'Автомобиль для проверки подарка'
     def show_new_offer(name):
         page.goto(f'{base}/index.html#orders')
+        page.get_by_role('link', name='Управление заказами', exact=True).click()
         page.get_by_role('button', name='Новый заказ', exact=True).click()
         page.get_by_label('Автомобиль', exact=True).fill(name)
         page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
@@ -33,7 +34,7 @@ def exercise_gift_offer(page, db, base, owner, mechanic):
         expect(gift).to_contain_text(re.compile(r'Ставка без НДС.*7,77'))
         expect(gift).to_contain_text(re.compile(r'Стоимость для клиента без НДС.*0,00'))
         expect(page.locator('[data-price-kind="effective"]')).to_contain_text('31,12')
-        page.locator('#team-W09').get_by_role('checkbox', name='Механик А', exact=True).check()
+        page.locator('#team-W09').get_by_role('checkbox', name='Андрей', exact=True).check()
 
     show_new_offer(vehicle)
     dialog.get_by_role('button', name='Без подарка', exact=True).click()
@@ -55,12 +56,7 @@ def exercise_gift_offer(page, db, base, owner, mechanic):
         return next(t for t in details['tasks'] if t['task_id'] == gift['id'])
     price = gift_price()
     assert price['catalogue_kopeks'] == 777 and price['override_kopeks'] == price['effective_gross_kopeks'] == 0
-    db.rpc(mechanic, 'garage_vehicle_action', p_action='take', p_order_id=order['id'],
-           p_expected_version=order['version'], p_request_id=str(uuid4()))
-    for action in ('start', 'confirm'):
-        task = next(t for t in lookup(vehicle)['tasks'] if t['id'] == gift['id'])
-        db.rpc(mechanic, 'garage_team_action', p_action=action, p_task_id=task['id'],
-               p_expected_version=task['version'], p_request_id=str(uuid4()))
+    db.rpc(mechanic, 'garage_check_work', p_task_id=gift['id'], p_request_id=str(uuid4()))
     price = gift_price()
     assert price['effective_kopeks'] == 0 and price['payout']['pool_kopeks'] is None
     assert price['payout']['suggested_pool_kopeks'] == 777
@@ -140,7 +136,7 @@ def exercise_owner_pricing(db, directory, chromium, owner, first, second):
                         expect(page.locator('body')).not_to_contain_text(re.compile(r'\bBYN\b|20[,.]01|24[,.]01'))
                     names = page.evaluate('(__garageCalls || []).map(call => call.name).filter(Boolean)')
                     assert not any(name.startswith(('garage_pay_', 'garage_quote_', 'garage_save_task_pricing'))
-                                   or name == 'garage_order_financials' for name in names), names
+                                   or name in ('garage_order_financials','garage_owner_review_prices') for name in names), names
                     assert not errors and not requests, (errors, requests)
                     context.close()
     finally:

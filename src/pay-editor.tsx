@@ -117,12 +117,12 @@ export function PayEditor({ item, client, close, saved }: Props) {
       </label>
       {cents === 0 && <label class="pay-check"><input type="checkbox" checked={zero} required
         onChange={event => { setZero(event.currentTarget.checked); setError(''); }} /> Подтверждаю сумму 0,00 BYN</label>}
-      <fieldset class="pay-shares"><legend>Доли механиков</legend>
-        {item.suggested_shares?.length ? <button type="button" class="button" onClick={() => {
+      <fieldset class="pay-shares"><legend>{equal ? 'Доли механиков · поровну' : 'Доли механиков'}</legend>
+        {!equal && item.suggested_shares?.length ? <button type="button" class="button" onClick={() => {
           setParts(Object.fromEntries(item.suggested_shares!.map(s => [s.mechanic_id, decimal(s.basis_points)])));
           setEqual(true);
           setError('');
-        }}>Разделить поровну между исполнителями</button> : null}
+        }}>Вернуть равные доли</button> : null}
         {item.candidates.map(person => <div key={person.mechanic_id} class="pay-person">
           {person.former && <label class="pay-check"><input type="checkbox" checked={person.mechanic_id in parts}
             onChange={event => formerParticipation(person.mechanic_id, event.currentTarget.checked)} />

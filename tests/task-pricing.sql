@@ -12,7 +12,9 @@ end $$;
 insert into public.garage_price_lists(id,name,source_sha256,status,effective_date)
   values('62800000-0000-4000-8000-000000000001','Synthetic test rate',repeat('c',64),'active',current_date);
 insert into public.garage_price_matrix(price_list_id,vehicle_group_code,work_code,net_amount)
-  values('62800000-0000-4000-8000-000000000001','VG02','W01',1200.05);
+  values('62800000-0000-4000-8000-000000000001','VG02','W01',1200.05),
+        ('62800000-0000-4000-8000-000000000001','VG02','W09',0),
+        ('62800000-0000-4000-8000-000000000001','VG02','W10',11.75);
 insert into public.garage_orders(id,vehicle,vehicle_group_code,source,created_by)
   values('62800000-0000-4000-8000-000000000002','Synthetic vehicle','VG02','manager','00000000-0000-4000-8000-000000000001');
 insert into public.garage_order_tasks(id,order_id,work_code,work_name,status)
@@ -89,7 +91,45 @@ begin
   perform pg_temp.price_assert(public.garage_pay_history(t)->0->>'equal_split'='false'
     and public.garage_pay_history(t)->1->>'equal_split'='true','saved explicit and equal revisions retained');
 end $$;
+reset role;
+-- Exercise the catalogue projection independently of private overrides, three pay recipients,
+-- and the price list active today.
+insert into public.garage_order_tasks(id,order_id,work_code,work_name,status,working_mechanic_id,completed_at) values
+  ('62900000-0000-4000-8000-000000000003','62800000-0000-4000-8000-000000000002','W09','Zero-rate service','completed',
+   '00000000-0000-4000-8000-000000000002',now()),
+  ('62900000-0000-4000-8000-000000000004','62800000-0000-4000-8000-000000000002','W13','Cancelled service','cancelled',null,null),
+  ('62900000-0000-4000-8000-000000000005','62800000-0000-4000-8000-000000000002','W10','Legacy open service','pending',null,null);
+select public.garage_snapshot_task('62900000-0000-4000-8000-000000000003','VG02');
+select public.garage_snapshot_task('62900000-0000-4000-8000-000000000005','VG02');
+update public.garage_orders set status='closed',closed_at='2026-11-01 00:00+03'
+  where id='62800000-0000-4000-8000-000000000002';
+update public.garage_price_lists set status='retired' where id='62800000-0000-4000-8000-000000000001';
+insert into public.garage_price_lists(id,name,source_sha256,status) values
+  ('62800000-0000-4000-8000-000000000003','Replacement catalogue',repeat('d',64),'active');
+insert into public.garage_price_matrix(price_list_id,vehicle_group_code,work_code,net_amount)
+  values('62800000-0000-4000-8000-000000000003','VG02','W01',8000);
+
+set local role authenticated;
+set local request.jwt.claim.sub='00000000-0000-4000-8000-000000000001';
+do $$
+declare visit jsonb; amounts jsonb;
+begin
+  perform pg_temp.price_assert(public.garage_owner_review_prices('{}'::uuid[])='[]'::jsonb,'only requested orders are returned');
+  perform pg_temp.price_denied('select public.garage_owner_review_prices(array_fill(gen_random_uuid(),array[101]))','22023');
+  select x into strict visit from jsonb_array_elements(public.garage_owner_review_prices(
+    array['62800000-0000-4000-8000-000000000002','62800000-0000-4000-8000-000000000002']::uuid[])) x
+    where x->>'order_id'='62800000-0000-4000-8000-000000000002';
+  select jsonb_object_agg(t->>'task_id',t->'net_kopeks') into amounts from jsonb_array_elements(visit->'tasks') t;
+  perform pg_temp.price_assert(amounts='{"62900000-0000-4000-8000-000000000001":120005,
+    "62900000-0000-4000-8000-000000000002":null,"62900000-0000-4000-8000-000000000003":0,
+    "62900000-0000-4000-8000-000000000005":1175}'::jsonb,
+    'frozen catalogue alone supplies the net, including true zero and unknown');
+  perform pg_temp.price_assert(jsonb_array_length(visit->'tasks')=4,'one row per service across a three-person team');
+  perform pg_temp.price_assert((visit->>'closed_at')::timestamptz='2026-10-31 21:00Z'::timestamptz,'historical close instant');
+  perform pg_temp.price_assert(visit::text !~ 'private_comment|pool_kopeks|override_kopeks|Courtesy service','minimal report projection');
+end $$;
 set local request.jwt.claim.sub='00000000-0000-4000-8000-000000000003';
+select pg_temp.price_denied($q$select public.garage_owner_review_prices(array['62800000-0000-4000-8000-000000000002']::uuid[])$q$,'42501');
 select pg_temp.price_denied($q$select public.garage_save_task_pricing('62900000-0000-4000-8000-000000000001',0,100,'x',gen_random_uuid())$q$,'42501');
 select pg_temp.price_denied($q$select public.garage_order_financials('62800000-0000-4000-8000-000000000002')$q$,'42501');
 select pg_temp.price_denied($q$select public.garage_quote_order('VG02','[{"work_code":"W01"}]')$q$,'42501');

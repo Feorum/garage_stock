@@ -75,7 +75,8 @@ export function createAuthController(client, { onChange }) {
         emit({ status: 'error', message: 'Доступ отключён. Попросите владельца проверить учётную запись.' });
         return;
       }
-      emit({ status: 'ready', user, profile: { id: user.id, name: String(result.data.name || ''), role: result.data.role } });
+      emit({ status: 'ready', user, profile: { id: user.id, name: String(result.data.name || ''), role: result.data.role,
+        ...(typeof user.app_metadata?.mechanic_color === 'string' && { color: user.app_metadata.mechanic_color }) } });
     } catch {
       if (current()) emit({ status: 'error', message: 'Не удалось открыть учётную запись. Проверьте подключение и повторите попытку.' });
     }
