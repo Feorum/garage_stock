@@ -38,6 +38,52 @@ def calls(page, rpc):
     return page.evaluate("(rpc) => __garageCalls.filter(c => c.name === rpc).map(c => c.args)", rpc)
 
 
+def check_card_layout(browser, base, output):
+    data = fixture()
+    order = data['orders'][2]
+    order.update(vehicle='Belgee X50', manager_label='Тестовый автор заказа')
+    order['tasks'][0].update(work_code='W19', options={'tint_percent': 15})
+    long_name = 'Очистка и полировка верхней кромки рядом с задней дверью'
+    order['tasks'].append({**order['tasks'][1], 'id': 'edge', 'work_name': long_name})
+    context, page, errors, live = smoke.new_page(browser, data)
+    try:
+        for width in (320, 1440):
+            page.set_viewport_size({'width': width, 'height': 900})
+            page.goto(base + '/index.html#manager-orders')
+            card = page.locator('[data-vehicle-id="013"]')
+            summary = card.get_by_role('list', name='Работы по заказу')
+            rows = summary.get_by_role('listitem')
+            expect(rows).to_have_text(['Задняя полусфера · 15%', 'Двери', long_name])
+            expect(card).not_to_contain_text(order['manager_label'])
+            expect(card).not_to_contain_text('Заказ менеджера')
+            toggle = card.locator('.mb-order')
+            date = toggle.locator('time')
+            expect(date).to_have_attribute('datetime', '2026-11-23')
+            assert date.evaluate("el => parseFloat(getComputedStyle(el).fontSize)") >= 14
+            assert date.bounding_box()['y'] > toggle.locator('strong').bounding_box()['y']
+            assert rows.evaluate_all('''items => items.every(item =>
+              getComputedStyle(item).backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+              parseFloat(getComputedStyle(item).fontSize) >= 16 && item.scrollWidth <= item.clientWidth)''')
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            if output:
+                card.screenshot(path=output / f'mechanic-collapsed-{width}.png')
+            bounds = rows.last.bounding_box()
+            page.mouse.click(bounds['x'] + bounds['width'] / 2, bounds['y'] + bounds['height'] / 2)
+            expect(toggle).to_have_attribute('aria-expanded', 'true')
+            expect(summary).to_have_count(0)
+            tasks = card.get_by_role('checkbox')
+            expect(tasks).to_have_count(3)
+            assert all(box.bounding_box()['height'] >= 44 for box in tasks.all())
+            if output:
+                card.screenshot(path=output / f'mechanic-expanded-{width}.png')
+            toggle.focus()
+            toggle.press('Space')
+            expect(summary).to_be_visible()
+        assert not errors and not live, (errors, live)
+    finally:
+        context.close()
+
+
 def check_updates(browser, base):
     for realtime_available in (True, False):
         data = fixture()
@@ -197,18 +243,19 @@ def run(directory, chromium, output=None):
     try:
         with sync_playwright() as playwright:
             with playwright.chromium.launch(executable_path=chromium, args=['--no-sandbox']) as browser:
+                check_card_layout(browser, base, output)
                 check_updates(browser, base)
                 check_handoff(browser, base, output)
     finally:
         server.shutdown()
         server.server_close()
-    print('Passed separate mechanic feeds, ascending dates and weekday markers, private rows, direct shared work, scoped realtime, fallback polling, offline and stale drafts, receipt replay, handoff and history.')
+    print('Passed compact mechanic cards on phone and desktop, separate feeds, ascending dates and weekday markers, private rows, direct shared work, scoped realtime, fallback polling, offline and stale drafts, receipt replay, handoff and history.')
 
 
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--directory',type=Path,default=ROOT/'dist')
     parser.add_argument('--chromium',default='/usr/bin/chromium')
-    parser.add_argument('--output', type=Path, help='Optional directory for handoff screenshots.')
+    parser.add_argument('--output', type=Path, help='Optional directory for mechanic card and handoff screenshots.')
     args=parser.parse_args()
     run(args.directory,args.chromium,args.output)

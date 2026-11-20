@@ -190,10 +190,12 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
                 {day ? <time class="mb-date" dateTime={day}>{dateLabel(order, day)}</time>
                   : <span class="mb-date">Дата не указана</span>}
                 <span aria-hidden="true" class="mb-chevron" />
-                {!expanded && order.tasks.length > 0 && (
-                  <span class="mb-summary">{order.tasks.map(taskName).join(' · ')}</span>
-                )}
               </button>
+              {!expanded && order.tasks.length > 0 && (
+                <ul class="mb-summary" role="list" aria-label="Работы по заказу">
+                  {order.tasks.map(task => <li key={task.id}>{taskName(task)}</li>)}
+                </ul>
+              )}
               <div id={panelId} hidden={!expanded}>
                 {expanded && (
                   <div class="mb-panel">

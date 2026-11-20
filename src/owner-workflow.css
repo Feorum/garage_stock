@@ -3,8 +3,8 @@
 .task-remuneration,
 .pay-card .payout-summary {
   display: grid;
-  gap: 0.65rem;
-  padding: 0.85rem;
+  gap: var(--gap-control);
+  padding: var(--gap-card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-raised);
@@ -18,7 +18,7 @@
 .owner-task-price fieldset {
   display: grid;
   min-width: 0;
-  gap: 0.6rem;
+  gap: var(--gap-control);
 }
 .handoff-snapshot,
 .task-price-values {
