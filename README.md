@@ -14,6 +14,7 @@ Mechanics open the Owner’s orders (B), switch to Manager orders (G), or review
 - Reports count each completed service once and distinguish individual participation. Operational team status is visible on shared vehicles. Task notes, private intake text and financial fields have separate audiences.
 - The Owner sees every job on one order screen, with its catalogue price, agreed customer price and mechanic pay side by side. A free job shows zero, and a missing rate is marked as unknown. Customer price adjustments and private notes can be edited within the order.
 - On a completed job, the Owner enters a BYN amount for each mechanic. The total updates as they type. An equal split is available, including for totals with an odd kopek. Earlier allocations remain available in the payment history. Mechanic pay is independent of the customer price, and only the Owner can view or change it.
+- In a closed order, the Owner can download an editable Word act using the workshop’s private form. Each completed job uses its agreed customer price. The first export saves the number, VIN and contract details. The number combines a cumulative order serial with the act’s two-digit month. The next order continues the count across months and years.
 
 The Manager integration reads an approved complete copy of the existing
 operational spreadsheet. It keeps its existing vehicle rows, work-list columns,
@@ -105,6 +106,7 @@ targeted board updates and per-job prices for Owner review.
 Apply `20261120155825_reversible_mechanic_checks.sql` and
 `20261120155922_preserve_pay_history_on_recheck.sql` together for reversible checkmarks.
 Apply `20261120162315_exact_mechanic_pay_amounts.sql` before deploying the order detail editor for per-mechanic BYN amounts.
+For Word exports, apply `20261120172343_owner_completion_acts.sql` and install the private master as described under [Owner completion acts](docs/database-api.md#owner-completion-acts).
 
 ## Validate
 

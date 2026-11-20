@@ -7,6 +7,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 from order_browser_helpers import open_visit
 from owner_review_browser import exercise_owner_review
+from owner_act_browser import exercise_owner_act
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('garage_owner_editor_smoke', ROOT / 'tests/browser-smoke.py')
@@ -82,6 +83,8 @@ def run(args):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=args.chromium, headless=True, args=['--no-sandbox'])
         try:
+            exercise_owner_act(browser, base, smoke, order, task)
+            passed.append('Closed-order Word export, repeat issue, a zero-price gift, missing price and serial/month rollover')
             exercise_owner_review(browser, base, smoke, args.output)
             passed.append('Owner review shows agreed job prices and handles inline confirmation or return on mobile and desktop')
             fixture = {'orders': [order(177, 2), order(0, 3, source=False), order(168, 1)], 'managerIntakes': [intake()]}

@@ -382,7 +382,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
                 staff={data.staff}
                 mutate={mutate}
                 reload={async () => {
-                  await refresh().catch(() => {});
+                  await refresh();
                 }}
                 notify={setNotice}
                 edit={(promptGift = false) =>

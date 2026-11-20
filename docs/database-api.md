@@ -146,6 +146,20 @@ service and its zero customer charge in one transaction. Existing task
 assignments, original rate, pay proposal and private memo are preserved.
 Mechanic RPCs and spreadsheet feedback carry only operational information.
 
+## Owner completion acts
+
+`garage_act_get(p_order_id)` reads a closed order’s saved act metadata or suggests the next number and the Minsk closure date. `garage_act_template()` reads the private prepared Word package for an active Owner. The client fills the vehicle, VIN, completed jobs, their agreed BYN prices, and the amount in figures and Russian words before submitting the issue request.
+
+`garage_act_save(p_order_id,p_number,p_contract_number,p_contract_date,p_act_date,p_expected_version,p_expected_order_version,p_expected_amounts,p_vin)` records an issuance or a versioned metadata correction. It compares the order version and the amount in kopeks for each completed task ID with the values used to generate the document. A change requires the Owner to review the updated order. Zero-priced completed work appears on the act. An unknown customer price must be resolved before issuance.
+
+The first component of the number is the cumulative order serial. The second is the two-digit month of the act date. Opening a form leaves the serial available. Concurrent claims must use different serials, including across months and years. The same order keeps its issued number on retry and later downloads.
+
+### Install the private Word master
+
+Run `python scripts/prepare-act-template.py SOURCE.docx MASTER.owner-only.docx` on a trusted workstation. Prepare a private JSON file with `customer_name`, `contractor_name`, `contract_number`, `contract_date` (ISO date), and `reserved_numbers` (a list of previously issued `N/MM` values). Use the parties printed in that form. Keep these files outside the public build.
+
+Run `python scripts/act_seed.py MASTER.owner-only.docx config.private.json PRIVATE_DIRECTORY`. Apply the generated `parts.owner-only.sql` to the database, then apply `activate.owner-only.sql`. Activation checks the SHA-256 of the entire template before enabling the form. Reapplying the same seed preserves issued serials. All installer inputs, company details, historical numbers and generated acts stay private.
+
 ## Financial import and confidentiality
 
 Owner-only tables are `garage_price_lists`, `garage_price_matrix`, and

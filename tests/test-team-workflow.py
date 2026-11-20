@@ -45,6 +45,7 @@ RPC = {
     'garage_pay_worklist', 'garage_pay_history', 'garage_pay_save', 'garage_pay_save_amounts', 'garage_save_task_pricing',
     'garage_owner_gift_offer', 'garage_save_order_with_gift', 'garage_owner_review_prices',
     'garage_check_work', 'garage_uncheck_work', 'garage_submit_work',
+    'garage_act_get', 'garage_act_save', 'garage_act_template',
 }
 PARAM_TYPES = {
     'p_order_id': 'uuid', 'p_order_ids': 'uuid[]', 'p_id': 'uuid', 'p_task_id': 'uuid', 'p_request_id': 'uuid',
@@ -58,6 +59,8 @@ PARAM_TYPES = {
     'p_override_kopeks': 'bigint', 'p_private_comment': 'text',
     'p_equal_split': 'boolean',
     'p_gift_expected_version': 'integer',
+    'p_number': 'text', 'p_contract_number': 'text', 'p_contract_date': 'date', 'p_act_date': 'date',
+    'p_expected_order_version': 'integer', 'p_expected_amounts': 'jsonb',
 }
 
 
@@ -432,7 +435,7 @@ if __name__ == '__main__':
     try:
         with Database() as database:
             database.setup()
-            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql', 'pay-amounts.sql'):
+            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql', 'pay-amounts.sql', 'completion-acts.sql'):
                 database.sql((ROOT / 'tests' / suite).read_text())
             database.sql("""
                 insert into garage_price_lists (id,name,source_sha256,status)
@@ -455,5 +458,7 @@ if __name__ == '__main__':
                 database.sql("insert into garage_pay.gift_offer(gift_work_code, qualifying_count) values ('W09', 2);")
                 exercise_owner_pricing(database, args.directory, args.chromium, OWNER, A, B)
                 exercise_order_pay(database, args.directory, args.chromium, OWNER, A, B)
+            from act_issuance import check_act_issuance
+            check_act_issuance(database, OWNER, A)
     except subprocess.CalledProcessError as failure:
         raise SystemExit(failure.stderr or str(failure)) from failure

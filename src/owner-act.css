@@ -1,0 +1,19 @@
+.act-form { display: grid; gap: .7rem; }
+.act-form h3, .act-form p, .act-form fieldset { margin: 0; }
+.act-form p { font-size: .9rem; }
+.act-parties { margin: 0; display: flex; flex-wrap: wrap; gap: .35rem 1.5rem; }
+.act-parties dt { font-size: .8rem; color: var(--muted); }
+.act-parties dd { margin: 0; }
+.act-form fieldset { min-width: 0; padding: 0; border: 0; }
+.act-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11.5rem), 1fr));
+  gap: .6rem .8rem;
+  margin-bottom: .7rem;
+}
+.act-fields label { display: grid; align-content: start; gap: .25rem; font-size: .85rem; }
+.act-fields input { min-width: 0; width: 100%; box-sizing: border-box; min-height: 44px; }
+.act-fields input[readonly] { color: var(--muted); }
+.act-serial { display: flex; align-items: center; gap: .3rem; font-variant-numeric: tabular-nums; }
+.act-form .button-row { display: flex; flex-wrap: wrap; gap: .45rem; }
+.act-form .button { min-height: 44px; }

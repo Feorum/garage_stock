@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+  <w:p><w:r><w:t>Акт №{{GARAGE_ACT_NUMBER}}</w:t></w:r></w:p>
+  <w:p><w:r><w:t>к договору {{GARAGE_CONTRACT_NUMBER}} {{GARAGE_CONTRACT_DATE}}</w:t></w:r></w:p>
+  <w:p><w:r><w:t>{{GARAGE_ACT_DATE}}</w:t></w:r></w:p>
+  <w:p><w:r><w:t>Автомобиль {{GARAGE_VEHICLE}}, VIN {{GARAGE_VIN}}</w:t></w:r></w:p>
+  <?garage-jobs-start?>
+  <w:p><w:r><w:t>{{GARAGE_JOB_NAME}}</w:t></w:r><w:r><w:t> – </w:t></w:r><w:r><w:t>{{GARAGE_JOB_PRICE}} BYN</w:t></w:r></w:p>
+  <?garage-jobs-end?>
+  <w:p><w:r><w:t>Итого {{GARAGE_TOTAL}} без НДС.</w:t></w:r></w:p>
+  <w:p><w:r><w:t>Подписи сторон</w:t></w:r></w:p>
+</w:body></w:document>

@@ -51,16 +51,20 @@ def check_cache_upgrade(browser, server, base, new_page, cache_name):
             # Outside the worker's scope, so its open page never blocks activation.
             observer.goto(base.rsplit('/', 1)[0] + '/')
             observer.evaluate("caches.open('another-app-v1').then(cache => cache.put('/sibling', new Response('keep')))")
+            registration = observer.evaluate_handle('scope => navigator.serviceWorker.getRegistration(scope)', base + '/')
             for directory, retiring, incoming in [(current, old_cache, cache_name), (legacy, cache_name, old_cache)]:
                 server.release_root = directory
                 tab.evaluate("navigator.serviceWorker.getRegistration().then(reg => reg.update())")
-                tab.wait_for_function("navigator.serviceWorker.getRegistration().then(reg => !!reg.waiting)")
+                observer.wait_for_function("reg => reg.waiting?.state === 'installed'", arg=registration)
+                replacement = registration.evaluate_handle('reg => reg.waiting')
                 # The old tab still owns its complete version while the replacement waits.
                 assert tab.evaluate('name => caches.has(name)', retiring)
                 expect(tab.get_by_role('button', name='Войти', exact=True)).to_be_visible()
                 tab.close()
-                observer.wait_for_function("""async ([current, previous]) =>
-                    await caches.has(current) && !await caches.has(previous)""", arg=[incoming, retiring])
+                observer.wait_for_function("worker => worker.state === 'activated'", arg=replacement)
+                replacement.dispose()
+                assert observer.evaluate("""async ([current, previous]) =>
+                    await caches.has(current) && !await caches.has(previous)""", [incoming, retiring])
                 tab = context.new_page()
                 tab.on('pageerror', lambda error: errors.append(str(error)))
                 tab.goto(base + '/index.html')

@@ -10,7 +10,7 @@ copy in the existing table layout; the original remains untouched.
 
 The replacement Preact frontend, team-task database API and private pay review are implemented together. The Owner's shift, private assignments, Manager queue, confirmation history, Minsk-based reports and editable ledger use the same work-order identities. Operational completion and Owner compensation are independent. Deployment and the workshop acceptance run are tracked per release.
 
-A later increment can populate the Owner's existing Word form from a completed order. Use the order and task IDs, the recorded completion and dated participant history as inputs. Field mapping, repeated rows and document output depend on the supplied example templates and a correctly filled example.
+The Owner can export a closed order into the workshop’s private Word acceptance form. Each completed service appears once at its agreed customer price. Saved document numbers continue a single cumulative order count and use the month of the act date.
 
 ## Rules to preserve
 

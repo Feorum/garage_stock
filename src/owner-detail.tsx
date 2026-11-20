@@ -6,6 +6,7 @@ import { statusText, errorText, read, type Staff, type Money, type OwnerOrder, t
 import { Price, SourceReference } from './owner-summary';
 import { OwnerHandoff } from './owner-handoff';
 import { OrderJobPrices } from './owner-job-prices';
+import { OwnerAct } from './owner-act';
 
 interface DetailProps {
   order: OwnerOrder;
@@ -27,7 +28,7 @@ export function OwnerDetail({
   staff,
   client,
   mutate,
-  reload,
+  reload: refreshOrder,
   edit,
   omit,
   back,
@@ -41,6 +42,7 @@ export function OwnerDetail({
     [reason, setReason] = useState('');
   const sending = useRef(false),
     epoch = useRef(0);
+  const reload = () => refreshOrder().catch(() => {});
   useEffect(() => {
     void financials().catch(() => {});
     return () => {
@@ -111,6 +113,8 @@ export function OwnerDetail({
             .join(' · ')}
         </p>
       </header>
+      {order.status === 'closed' && <OwnerAct order={order} client={client} price={price}
+        refreshOrder={refreshOrder} refreshPrice={financials} />}
       {(order.source_changed || intake?.source_changed) && (
         <p class="notice">
           {order.source_missing
