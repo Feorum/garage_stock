@@ -1,4 +1,5 @@
 import { workshopDay } from './workspace-types';
+import { compareOrderDays, orderDay, workshopOrderDay } from './order-calendar';
 
 export type ParticipantStatus = 'assigned' | 'working' | 'blocked' | 'confirmed';
 export interface Participant {
@@ -87,6 +88,7 @@ export interface Intake {
   source_name?: string;
   latest?: { vehicle?: string; vin?: string };
   original?: { vehicle?: string; vin?: string };
+  suggested_order?: Pick<Order, 'planned_date' | 'due_date'>;
 }
 export type Section = 'shift' | 'assigned' | 'manager-orders' | 'my-work' | 'history';
 export type TeamAction = 'start' | 'join' | 'confirm' | 'block' | 'resume' | 'leave' | 'note';
@@ -171,12 +173,11 @@ export function visibleProgress(order: Order) {
   return { completed: order.vehicle_workflow?.completed_count ?? order.tasks.filter(task => task.status === 'completed').length,
     unfinished: order.vehicle_workflow?.unfinished_count ?? order.tasks.filter(task => !isTerminal(task)).length };
 }
-function priorityRank(priority: string) { return priority === 'urgent' ? 0 : priority === 'high' ? 1 : 2; }
-export function sortVisits(orders: Order[]) {
-  return [...orders].sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) ||
-    (a.due_date || '9999').localeCompare(b.due_date || '9999') ||
-    (a.planned_date || '9999').localeCompare(b.planned_date || '9999') ||
-    (a.order_number || '').localeCompare(b.order_number || '', 'ru', { numeric: true }));
+export function sortVisits<T extends Order>(orders: T[], day: (order: T) => string = orderDay) {
+  return orders.map(order => ({ order, day: day(order) })).sort((a, b) =>
+    compareOrderDays(a.day, b.day) ||
+    (a.order.order_number || '').localeCompare(b.order.order_number || '', 'ru', { numeric: true }) ||
+    a.order.id.localeCompare(b.order.id)).map(({ order }) => order);
 }
 export function matchesVisit(order: Order, query: string) {
   const needle = query.trim().toLocaleLowerCase('ru-RU');
@@ -190,11 +191,12 @@ interface Group {
   title: string;
   orders: Order[];
 }
-function historyTime(order: Order, id: string) {
+export function historyOrderDay(order: Order, id: string) {
+  const scheduled = orderDay(order);
+  if (scheduled) return scheduled;
   const times = order.tasks.filter((task) => mine(task, id) === 'confirmed').map((task) => finishedAt(task, id));
-  if (order.vehicle_workflow?.holder_id === id && order.vehicle_workflow.handed_at)
-    times.push(order.vehicle_workflow.handed_at);
-  return times.sort().pop() || '';
+  if (order.vehicle_workflow?.handed_at) times.push(order.vehicle_workflow.handed_at);
+  return workshopOrderDay(times.sort().pop());
 }
 export function vehicleGroups(section: Section, orders: Order[], id: string): Group[] {
   const groups = new Map<string, Order[]>();
@@ -212,7 +214,7 @@ export function vehicleGroups(section: Section, orders: Order[], id: string): Gr
     'Переданы владельцу',
     'Завершённые автомобили',
   ];
-  for (const order of sortVisits(orders)) {
+  for (const order of sortVisits(orders, section === 'history' ? entry => historyOrderDay(entry, id) : orderDay)) {
     const workflow = order.vehicle_workflow;
     const member = order.tasks.some((task) => mine(task, id));
     const holder = workflow?.holder_id === id;
@@ -242,9 +244,7 @@ export function vehicleGroups(section: Section, orders: Order[], id: string): Gr
     return [
       {
         title: 'История по автомобилям',
-        orders: (groups.get('История по автомобилям') || []).sort((a, b) =>
-          historyTime(b, id).localeCompare(historyTime(a, id)),
-        ),
+        orders: groups.get('История по автомобилям') || [],
       },
     ];
   return (section === 'manager-orders' ? queueTitles : shiftTitles)

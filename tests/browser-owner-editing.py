@@ -87,7 +87,9 @@ def run(args):
             passed.append('Closed-order Word export, repeat issue, a zero-price gift, missing price and serial/month rollover')
             exercise_owner_review(browser, base, smoke, args.output)
             passed.append('Owner review shows agreed job prices and handles inline confirmation or return on mobile and desktop')
-            fixture = {'orders': [order(177, 2), order(0, 3, source=False), order(168, 1)], 'managerIntakes': [intake()]}
+            late = {**order(177, 2), 'planned_date': '2026-11-17'}
+            early = {**order(0, 3, source=False), 'planned_date': '2026-11-14', 'source': 'owner'}
+            fixture = {'orders': [late, early, order(168, 1)], 'managerIntakes': [intake()]}
             if args.before_directory:
                 before_server, before_base = smoke.serve(args.before_directory.resolve())
                 try:
@@ -106,7 +108,11 @@ def run(args):
                 smoke.ready(page, 'Test Owner')
                 expect(page.locator('.compact-order')).to_have_count(4)
                 sequence = page.locator('.compact-order').evaluate_all('(rows) => rows.map(row => row.dataset.intakeId || row.dataset.orderId)')
-                assert sequence == [fixture['orders'][2]['id'], INTAKE, fixture['orders'][0]['id'], fixture['orders'][1]['id']], sequence
+                assert sequence == [early['id'], fixture['orders'][2]['id'], INTAKE, late['id']], sequence
+                first = page.locator('.compact-order').first
+                expect(first.locator('time')).to_have_attribute('datetime', '2026-11-14')
+                expect(first.locator('.task-status')).to_have_text('Запланирован')
+                expect(first).to_contain_text('Вы')
                 expect(page.locator('.owner-order-pane')).to_have_count(0)
                 expect(page.get_by_role('link', name='Утверждённые работы', exact=True)).to_have_count(0)
                 measurement = page.locator('.order-index-row').first.evaluate('(node) => ({height:node.getBoundingClientRect().height,width:node.getBoundingClientRect().width,overflow:document.documentElement.scrollWidth>innerWidth})')
@@ -129,7 +135,7 @@ def run(args):
                 page.get_by_role('combobox', name='Статус заказа', exact=True).select_option('review')
                 expect(page.locator('.compact-order')).to_have_count(1)
                 finish(context, errors, live)
-            passed.append('draft and published requests share source-row order at 390,1440,1728; disclosure is keyboard accessible')
+            passed.append('drafts and published orders are chronological with source-row ties at 390,1440,1728')
 
             context, page, errors, live = smoke.new_page(browser, {'managerIntakes': [intake()]})
             page.goto(base + '/index.html#orders/tools')
@@ -287,6 +293,7 @@ def run(args):
                 page.goto(base + '/index.html#orders/tools')
                 smoke.ready(page, 'Test Owner')
                 page.get_by_role('combobox', name='Статус заказа', exact=True).select_option('all')
+                page.locator('.owner-archive summary').click()
                 card = expand(page, f'[data-order-id="{existing["id"]}"]')
                 card.get_by_text('Действия с заказом', exact=True).click()
                 card.get_by_role('button', name='Добавить пропущенную выполненную работу', exact=True).click()

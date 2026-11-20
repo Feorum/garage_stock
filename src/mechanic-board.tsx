@@ -1,18 +1,16 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { WorkRow, Instructions, HandoffForm, type Draft } from './mechanic-vehicle';
 import { useBoardChanges, useBoardOrders, type BoardOrder, type ChangeState } from './mechanic-board-data';
-import { instantLabel, mine, participants, taskName, visibleProgress, type ShiftProps } from './shift-model';
+import { historyOrderDay, instantLabel, mine, sortVisits, taskName, visibleProgress, type ShiftProps } from './shift-model';
+import { formatOrderDay, orderDay, weekdayClass } from './order-calendar';
 import type { Client } from './workspace-types';
 import './mechanic-board.css';
 
 type BoardProps = Omit<ShiftProps, 'client'> & { client: Client };
-const shortDate = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Minsk' });
-
-function dateLabel(order: BoardOrder) {
-  const raw = order.planned_date || order.due_date;
-  const day = raw && new Date(raw.slice(0, 10) + 'T12:00:00Z');
-  if (!day || !Number.isFinite(day.getTime())) return 'Дата не указана';
-  return (order.planned_date ? 'План · ' : 'План не указан · Срок ') + shortDate.format(day);
+function dateLabel(order: BoardOrder, day: string) {
+  const scheduled = orderDay(order);
+  const label = !scheduled ? 'Выполнение' : scheduled === order.planned_date ? 'План' : 'Срок';
+  return label + ' · ' + formatOrderDay(day);
 }
 
 function editable(order: BoardOrder) {
@@ -29,31 +27,10 @@ function isInHistory(order: BoardOrder, profileId: string) {
   );
 }
 
-function historyTime(order: BoardOrder, profileId: string) {
-  const times = order.tasks.flatMap((task) =>
-    participants(task)
-      .filter((person) => person.mechanic_id === profileId && person.status === 'confirmed')
-      .map((person) => person.confirmed_at || task.completed_at || ''),
-  );
-  if (order.vehicle_workflow?.handed_at) times.push(order.vehicle_workflow.handed_at);
-  return times.sort().pop() || '';
-}
-
 function listOrders(orders: BoardOrder[], source: string, profileId: string, history: boolean) {
-  if (history)
-    return orders
-      .filter((order) => isInHistory(order, profileId))
-      .sort(
-        (a, b) => historyTime(b, profileId).localeCompare(historyTime(a, profileId)) || a.id.localeCompare(b.id),
-      );
-  return orders
-    .filter((order) => order.source === source && editable(order))
-    .sort(
-      (a, b) =>
-        (a.planned_date || '9999').localeCompare(b.planned_date || '9999') ||
-        a.order_number.localeCompare(b.order_number, 'ru', { numeric: true }) ||
-        a.id.localeCompare(b.id),
-    );
+  return history
+    ? sortVisits(orders.filter(order => isInHistory(order, profileId)), order => historyOrderDay(order, profileId))
+    : sortVisits(orders.filter(order => order.source === source && editable(order)));
 }
 
 export function MechanicBoard({ client, profile, section, recordId, navigate }: BoardProps) {
@@ -185,6 +162,7 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
       ) : (
         rows.map((order) => {
           const expanded = !!selected && selected.id === order.id;
+          const day = history ? historyOrderDay(order, profile.id) : orderDay(order);
           const flow = order.vehicle_workflow;
           const progress = visibleProgress(order);
           const orderChange = actions.changes[order.id];
@@ -196,7 +174,7 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
           const draft = canSubmit && drafts[order.id];
           const panelId = 'mb-works-' + order.id;
           return (
-            <article class={'mb-card' + (expanded ? ' mb-open' : '')} key={order.id} data-vehicle-id={order.id}>
+            <article class={`mb-card ${weekdayClass(day)}${expanded ? ' mb-open' : ''}`} key={order.id} data-vehicle-id={order.id}>
               <button
                 type="button"
                 class="mb-order"
@@ -209,7 +187,8 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
                 }}
               >
                 <strong>{order.vehicle}</strong>
-                <span class="mb-date">{dateLabel(order)}</span>
+                {day ? <time class="mb-date" dateTime={day}>{dateLabel(order, day)}</time>
+                  : <span class="mb-date">Дата не указана</span>}
                 <span aria-hidden="true" class="mb-chevron" />
                 {!expanded && order.tasks.length > 0 && (
                   <span class="mb-summary">{order.tasks.map(taskName).join(' · ')}</span>

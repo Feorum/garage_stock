@@ -140,8 +140,11 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
                 pay = new_page(browser, owner, 'Test Owner', 'admin', 'shift')
                 review = pay.locator(f'article[data-order-id="{record["id"]}"]')
                 first_task = next(task for task in record['tasks'] if task['id'] == task_id)
-                expect(review.get_by_role('listitem').filter(has_text=first_task['work_name'])).to_contain_text(re.compile(r'15,50\s*BYN'))
-                expect(review.get_by_role('listitem').filter(has_text=extra_task['work_name'])).to_contain_text(re.compile(r'0,00\s*BYN'))
+                completed = review.get_by_role('listitem').filter(has_text=first_task['work_name'])
+                expect(completed).to_contain_text(re.compile(r'15,50\s*BYN'))
+                expect(completed.locator('.executor-marker')).to_have_count(2)
+                expect(review.get_by_role('listitem').filter(has_text=extra_task['work_name'])).to_have_count(0)
+                expect(review.get_by_text('Проверить вторую услугу до выдачи', exact=True)).to_be_visible()
                 expect(review.get_by_role('button', name='Подтвердить', exact=True)).to_have_count(0)
                 workflow = current()['vehicle_workflow']
                 assert workflow['state'] == 'review' and workflow['unfinished_count'] == 1
@@ -157,10 +160,13 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
                 work(a, extra_task['id']).get_by_role('checkbox').click()
                 expect(work(a,extra_task['id']).locator(f'[data-mechanic-id="{mechanic_a}"]')).to_be_visible()
                 handoff(a, 'Все услуги проверены', complete=True)
+                expect(review.get_by_role('listitem').filter(has_text=extra_task['work_name'])).to_contain_text(re.compile(r'0,00\s*BYN'))
+                expect(review.get_by_text('Все услуги проверены', exact=True)).to_be_visible()
                 review.get_by_role('button', name='Подтвердить', exact=True).click()
                 expect(review).to_have_count(0)
                 assert current()['status'] == 'closed'
                 pay.get_by_role('link', name='Все заказы', exact=True).click()
+                pay.locator('.owner-archive > summary').click()
                 pay.locator(f'main a[href="#orders/{record["id"]}"]').click()
                 card = pay.locator(f'tbody[data-task-id="{task_id}"]')
                 card.get_by_role('button', name='Распределить', exact=True).click()

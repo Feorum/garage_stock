@@ -1,0 +1,23 @@
+.owner-review-title { display: block; min-height: 44px; padding: .75rem .85rem; color: var(--ink); text-decoration: none; overflow-wrap: anywhere; }
+.owner-review-title:hover h2 { text-decoration: underline; }
+.owner-review-title:focus-visible { outline-offset: -4px; }
+.owner-review-title h2 { margin: 0; font-size: 1.1rem; }
+.owner-review-meta { display: flex; flex-wrap: wrap; gap: .2rem .7rem; margin: .25rem 0 0; color: var(--muted); font-size: .8rem; }
+.owner-review-incomplete { margin: .25rem 0 0; color: var(--warning); font-size: .8rem; }
+.owner-review-jobs { list-style: none; margin: 0; padding: 0 .85rem; }
+.owner-review-jobs li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: .25rem .65rem; border-top: 1px solid var(--line); padding-block: .5rem; font-size: .94rem; }
+.owner-review-service { display: grid; gap: .2rem; min-width: 0; overflow-wrap: anywhere; }
+.owner-review-executors { display: flex; flex-wrap: wrap; gap: .2rem; }
+.owner-review-executors small, .owner-review-no-jobs { color: var(--muted); }
+.owner-review-amount { max-width: 8rem; font-size: .88rem; font-weight: 650; font-variant-numeric: tabular-nums; text-align: end; overflow-wrap: anywhere; }
+.owner-review-no-jobs { margin: 0; padding: .5rem .85rem; border-top: 1px solid var(--line); }
+.owner-review-note { margin: 0; padding: .5rem .85rem; border-top: 1px solid var(--line); background: var(--surface-raised); }
+.owner-review-note h3 { margin: 0 0 .22rem; color: var(--muted); font-size: .8rem; }
+.owner-review-note p { margin: 0; font-size: .875rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.owner-review-controls { padding: .65rem .85rem; border-top: 1px solid var(--line); }
+.owner-review-controls .button { font-size: .88rem; padding-inline: .7rem; }
+.owner-review-controls label { display: grid; gap: .3rem; margin-bottom: .55rem; }
+.owner-review-controls textarea { min-height: 3.5rem; }
+.owner-review-warning { margin-top: .5rem; color: var(--warning); }
+.owner-review-warning button { margin-top: .35rem; }
+.owner-review-feedback { margin: 0 0 .75rem; color: var(--green); }

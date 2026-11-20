@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { dayLabel, taskName } from './shift-model';
 import type { Client, Profile } from './workspace-types';
 import { subscribeBoardUpdates } from './board-updates';
 import {
   listEntries,
   read,
-  statusText,
   type EditorSeed,
   type OwnerIntake,
   type OwnerOrder,
@@ -16,6 +14,7 @@ import { SourceReference } from './owner-summary';
 import { OwnerDetail } from './owner-detail';
 import { OrderEditor } from './owner-editor';
 import { Omission } from './owner-omission';
+import { OwnerOrderList } from './owner-order-list';
 
 interface Props {
   client: Client;
@@ -56,7 +55,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
     [loaded, setLoaded] = useState(false),
     [loading, setLoading] = useState(false);
   const [query, setQuery] = useState(''),
-    [filter, setFilter] = useState('open');
+    [filter, setFilter] = useState('all');
   const [notice, setNotice] = useState(''),
     [loadError, setLoadError] = useState('');
   const [editor, setEditor] = useState<EditorSeed | null>(null),
@@ -250,7 +249,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
                 <option value="open">Открытые</option>
                 <option value="handoff">Переданы владельцу</option>
                 <option value="review">Заявки на проверке</option>
-                <option value="closed">Закрытые</option>
+                <option value="closed">Закрытые и отменённые</option>
                 <option value="all">Все заказы</option>
               </select>
             </div>
@@ -288,58 +287,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
               </p>
             </div>
           )}
-          <div class="order-list">
-            {rows.map((row, i) => {
-              const raw = row.intake?.latest || row.intake?.original;
-              const vehicle = row.order?.vehicle || String(raw?.vehicle || 'Укажите автомобиль');
-              const title =
-                row.order?.tasks
-                  .filter((t) => t.status !== 'cancelled')
-                  .map(taskName)
-                  .join(' · ') || [raw?.wrapping, raw?.tint].filter(Boolean).join(' · ');
-              const date = row.order?.planned_date
-                ? dayLabel(row.order.planned_date)
-                : String(raw?.date || '');
-              return (
-                <div class="order-list-entry" key={row.id}>
-                  {(i === 0 || rows[i - 1].source !== row.source) && (
-                    <h2 class="order-group-heading">{row.label}</h2>
-                  )}
-                  <button
-                    type="button"
-                    class={'compact-order order-index-row' + (row.id === id ? ' is-selected' : '')}
-                    data-order-id={row.order?.id}
-                    data-intake-id={row.intake?.id}
-                    aria-current={row.id === id ? 'true' : undefined}
-                    onClick={() => open(row.id)}
-                  >
-                    <span class="order-row-top">
-                      <strong>{vehicle}</strong>
-                      <span class="task-status">
-                        {row.intake
-                          ? 'На проверке'
-                          : row.order?.vehicle_workflow?.state === 'review'
-                            ? 'Передан владельцу'
-                            : statusText[row.order!.status]}
-                      </span>
-                    </span>
-                    <span class="order-row-meta">
-                      {[
-                        date,
-                        Number.isFinite(row.row) && row.row ? 'Строка ' + row.row : '',
-                        row.order?.order_number,
-                        row.order?.vehicle_workflow?.holder_name,
-                        row.order?.manager_label || raw?.manager_label,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </span>
-                    {title && <span class="order-row-works">{title}</span>}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+          <OwnerOrderList rows={rows} filter={filter} search={query} selectedId={id} open={open} />
         </section>}
         {detail && (
           <section class="owner-order-pane" aria-label="Подробности заказа">

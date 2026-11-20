@@ -1,8 +1,11 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { ExecutorMarker } from './executor-marker';
+import { formatOrderDay, orderDay, weekdayClass } from './order-calendar';
 import { errorText, isConflict, type OwnerOrder } from './owner-model';
 import { money } from './pay-model';
-import { taskName } from './shift-model';
+import { participants, taskName } from './shift-model';
 import type { Client } from './workspace-types';
+import './owner-review.css';
 
 export interface ReviewRate {
   task_id: string;
@@ -35,8 +38,10 @@ function displayPrice(value: number | null | undefined, loading: boolean) {
 
 export function ReviewCard({ order, rates, loadingPrices, current, client, refresh }: Props) {
   const flow = order.vehicle_workflow!;
-  const jobs = order.tasks.filter(task => task.status !== 'cancelled');
+  const jobs = order.tasks.filter(task => task.status === 'completed');
   const amounts = new Map(rates?.map(rate => [rate.task_id, rate.effective_kopeks]));
+  const day = orderDay(order);
+  const handoffNote = flow.handoff_note?.trim();
   const [draftVersion, setDraftVersion] = useState<number | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -98,18 +103,38 @@ export function ReviewCard({ order, rates, loadingPrices, current, client, refre
     void send({ action, version: order.version, note: action === 'return' ? note.trim() : '', requestId: crypto.randomUUID() });
   }
 
-  return <article class="owner-board-card owner-review-card" data-order-id={order.id}>
-    <h2><a class="owner-review-title" href={'#orders/' + encodeURIComponent(order.id)}>
-      <span>{order.vehicle}</span><small>{order.order_number}</small>
-    </a></h2>
-    <ul class="owner-review-jobs" aria-label="Работы и цены">
-      {jobs.map(task => <li key={task.id}>
-        <span>{taskName(task)}{task.status !== 'completed' && <small>Не завершено</small>}</span>
-        <span class="owner-review-amount">{displayPrice(amounts.get(task.id), loadingPrices)}</span>
-      </li>)}
-    </ul>
+  return <article class={'owner-board-card owner-review-card ' + weekdayClass(day)} data-order-id={order.id}>
+    <a class="owner-review-title" href={'#orders/' + encodeURIComponent(order.id)}>
+      <h2>{order.vehicle}</h2>
+      <p class="owner-review-meta">
+        {order.colour && <span>{order.colour}</span>}
+        {day ? <span>{day === order.planned_date ? 'Запись' : 'Срок'} · <time dateTime={day}>{formatOrderDay(day)}</time></span>
+          : <span>Дата записи не указана</span>}
+      </p>
+      {flow.unfinished_count > 0 && <p class="owner-review-incomplete">Осталось работ · {flow.unfinished_count}</p>}
+    </a>
+    {jobs.length ? <ul class="owner-review-jobs" aria-label="Выполненные работы и цены">
+      {jobs.map(task => {
+        const team = participants(task).filter(person => person.status === 'confirmed');
+        return <li key={task.id}>
+          <div class="owner-review-service">
+            <span>{taskName(task)}</span>
+            <div class="owner-review-executors">
+              {team.length ? team.map(person => <ExecutorMarker key={person.mechanic_id} id={person.mechanic_id}
+                name={person.name} color={person.color} />)
+                : <small>{task.working_name || 'Исполнитель не указан'}</small>}
+            </div>
+          </div>
+          <span class="owner-review-amount">{displayPrice(amounts.get(task.id), loadingPrices)}</span>
+        </li>;
+      })}
+    </ul> : <p class="owner-review-no-jobs">Выполненных работ пока нет.</p>}
+    {handoffNote && <section class="owner-review-note">
+      <h3>Комментарий механика</h3>
+      <p>{handoffNote}</p>
+    </section>}
     <fieldset class="owner-review-controls" disabled={locked} aria-busy={busy}>
-      <legend class="sr-only">Решение по заказу {order.order_number}</legend>
+      <legend class="sr-only">Решение по заказу {order.vehicle}</legend>
       {uncertain ? <button type="button" class="button" onClick={() => void send(uncertain)}>Проверить отправку</button> :
         returning ? <form onSubmit={event => { event.preventDefault(); decide('return'); }}>
           <label>Комментарий механику (необязательно)

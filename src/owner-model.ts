@@ -2,10 +2,12 @@ import type { PrivatePricing, Payout } from './pay-model';
 import type { GarageClient, Order, Task } from './shift-model';
 import { participants } from './shift-model';
 import { WORKS, AVAILABLE_WORKS } from './catalogue.js';
+import { compareOrderDays, orderDay } from './order-calendar';
 
 export interface OwnerOrder extends Order {
   vehicle_group_code: string;
   version: number;
+  closed_at?: string | null;
   source_id?: string;
   source_name?: string;
   source_row_number?: number;
@@ -97,6 +99,22 @@ export const statusText: Record<string, string> = {
   blocked: 'Приостановлено',
   completed: 'Выполнено',
 };
+
+export function orderPhase(order: OwnerOrder) {
+  if (order.status === 'closed') return { label: 'Закрыт', tone: 'closed' };
+  if (order.status === 'cancelled') return { label: 'Отменён', tone: 'closed' };
+  const tasks = order.tasks.filter(task => task.status !== 'cancelled');
+  if (tasks.length && tasks.every(task => task.status === 'completed')) {
+    return { label: 'Выполнен', tone: 'completed' };
+  }
+  const active = order.vehicle_workflow?.state === 'active' || order.vehicle_workflow?.state === 'review'
+    || tasks.some(task => ['in_progress', 'blocked', 'completed'].includes(task.status)
+      || participants(task).some(person => person.status !== 'assigned'));
+  return active ? { label: 'В работе', tone: 'active' } : { label: 'Запланирован', tone: 'pending' };
+}
+
+export const orderAuthor = (order: OwnerOrder) => order.source === 'manager' ? 'Менеджер' : 'Вы';
+export const isArchived = (order: OwnerOrder) => order.status === 'closed' || order.status === 'cancelled';
 export const fieldLabel: Record<keyof OrderFields, string> = {
   vehicle: 'Автомобиль',
   vin: 'VIN',
@@ -181,6 +199,7 @@ export function listEntries(orders: OwnerOrder[], intakes: OwnerIntake[], query:
     source: string;
     label: string;
     row: number;
+    day: string;
     order?: OwnerOrder;
     intake?: OwnerIntake;
   }[] = [];
@@ -189,7 +208,7 @@ export function listEntries(orders: OwnerOrder[], intakes: OwnerIntake[], query:
       filter === 'review' ||
       (filter === 'handoff' && order.vehicle_workflow?.state !== 'review') ||
       (filter === 'open' && order.status !== 'published') ||
-      (filter === 'closed' && order.status === 'published')
+      (filter === 'closed' && !isArchived(order))
     )
       continue;
     if (
@@ -201,6 +220,7 @@ export function listEntries(orders: OwnerOrder[], intakes: OwnerIntake[], query:
       source: order.source_id || '',
       label: order.source_name || 'Другие заказы',
       row: order.source_row_number || 0,
+      day: orderDay(order),
       order,
     });
   }
@@ -212,15 +232,16 @@ export function listEntries(orders: OwnerOrder[], intakes: OwnerIntake[], query:
       id: intake.id,
       source: intake.source_id || '',
       label: intake.source_name || 'Заявки менеджеров',
-      row: Math.min(...(intake.row_numbers || [])) || 0,
+      row: intake.row_numbers?.length ? Math.min(...intake.row_numbers) : 0,
+      day: orderDay(intake.suggested_order || {}),
       intake,
     });
   }
   return rows.sort(
     (a, b) =>
-      Number(!a.source) - Number(!b.source) ||
+      compareOrderDays(a.day, b.day) || Number(!a.source) - Number(!b.source) ||
       a.label.localeCompare(b.label, 'ru') ||
       a.source.localeCompare(b.source) ||
-      (a.row || Infinity) - (b.row || Infinity),
+      (a.row || Infinity) - (b.row || Infinity) || a.id.localeCompare(b.id),
   );
 }

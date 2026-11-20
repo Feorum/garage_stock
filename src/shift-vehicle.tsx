@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import {
   dayLabel,
+  historyOrderDay,
   instantLabel,
   mine,
   participants,
@@ -11,19 +12,23 @@ import {
   visibleProgress,
 } from './shift-model';
 import type { HandoffTask, Order, Section } from './shift-model';
+import { formatOrderDay, orderDay, weekdayClass } from './order-calendar';
 
 interface RowProps {
   order: Order;
+  historyMechanic?: string;
   selected: boolean;
   locked: boolean;
   open(): void;
   take(): void;
 }
-export function VehicleRow({ order, selected, locked, open, take }: RowProps) {
+export function VehicleRow({ order, historyMechanic, selected, locked, open, take }: RowProps) {
   const flow = order.vehicle_workflow;
   const progress = visibleProgress(order);
+  const day = historyMechanic ? historyOrderDay(order, historyMechanic) : orderDay(order);
+  const dateKind = day === order.planned_date ? 'План' : day === order.due_date ? 'Срок' : 'Выполнение';
   return (
-    <li class={'vehicle-index-row' + (selected ? ' is-selected' : '')} data-vehicle-id={order.id}>
+    <li class={`vehicle-index-row ${weekdayClass(day)}${selected ? ' is-selected' : ''}`} data-vehicle-id={order.id}>
       <button
         type="button"
         class="shift-row vehicle-index-button"
@@ -47,7 +52,8 @@ export function VehicleRow({ order, selected, locked, open, take }: RowProps) {
           </span>
           <small>
             Выполнено: {progress.completed} · Осталось: {progress.unfinished}
-            {order.due_date && ` · Срок ${dayLabel(order.due_date)}`}
+            {day && <> · {dateKind} <time dateTime={day}>{formatOrderDay(day)}</time></>}
+            {order.due_date && order.due_date !== day && ` · Срок ${dayLabel(order.due_date)}`}
           </small>
         </span>
         {!flow?.can_take && (

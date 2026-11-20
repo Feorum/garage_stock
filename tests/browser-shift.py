@@ -29,8 +29,9 @@ def fixture():
             'staff': [{'id': ME, 'name': 'Иван', 'color': '#135286'}, {'id': PEER, 'name': 'Олег', 'color':'#884422'}],
             'orders': [order('011','owner',[task('assigned','Капот',ME),task('private','Чужое поручение',PEER)]),
                        order('012','owner',[task('other','Полностью закрытый заказ',PEER)]),
-                       order('013','manager',[task('glass','Задняя полусфера'),task('doors','Двери')]),
-                       order('014','manager',[task('check','Осмотр кромки')])]}
+                       {**order('013','manager',[task('glass','Задняя полусфера'),task('doors','Двери')]),
+                        'planned_date':'2026-11-23'},
+                       {**order('014','manager',[task('check','Осмотр кромки')]), 'due_date':'2026-11-19'}]}
 
 
 def calls(page, rpc):
@@ -89,7 +90,13 @@ def check_handoff(browser, base, output=None):
         expect(mine.get_by_text('Чужое поручение', exact=True)).to_have_count(0)
         expect(mine.locator('[data-task-id="assigned"]').get_by_role('checkbox')).to_be_enabled()
         page.get_by_role('link', name='Заказы менеджеров', exact=True).click()
-        expect(page.locator('[data-vehicle-id]')).to_have_count(2)
+        visits = page.locator('[data-vehicle-id]')
+        expect(visits).to_have_count(2)
+        expect(visits.nth(0)).to_have_attribute('data-vehicle-id', '014')
+        expect(visits.nth(0).locator('time')).to_have_attribute('datetime', '2026-11-19')
+        expect(visits.nth(1).locator('time')).to_have_attribute('datetime', '2026-11-23')
+        assert visits.evaluate_all("rows => rows.every(row => getComputedStyle(row, '::before').width === '3px') && "
+                                   "new Set(rows.map(row => getComputedStyle(row, '::before').backgroundColor)).size === 2")
         card = open_visit(page, '013')
         row = card.locator('[data-task-id="glass"]')
         box = row.get_by_role('checkbox')
@@ -195,7 +202,7 @@ def run(directory, chromium, output=None):
     finally:
         server.shutdown()
         server.server_close()
-    print('Passed separate mechanic feeds, private rows, direct shared work, scoped realtime, fallback polling, offline and stale drafts, receipt replay, handoff and history.')
+    print('Passed separate mechanic feeds, ascending dates and weekday markers, private rows, direct shared work, scoped realtime, fallback polling, offline and stale drafts, receipt replay, handoff and history.')
 
 
 if __name__ == '__main__':

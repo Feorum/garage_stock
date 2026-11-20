@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { OwnerOrders } from './owner-orders';
 import { ReviewCard, type ReviewRate } from './owner-review';
-import type { OwnerOrder } from './owner-model';
+import { isArchived, orderAuthor, orderPhase, type OwnerOrder } from './owner-model';
 import { Reports } from './reports';
 import { ShiftView } from './shift';
 import { participants, taskName, type Task } from './shift-model';
@@ -9,6 +9,7 @@ import { ExecutorMarker } from './executor-marker';
 import { subscribeBoardUpdates } from './board-updates';
 import { readRpc } from './workspace-rpc';
 import { workshopDay, type Client, type Navigate, type Profile } from './workspace-types';
+import { compareOrderDays, formatOrderDay, orderDay, weekdayClass, workshopOrderDay } from './order-calendar';
 import './owner-workspace.css';
 
 interface Props {
@@ -17,10 +18,6 @@ interface Props {
   section: string;
   recordId?: string;
   navigate: Navigate;
-}
-interface BoardOrder extends OwnerOrder {
-  created_at?: string;
-  closed_at?: string | null;
 }
 interface PriceRow {
   order_id: string;
@@ -31,21 +28,10 @@ interface PriceRow {
 type Prices = Map<string, PriceRow>;
 type Total = number | 'missing' | 'unavailable' | 'loading';
 
-const dateFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Minsk' });
 const monthFormat = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric', timeZone: 'Europe/Minsk' });
 const numberFormat = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function boardDay(order: BoardOrder) {
-  return order.planned_date || (order.created_at && workshopDay(order.created_at)) || '';
-}
-
-function displayDay(day: string) {
-  if (!day) return '';
-  const date = new Date(day + 'T12:00:00Z');
-  return Number.isFinite(date.valueOf()) ? dateFormat.format(date) : '';
-}
-
-function catalogueTotal(orders: BoardOrder[], prices: Prices | null): Total {
+function catalogueTotal(orders: OwnerOrder[], prices: Prices | null): Total {
   if (!prices) return 'loading';
   let total = 0;
   for (const order of orders) {
@@ -72,24 +58,6 @@ function BoardPrice({ total }: { total: Total }) {
   </div>;
 }
 
-function completedReview(order: BoardOrder) {
-  const flow = order.vehicle_workflow;
-  return order.status === 'published' && flow?.state === 'review' &&
-    flow.completed_count > 0 && flow.unfinished_count === 0;
-}
-
-function orderState(order: BoardOrder) {
-  if (order.status === 'closed') return { label: 'Закрыт', tone: 'closed' };
-  if (order.status === 'cancelled') return { label: 'Отменён', tone: 'closed' };
-  if (order.vehicle_workflow?.state === 'review') {
-    const left = order.vehicle_workflow.unfinished_count;
-    return completedReview(order) ? { label: 'На проверке', tone: 'review' } :
-      { label: left > 0 ? `На проверке · осталось ${left}` : 'На проверке', tone: 'partial' };
-  }
-  if (order.vehicle_workflow?.state === 'active') return { label: 'В работе', tone: 'active' };
-  return { label: 'Ожидает начала', tone: 'pending' };
-}
-
 function ServiceCredits({ tasks }: { tasks: Task[] }) {
   const services = tasks.filter(task => task.status === 'completed');
   if (!services.length) return null;
@@ -104,25 +72,27 @@ function ServiceCredits({ tasks }: { tasks: Task[] }) {
   })}</ul>;
 }
 
-function OrderCard({ order, mode, repeated }: {
-  order: BoardOrder; mode: 'orders' | 'history'; repeated: boolean;
+function OrderCard({ order, day, history = false }: {
+  order: OwnerOrder; day: string; history?: boolean;
 }) {
-  const source = order.source === 'manager' ? 'Заказ менеджера' : 'Заказ владельца';
-  const state = orderState(order);
-  const meta = [displayDay(boardDay(order)), source, repeated && order.order_number].filter(Boolean).join(' · ');
-  return <article class="owner-board-card" data-order-id={order.id}>
-    <a class="owner-board-open" href={'#orders/' + encodeURIComponent(order.id)}
-      aria-label={`${order.vehicle} · ${order.order_number} · ${state.label}`}>
+  const state = orderPhase(order);
+  return <article class={'owner-board-card ' + weekdayClass(day)} data-order-id={order.id}>
+    <a class="owner-board-open" href={'#orders/' + encodeURIComponent(order.id)}>
       <h2>{order.vehicle}</h2>
-      <span class="owner-board-meta">{meta}</span>
+      <span class="owner-board-meta">
+        {order.colour && <>{order.colour} · </>}
+        {day && (history ? 'Закрыт ' : order.planned_date === day ? '' : 'Срок ')}
+        {day ? <time dateTime={day}>{formatOrderDay(day)}</time> : history ? 'Дата закрытия не указана' : 'Дата не назначена'}
+        {' · '}{orderAuthor(order)}
+      </span>
       <span class={'owner-board-phase phase-' + state.tone}>{state.label}</span>
     </a>
-    {mode !== 'orders' && <ServiceCredits tasks={order.tasks} />}
+    {history && <ServiceCredits tasks={order.tasks} />}
   </article>;
 }
 
 function Board({ client, profile, section }: Props) {
-  const [orders, setOrders] = useState<BoardOrder[] | null>(null);
+  const [orders, setOrders] = useState<OwnerOrder[] | null>(null);
   const [pricing, setPricing] = useState<{ key: string; rates: Prices | null } | null>(null);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
@@ -142,7 +112,7 @@ function Board({ client, profile, section }: Props) {
       if (pending) { again = true; return; }
       pending = true;
       try {
-        const result = await readRpc<BoardOrder[]>(client, 'garage_list_orders', {}, scope.signal);
+        const result = await readRpc<OwnerOrder[]>(client, 'garage_list_orders', {}, scope.signal);
         if (disposed) return;
         if (!Array.isArray(result)) throw new Error('Invalid order list');
         setOrders(result);
@@ -182,11 +152,11 @@ function Board({ client, profile, section }: Props) {
   }, [client, profile.id, revision]);
 
   const all = orders || [];
-  const closedDay = (order: BoardOrder) => {
-    const timestamp = order.closed_at;
-    return timestamp ? workshopDay(timestamp) : '';
-  };
-  const closed = all.filter(o => o.status === 'closed').sort((a, b) => closedDay(b).localeCompare(closedDay(a)) || a.id.localeCompare(b.id));
+  const closedDay = (order: OwnerOrder) => workshopOrderDay(order.closed_at);
+  const scheduled = [...all].sort((a, b) =>
+    compareOrderDays(orderDay(a), orderDay(b)) || a.order_number.localeCompare(b.order_number, 'ru', { numeric: true }) || a.id.localeCompare(b.id));
+  const closed = all.filter(o => o.status === 'closed').sort((a, b) =>
+    compareOrderDays(closedDay(a), closedDay(b)) || a.id.localeCompare(b.id));
   const todayMonth = workshopDay().slice(0, 7);
   const months = [...new Set([todayMonth, ...closed.map(o => closedDay(o).slice(0, 7)).filter(Boolean)])].sort().reverse();
   const selected = months.includes(month) ? month : todayMonth;
@@ -195,10 +165,9 @@ function Board({ client, profile, section }: Props) {
     const label = monthFormat.format(new Date(value + '-15T12:00:00Z')).replace(/\s*г\.$/u, '');
     return label.charAt(0).toLocaleUpperCase('ru') + label.slice(1);
   };
-  const queue = section === 'shift' ? all.filter(o => o.status === 'published' && o.vehicle_workflow?.state === 'review').sort((a, b) =>
-    (a.vehicle_workflow?.handed_at || '').localeCompare(b.vehicle_workflow?.handed_at || '') || a.id.localeCompare(b.id)) :
-    section === 'reports' ? closed : [...all].sort((a, b) =>
-      boardDay(b).localeCompare(boardDay(a)) || (b.created_at || '').localeCompare(a.created_at || '') || a.id.localeCompare(b.id));
+  const queue = section === 'shift' ? scheduled.filter(o => o.status === 'published' && o.vehicle_workflow?.state === 'review') :
+    section === 'reports' ? closed : scheduled.filter(o => !isArchived(o));
+  const archived = section === 'orders' ? scheduled.filter(isArchived) : [];
   // Customer price changes do not advance the public order version. Refresh
   // them with each review read; history uses the frozen catalogue snapshots.
   const reviewSnapshot = section === 'shift' ? orders : null;
@@ -229,10 +198,7 @@ function Board({ client, profile, section }: Props) {
   }, [client, pricingKey, revision, reviewSnapshot]);
   const priceError = pricing?.key === pricingKey && !pricing.rates;
   const prices = pricing?.key === pricingKey ? pricing.rates : null;
-  const totalFor = (list: BoardOrder[]): Total => priceError ? 'unavailable' : catalogueTotal(list, prices);
-  const cardKey = (o: BoardOrder) => [o.vehicle, boardDay(o), o.source].join('\x1f');
-  const frequencies = new Map<string, number>();
-  for (const order of queue) frequencies.set(cardKey(order), (frequencies.get(cardKey(order)) || 0) + 1);
+  const totalFor = (list: OwnerOrder[]): Total => priceError ? 'unavailable' : catalogueTotal(list, prices);
   const mode = section === 'shift' ? 'review' : section === 'reports' ? 'history' : 'orders';
 
   return <div class="owner-board">
@@ -254,9 +220,15 @@ function Board({ client, profile, section }: Props) {
       {queue.length ? <div class="owner-board-list">{queue.map(order => mode === 'review'
         ? <ReviewCard key={order.id} order={order} rates={prices?.get(order.id)?.tasks} loadingPrices={!priceError && !prices}
             client={client} current={!error && online} refresh={refreshReview} />
-        : <OrderCard key={order.id} order={order} mode={mode} repeated={frequencies.get(cardKey(order))! > 1} />)}</div> :
+        : <OrderCard key={order.id} order={order} history={mode === 'history'}
+            day={mode === 'history' ? closedDay(order) : orderDay(order)} />)}</div> :
         <p class="owner-board-empty">{mode === 'review' ? 'Нет заказов на проверке.' :
-          mode === 'history' ? 'Закрытых заказов пока нет.' : 'Заказов пока нет.'}</p>}
+          mode === 'history' ? 'Закрытых заказов пока нет.' : 'Активных заказов пока нет.'}</p>}
+      {archived.length > 0 && <details class="owner-archive">
+        <summary>Архив <span>{archived.length}</span></summary>
+        <div class="owner-board-list">{archived.map(order =>
+          <OrderCard key={order.id} order={order} day={orderDay(order)} />)}</div>
+      </details>}
     </>}
     {section === 'orders' && <nav class="owner-board-tools" aria-label="Инструменты заказов">
       <a href="#orders/tools">Управление заказами</a><a href="#shift/attention">Смена и заявки</a>
