@@ -18,7 +18,6 @@ interface Task {
 }
 interface Order {
   id: string;
-  order_number: string;
   vehicle: string;
   status: string;
   tasks: Task[];
@@ -138,8 +137,9 @@ export function Reports({ client, navigate }: { client: Client; navigate: Naviga
                     .map((p) => p.name)
                     .join(', ')}
                 </p>
-                <button class="button button-small" onClick={() => navigate('orders', order.id)}>
-                  Открыть {order.order_number}
+                <button class="button button-small" aria-label={'Открыть заказ · ' + order.vehicle}
+                  onClick={() => navigate('orders', order.id)}>
+                  Открыть заказ
                 </button>
               </article>
             ))}

@@ -1,15 +1,14 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { WorkRow, Instructions, HandoffForm, type Draft } from './mechanic-vehicle';
 import { useBoardChanges, useBoardOrders, type BoardOrder, type ChangeState } from './mechanic-board-data';
-import { historyOrderDay, instantLabel, mine, sortVisits, taskName, visibleProgress, type ShiftProps } from './shift-model';
-import { formatOrderDay, orderDay, weekdayClass } from './order-calendar';
+import { finishedAt, hasMechanicHistory, historyOrderDate, instantLabel, sortHistoryVisits, sortVisits, taskName, visibleProgress, type ShiftProps } from './shift-model';
+import { formatOrderDay, newestFirst, orderDay, weekdayClass } from './order-calendar';
 import type { Client } from './workspace-types';
 import './mechanic-board.css';
 
 type BoardProps = Omit<ShiftProps, 'client'> & { client: Client };
-function dateLabel(order: BoardOrder, day: string) {
-  const scheduled = orderDay(order);
-  const label = !scheduled ? 'Выполнение' : scheduled === order.planned_date ? 'План' : 'Срок';
+function dateLabel(order: BoardOrder, day: string, actual?: string) {
+  const label = actual ? 'Выполнение' : day === order.planned_date ? 'План' : 'Срок';
   return label + ' · ' + formatOrderDay(day);
 }
 
@@ -18,18 +17,9 @@ function editable(order: BoardOrder) {
   return order.status === 'published' && (!state || state === 'available' || state === 'active');
 }
 
-function isInHistory(order: BoardOrder, profileId: string) {
-  const flow = order.vehicle_workflow;
-  return (
-    order.tasks.some((task) => mine(task, profileId) === 'confirmed') ||
-    flow?.handed_by === profileId ||
-    (!!flow?.handed_at && flow.holder_id === profileId)
-  );
-}
-
 function listOrders(orders: BoardOrder[], source: string, profileId: string, history: boolean) {
   return history
-    ? sortVisits(orders.filter(order => isInHistory(order, profileId)), order => historyOrderDay(order, profileId))
+    ? sortHistoryVisits(orders, profileId)
     : sortVisits(orders.filter(order => order.source === source && editable(order)));
 }
 
@@ -72,7 +62,7 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
       ? selected.source === 'manager'
         ? 'manager-orders'
         : 'shift'
-      : isInHistory(selected, profile.id)
+      : hasMechanicHistory(selected, profile.id)
         ? 'history'
         : undefined;
     if (destination && destination !== section) navigate(destination, selected.id);
@@ -162,7 +152,11 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
       ) : (
         rows.map((order) => {
           const expanded = !!selected && selected.id === order.id;
-          const day = history ? historyOrderDay(order, profile.id) : orderDay(order);
+          const historyDate = history ? historyOrderDate(order, profile.id) : null;
+          const day = historyDate?.day ?? orderDay(order);
+          const tasks = history ? [...order.tasks].sort((a, b) => newestFirst(
+            a.completed_at || finishedAt(a, profile.id), b.completed_at || finishedAt(b, profile.id),
+          )) : order.tasks;
           const flow = order.vehicle_workflow;
           const progress = visibleProgress(order);
           const orderChange = actions.changes[order.id];
@@ -187,13 +181,13 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
                 }}
               >
                 <strong>{order.vehicle}</strong>
-                {day ? <time class="mb-date" dateTime={day}>{dateLabel(order, day)}</time>
+                {day ? <time class="mb-date" dateTime={day}>{dateLabel(order, day, historyDate?.timestamp)}</time>
                   : <span class="mb-date">Дата не указана</span>}
                 <span aria-hidden="true" class="mb-chevron" />
               </button>
-              {!expanded && order.tasks.length > 0 && (
+              {!expanded && tasks.length > 0 && (
                 <ul class="mb-summary" role="list" aria-label="Работы по заказу">
-                  {order.tasks.map(task => <li key={task.id}>{taskName(task)}</li>)}
+                  {tasks.map(task => <li key={task.id}>{taskName(task)}</li>)}
                 </ul>
               )}
               <div id={panelId} hidden={!expanded}>
@@ -203,7 +197,7 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
                     {!draft && (
                       <>
                         <ul class="mb-work-list">
-                          {order.tasks.map((task) => {
+                          {tasks.map((task) => {
                             const change = actions.changes[task.id];
                             return (
                               <WorkRow

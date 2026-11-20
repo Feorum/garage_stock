@@ -100,6 +100,13 @@ def exercise_owner_pricing(db, directory, chromium, owner, first, second):
             with pw.chromium.launch(executable_path=chromium, args=['--no-sandbox']) as browser:
                 context, page, errors, requests = new_page(browser, owner, 'admin')
                 page.goto(f'{base}/index.html#orders/{order_id}')
+                expect(page.get_by_role('list', name='Работы и цены')).to_contain_text(re.compile(r'20,01\s*BYN'))
+                expect(page.get_by_role('button', name='Изменить стоимость', exact=True)).to_have_count(0)
+                page.get_by_role('button', name='Изменить заказ', exact=True).click()
+                expect(page).to_have_url(f'{base}/index.html#orders/edit-{order_id}')
+                page.get_by_text('Данные и состав работ', exact=True).click()
+                scope_colour = page.get_by_label('Цвет (необязательно)', exact=True)
+                scope_colour.fill('Черновик')
                 row = page.locator(f'tbody[data-task-id="{task_id}"]')
                 expect(row).to_contain_text(re.compile(r'20[,.]01'))
                 expect(row.locator('td[data-column="customer"] .job-amount')).to_have_text(re.compile(r'20,01\s*BYN'))
@@ -116,6 +123,7 @@ def exercise_owner_pricing(db, directory, chromium, owner, first, second):
                 expect(edit).to_have_attribute('aria-expanded', 'false')
                 expect(row.locator('td[data-column="customer"] .job-amount')).to_have_text(re.compile(r'^0,00\s*BYN$'))
                 expect(page.locator('.financial-summary dd')).to_have_text(re.compile(r'^0,00\s*BYN$'))
+                expect(scope_colour).to_have_value('Черновик')
                 saved = db.rpc(owner, 'garage_order_financials', p_order_id=order_id)
                 assert saved['effective_total_kopeks'] == saved['effective_tax_kopeks'] == saved['effective_gross_kopeks'] == 0, saved
                 assert saved['net_amount'] == 20.01 and saved['gross_amount'] == 24.01, saved
@@ -128,13 +136,16 @@ def exercise_owner_pricing(db, directory, chromium, owner, first, second):
                 restored = db.rpc(owner, 'garage_order_financials', p_order_id=order_id)
                 assert restored['effective_total_kopeks'] == 2001 and restored['effective_gross_kopeks'] == 2401, restored
                 expect(row.locator('td[data-column="customer"] .job-amount')).to_have_text(re.compile(r'20,01\s*BYN'))
+                page.get_by_role('button', name='К заказу', exact=True).click()
+                expect(page).to_have_url(f'{base}/index.html#orders/{order_id}')
+                expect(page.get_by_role('list', name='Работы и цены')).to_contain_text(re.compile(r'20,01\s*BYN'))
                 exercise_gift_offer(page, db, base, owner, first)
                 assert not errors and not requests, (errors, requests)
                 context.close()
 
                 for person in (first, second):
                     context, page, errors, requests = new_page(browser, person, 'mechanic')
-                    for fragment in (f'shift/{order_id}', f'orders/{order_id}', f'pay/{task_id}'):
+                    for fragment in (f'shift/{order_id}', f'orders/{order_id}', f'orders/edit-{order_id}', f'pay/{task_id}'):
                         page.goto(f'{base}/index.html#{fragment}')
                         expect(page.get_by_role('navigation', name='Кабинет механика')).to_be_visible()
                         expect(page.get_by_text(note, exact=True)).to_have_count(0)

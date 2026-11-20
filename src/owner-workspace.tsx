@@ -9,7 +9,7 @@ import { ExecutorMarker } from './executor-marker';
 import { subscribeBoardUpdates } from './board-updates';
 import { readRpc } from './workspace-rpc';
 import { workshopDay, type Client, type Navigate, type Profile } from './workspace-types';
-import { compareOrderDays, formatOrderDay, orderDay, weekdayClass, workshopOrderDay } from './order-calendar';
+import { compareOrderDays, formatOrderDay, newestFirst, orderDay, weekdayClass, workshopOrderDay } from './order-calendar';
 import './owner-workspace.css';
 
 interface Props {
@@ -59,7 +59,7 @@ function BoardPrice({ total }: { total: Total }) {
 }
 
 function ServiceCredits({ tasks }: { tasks: Task[] }) {
-  const services = tasks.filter(task => task.status === 'completed');
+  const services = tasks.filter(task => task.status === 'completed').sort((a, b) => newestFirst(a.completed_at, b.completed_at));
   if (!services.length) return null;
   return <ul class="owner-board-services">{services.map(task => {
     const people = participants(task).filter(person => person.status === 'confirmed');
@@ -156,7 +156,7 @@ function Board({ client, profile, section }: Props) {
   const scheduled = [...all].sort((a, b) =>
     compareOrderDays(orderDay(a), orderDay(b)) || a.order_number.localeCompare(b.order_number, 'ru', { numeric: true }) || a.id.localeCompare(b.id));
   const closed = all.filter(o => o.status === 'closed').sort((a, b) =>
-    compareOrderDays(closedDay(a), closedDay(b)) || a.id.localeCompare(b.id));
+    newestFirst(a.closed_at, b.closed_at) || a.id.localeCompare(b.id));
   const todayMonth = workshopDay().slice(0, 7);
   const months = [...new Set([todayMonth, ...closed.map(o => closedDay(o).slice(0, 7)).filter(Boolean)])].sort().reverse();
   const selected = months.includes(month) ? month : todayMonth;

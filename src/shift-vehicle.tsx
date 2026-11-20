@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import {
   dayLabel,
-  historyOrderDay,
+  historyOrderDate,
   instantLabel,
   mine,
   participants,
@@ -25,8 +25,9 @@ interface RowProps {
 export function VehicleRow({ order, historyMechanic, selected, locked, open, take }: RowProps) {
   const flow = order.vehicle_workflow;
   const progress = visibleProgress(order);
-  const day = historyMechanic ? historyOrderDay(order, historyMechanic) : orderDay(order);
-  const dateKind = day === order.planned_date ? 'План' : day === order.due_date ? 'Срок' : 'Выполнение';
+  const historyDate = historyMechanic ? historyOrderDate(order, historyMechanic) : null;
+  const day = historyDate?.day ?? orderDay(order);
+  const dateKind = historyDate?.timestamp ? 'Выполнение' : day === order.planned_date ? 'План' : 'Срок';
   return (
     <li class={`vehicle-index-row ${weekdayClass(day)}${selected ? ' is-selected' : ''}`} data-vehicle-id={order.id}>
       <button
@@ -37,11 +38,10 @@ export function VehicleRow({ order, historyMechanic, selected, locked, open, tak
         onClick={open}
       >
         <span class="shift-row-main">
-          <small class="shift-code">
-            {order.order_number}
-            {order.vin && ` · VIN …${order.vin.slice(-6)}`}
-            {order.priority === 'urgent' ? ' · Срочно' : order.priority === 'high' ? ' · Высокий приоритет' : ''}
-          </small>
+          {(order.vin || ['urgent', 'high'].includes(order.priority)) && <small class="shift-code">
+            {[order.vin && `VIN …${order.vin.slice(-6)}`,
+              order.priority === 'urgent' ? 'Срочно' : order.priority === 'high' ? 'Высокий приоритет' : ''].filter(Boolean).join(' · ')}
+          </small>}
           <strong>{order.vehicle}</strong>
           <span>
             {flow?.holder_name
@@ -209,7 +209,6 @@ export function VehicleDetail({
         <button type="button" class="button shift-back" onClick={close}>
           ← К списку
         </button>
-        <span class="shift-code">{order.order_number}</span>
       </div>
       <div class="vehicle-visit-heading">
         <h2 ref={title} tabIndex={-1} data-route-heading id="vehicle-visit-title">

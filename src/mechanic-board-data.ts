@@ -10,7 +10,7 @@ export interface BoardTask extends Task {
 }
 export interface BoardOrder extends Order {
   tasks: BoardTask[];
-  vehicle_workflow?: VehicleWorkflow & { can_submit?: boolean; handed_by?: string | null };
+  vehicle_workflow?: VehicleWorkflow & { can_submit?: boolean };
 }
 
 export function useBoardOrders(client: Client, profileId: string) {

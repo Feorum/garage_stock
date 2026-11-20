@@ -124,6 +124,43 @@ def check_updates(browser, base):
             context.close()
 
 
+def check_history_order(browser, base):
+    data = fixture()
+    older, recent = data['orders'][2:]
+
+    def completed(task, at):
+        return {**task, 'status': 'completed', 'completed_at': at,
+                'participants': [{'mechanic_id': ME, 'name': 'Иван', 'status': 'confirmed', 'confirmed_at': at}]}
+
+    old_tasks = [completed(older['tasks'][0], '2026-11-20T18:00:00Z'),
+                 completed(older['tasks'][1], '2026-11-20T20:00:00Z')]
+    older.update(status='closed', planned_date='2026-11-24', tasks=old_tasks)
+    recent.update(status='closed', tasks=[completed(recent['tasks'][0], '2026-11-20T20:30:00Z')])
+    handed = {**recent, 'id': '015', 'order_number': 'GS-015', 'tasks': [
+        {**recent['tasks'][0], 'id': 'handed'}],
+        'vehicle_workflow': {'state': 'closed', 'handed_by': ME, 'handed_at': '2026-11-20T21:30:00Z'}}
+    undated = {**recent, 'id': '016', 'order_number': 'GS-016', 'due_date': None,
+               'tasks': [completed({**recent['tasks'][0], 'id': 'undated'}, None)]}
+    data['orders'] += [undated, handed]
+    context, page, errors, live = smoke.new_page(browser, data, {'width': 390, 'height': 844})
+    try:
+        page.goto(base + '/index.html#history')
+        visits = page.locator('[data-vehicle-id]')
+        expect(visits).to_have_count(4)
+        assert visits.evaluate_all("cards => cards.map(card => card.dataset.vehicleId)") == ['015', '014', '013', '016']
+        expect(visits.nth(0).locator('time')).to_have_attribute('datetime', '2026-11-21')
+        expect(visits.nth(2).locator('time')).to_have_attribute('datetime', '2026-11-20')
+        expect(visits.nth(2).locator('time')).to_contain_text('Выполнение')
+        expect(visits.nth(3)).to_contain_text('Дата не указана')
+        card = visits.nth(2)
+        expect(card.get_by_role('list', name='Работы по заказу').get_by_role('listitem')).to_have_text(['Двери', 'Задняя полусфера'])
+        expanded = open_visit(page, '013')
+        expect(expanded.locator('.mb-work-list .mb-work-name')).to_have_text(['Двери', 'Задняя полусфера'])
+        assert not errors and not live, (errors, live)
+    finally:
+        context.close()
+
+
 def check_handoff(browser, base, output=None):
     data = fixture()
     data['loseInlineResponseOnce'] = ['garage_check_work', 'garage_uncheck_work', 'garage_submit_work']
@@ -244,12 +281,13 @@ def run(directory, chromium, output=None):
         with sync_playwright() as playwright:
             with playwright.chromium.launch(executable_path=chromium, args=['--no-sandbox']) as browser:
                 check_card_layout(browser, base, output)
+                check_history_order(browser, base)
                 check_updates(browser, base)
                 check_handoff(browser, base, output)
     finally:
         server.shutdown()
         server.server_close()
-    print('Passed compact mechanic cards on phone and desktop, separate feeds, ascending dates and weekday markers, private rows, direct shared work, scoped realtime, fallback polling, offline and stale drafts, receipt replay, handoff and history.')
+    print('Passed compact mechanic cards, ascending active feeds, newest-first history and tasks, weekday markers, private rows, shared work, scoped realtime, fallback polling, offline and stale drafts, receipt replay and handoff.')
 
 
 if __name__ == '__main__':

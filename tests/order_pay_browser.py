@@ -23,6 +23,7 @@ def exercise_order_pay(db, directory, chromium, owner, first, second):
         db.rpc(mechanic, 'garage_check_work', p_task_id=jobs['W01'], p_request_id=str(uuid4()))
     server, base = smoke.serve(directory.resolve())
     url = f'{base}/index.html#orders/{visit}'
+    edit_url = f'{base}/index.html#orders/edit-{visit}'
     try:
         with sync_playwright() as pw, pw.chromium.launch(executable_path=chromium, args=['--no-sandbox']) as browser:
             for width in (320, 1440):
@@ -32,6 +33,10 @@ def exercise_order_pay(db, directory, chromium, owner, first, second):
                 try:
                     page.expose_function('__garageRpcFixture', lambda method, params: db.transport(owner, method, params))
                     page.goto(url)
+                    expect(page.get_by_role('list', name='Работы и цены').get_by_role('listitem')).to_have_count(3)
+                    expect(page.get_by_role('button', name='Распределить', exact=True)).to_have_count(0)
+                    page.get_by_role('button', name='Изменить заказ', exact=True).click()
+                    expect(page).to_have_url(edit_url)
                     table = page.get_by_role('table', name='Работы и цены')
                     rows = table.locator('tbody[data-task-id]')
                     expect(rows).to_have_count(3)
@@ -52,15 +57,18 @@ def exercise_order_pay(db, directory, chromium, owner, first, second):
                         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                         job.get_by_role('button', name='Сохранить распределение', exact=True).click()
                         expect(job.get_by_role('button', name='Изменить распределение', exact=True)).to_be_visible()
-                        expect(page).to_have_url(url)
+                        expect(page).to_have_url(edit_url)
                         page.reload()
                     expect(job.locator('[data-column=payout]')).to_contain_text('16,54')
                     job.get_by_role('button', name='Изменить распределение', exact=True).click()
                     expect(job.get_by_label('Андрей, BYN', exact=True)).to_have_value('12,51')
                     expect(job.get_by_label('Миша, BYN', exact=True)).to_have_value('4,03')
                     assert not re.search(r'\d\s*%', job.inner_text())
-                    expect(page).to_have_url(url)
+                    expect(page).to_have_url(edit_url)
                     assert not page.evaluate("__garageCalls.some(c => c.name === 'garage_pay_worklist')")
+                    page.get_by_role('button', name='К заказу', exact=True).click()
+                    expect(page).to_have_url(url)
+                    expect(page.get_by_role('button', name='Изменить распределение', exact=True)).to_have_count(0)
                     assert not errors and not live, (errors, live)
                 finally:
                     ctx.close()

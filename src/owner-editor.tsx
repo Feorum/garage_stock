@@ -31,6 +31,7 @@ interface EditorProps {
   reload: () => Promise<EditorSeed | null>;
   close: () => void;
   saved: (id: string, message: string) => Promise<void>;
+  quoteRevision?: string;
 }
 type ConflictRow = { key: string; title: string; mine: string; latest: string; choose: boolean };
 function compareDraft(
@@ -101,6 +102,7 @@ export function OrderEditor({
   saved,
   offer,
   giftError,
+  quoteRevision,
 }: EditorProps) {
   const [base, setBase] = useState(seed);
   const [draft, setDraft] = useState<Draft>(() => initialDraft(seed));
@@ -322,10 +324,10 @@ export function OrderEditor({
           {resolving
             ? 'Проверка заявки менеджера'
             : editing
-              ? 'Изменение ' + base.order?.order_number
+              ? 'Изменение заказа'
               : 'Новый заказ'}
         </legend>
-        <SourceReference intake={base.intake} />
+        {resolving && <SourceReference intake={base.intake} />}
         {ambiguous && (
           <p role="status" class="notice">
             Перед публикацией разделите повторяющиеся строки в рабочей таблице и обновите заявку.
@@ -467,7 +469,7 @@ export function OrderEditor({
                                 'Механик',
                             )
                             .join(', ')}{' '}
-                          · Состав меняется в карточке работы.
+                          · Состав меняется в разделе «Цены и выплаты».
                         </p>
                       ) : (
                         staff.map((person) => (
@@ -538,6 +540,7 @@ export function OrderEditor({
             ))}
           {dialogOpen && eligible && offer && <GiftDialog offer={offer} choose={chooseGift} />}
           <Quote
+            key={quoteRevision}
             giftCode={eligible && gift ? gift.code : undefined}
             onQuote={acceptQuote}
             client={client}

@@ -18,7 +18,7 @@ function attentionItems(orders: Order[], intakes: Intake[]) {
     if (order.vehicle_workflow?.state === 'review') {
       const { completed, unfinished } = visibleProgress(order);
       items.push({ ...visit, key:'handoff-' + order.id, kind:'handoff', closable:order.vehicle_workflow.can_close,
-        description:`Передан владельцу · ${order.order_number} · Выполнено: ${completed} · Осталось: ${unfinished}` });
+        description:`Передан владельцу · Выполнено: ${completed} · Осталось: ${unfinished}` });
       continue;
     }
     const open = order.tasks.filter(task => !isTerminal(task));
@@ -32,9 +32,9 @@ function attentionItems(orders: Order[], intakes: Intake[]) {
       const caption = order.due_date === date ? 'Срок сегодня' : 'Просрочено';
       const deadline = order.due_date !== visit.day && 'Срок ' + dayLabel(order.due_date);
       items.push({ ...visit, key: 'due-' + order.id, kind: 'due',
-        description: [caption, deadline, order.order_number].filter(Boolean).join(' · ') });
+        description: [caption, deadline].filter(Boolean).join(' · ') });
     }
-    if (order.vehicle_workflow?.can_close) items.push({ ...visit, key: 'close-' + order.id, kind: 'close', description: `Работы завершены · ${order.order_number}` });
+    if (order.vehicle_workflow?.can_close) items.push({ ...visit, key: 'close-' + order.id, kind: 'close', description: 'Работы завершены' });
   }
   for (const intake of intakes) {
     if (intake.status !== 'pending' || intake.order_id) continue;

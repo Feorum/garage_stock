@@ -1,0 +1,9 @@
+.owner-order-edit { display: grid; gap: var(--gap-control); min-width: 0; }
+.owner-edit-back { justify-self: start; }
+.owner-order-edit header p { color: var(--muted); }
+.owner-edit-scope { min-width: 0; }
+.owner-edit-scope > summary {
+  align-content: center; min-height: 44px; padding: var(--gap-control) var(--gap-card); cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+}
+.owner-edit-scope[open] > summary { margin-bottom: var(--gap-control); }

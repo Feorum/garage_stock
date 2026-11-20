@@ -96,7 +96,7 @@ export function TaskDetail({ row, profile, client, online, current, refresh, clo
   const managerText = order.manager_comment;
   const separateInstructions = order.instructions && order.instructions !== managerText && !(order.instructions_from_manager && order.manager_comment_updated_at);
   return <article class="shift-detail" aria-labelledby="shift-task-title" data-task-detail={task.id}>
-    <div class="shift-detail-top"><button type="button" class="button shift-back" onClick={close} disabled={saving}>{owner ? '← К списку' : '← К автомобилю'}</button><span class="shift-code">{order.order_number}</span></div>
+    <div class="shift-detail-top"><button type="button" class="button shift-back" onClick={close} disabled={saving}>{owner ? '← К списку' : '← К автомобилю'}</button></div>
     <div class="shift-detail-head"><div class="shift-priority-line"><span class={`task-status status-${task.status}`}>{taskLabel[task.status] || 'Состояние уточняется'}</span>
       {order.priority === 'urgent' && <span class="priority priority-urgent">Срочно</span>}</div>
       <h2 data-route-heading id="shift-task-title" ref={title} tabIndex={-1}>{taskName(task)}</h2><p class="shift-vehicle-name">{order.vehicle}</p>

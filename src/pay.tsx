@@ -89,7 +89,7 @@ function Worklist({ client, recordId }: { client: GarageClient; recordId?: strin
       filter === 'pending' ? 'Все завершённые работы распределены. Новые появятся здесь после завершения.' : 'Подходящих завершённых работ пока нет.'}</p>}
     <ul class="pay-list">{visible.map(item => <li key={item.task_id} class="pay-card" data-task-id={item.task_id}>
       <div class="pay-summary">
-        <div><p class="muted">{item.order_number} · {date(item.completed_at)} (Минск)</p><h2>{title(item)} · <span>{item.vehicle}</span></h2>
+        <div><p class="muted">{date(item.completed_at)} (Минск)</p><h2>{title(item)} · <span>{item.vehicle}</span></h2>
           <p>{item.candidates.filter(person => !person.former).map(person => person.name).join(', ')}</p></div>
         <strong>{item.pool_kopeks === null ? 'Ожидает распределения' : money(item.pool_kopeks)}</strong>
       </div>

@@ -21,6 +21,13 @@ export function compareOrderDays(a: string | null | undefined, b: string | null 
   return (a || '9999-99-99').localeCompare(b || '9999-99-99');
 }
 
+export function newestFirst(a?: string | null, b?: string | null) {
+  const first = Date.parse(a || '');
+  const second = Date.parse(b || '');
+  if (!Number.isFinite(first)) return Number.isFinite(second) ? 1 : 0;
+  return Number.isFinite(second) ? second - first : -1;
+}
+
 export function weekdayClass(day: string | null | undefined) {
   const weekday = calendarDate(day)?.getUTCDay();
   return weekday === undefined ? 'order-weekday' : `order-weekday order-weekday-${weekday || 7}`;

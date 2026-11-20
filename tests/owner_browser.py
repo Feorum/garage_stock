@@ -37,13 +37,13 @@ def exercise_owner_order(db, directory, chromium, owner, first, second):
                 page.get_by_role('button', name='Отправить заказ', exact=True).click()
                 panel = page.get_by_role('region', name='Подробности заказа')
                 expect(panel.get_by_role('heading', name=vehicle)).to_be_visible()
-                for name in ['Андрей', 'Миша']:
-                    expect(panel.get_by_text(name + ' · Назначено', exact=True)).to_be_visible()
-                panel.get_by_text('Действия с заказом', exact=True).click()
                 panel.get_by_role('button', name='Изменить заказ', exact=True).click()
+                rates = panel.get_by_role('region', name='Цены и выплаты', exact=True)
+                for name in ['Андрей', 'Миша']:
+                    expect(rates.get_by_text(name + ' · Назначено', exact=True)).to_be_visible()
+                panel.get_by_text('Данные и состав работ', exact=True).click()
                 page.get_by_label('Цвет (необязательно)', exact=True).fill('Белый')
                 page.get_by_role('button', name='Сохранить изменения', exact=True).click()
-                panel.get_by_text('Действия с заказом', exact=True).click()
                 panel.get_by_role('button', name='Добавить пропущенную выполненную работу').click()
                 page.get_by_role('combobox', name='Пропущенная работа из каталога', exact=True).select_option('W09')
                 page.get_by_role('combobox', name='Исполнитель', exact=True).select_option(first)
@@ -51,7 +51,8 @@ def exercise_owner_order(db, directory, chromium, owner, first, second):
                 page.get_by_label('Дата и время выполнения').fill('2026-11-12T14:00')
                 page.get_by_label('Причина исправления').fill('Проверка предыдущей смены')
                 page.get_by_role('button', name='Записать выполненную работу').click()
-                expect(panel.get_by_text('Выполнение записано владельцем')).to_be_visible()
+                panel.get_by_role('button', name='Изменить заказ', exact=True).click()
+                expect(rates.get_by_text('Выполнение записано владельцем')).to_be_visible()
                 result = next(o for o in db.rpc(owner, 'garage_list_orders') if o['vehicle'] == vehicle)
                 assert result['colour'] == 'Белый' and len(result['tasks']) == 2
                 assert all({p['mechanic_id'] for p in t['participants']} == {first, second} for t in result['tasks'])

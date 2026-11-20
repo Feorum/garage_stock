@@ -93,7 +93,7 @@ export function Omission({ order, staff, client, mutate, close, saved, reload }:
   return (
     <form class="new-order-form completion-form" onSubmit={submit}>
       <fieldset class="order-form-fields" disabled={pending}>
-        <legend>Добавление пропущенной выполненной работы · {current.order_number}</legend>
+        <legend>Добавление пропущенной выполненной работы</legend>
         <p>Автомобиль: {current.vehicle}</p>
         <p>В истории будет указано, что работу записал владелец.</p>
         <div class="form-grid">

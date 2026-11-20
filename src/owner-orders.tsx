@@ -13,6 +13,7 @@ import type { GiftOffer } from './owner-gift';
 import { SourceReference } from './owner-summary';
 import { OwnerDetail } from './owner-detail';
 import { OrderEditor } from './owner-editor';
+import { OwnerOrderEdit } from './owner-order-edit';
 import { Omission } from './owner-omission';
 import { OwnerOrderList } from './owner-order-list';
 
@@ -65,8 +66,10 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
     drafts = useRef(new Map<string, string>()),
     current = useRef<Snapshot>(empty);
   const view = useRef('');
+  const giftPrompt = useRef<string>();
   view.current = [recordId, editor?.mode, omission?.id].join('/');
-  const id = recordId?.replace(/^intake-/, '');
+  const editingOrder = Boolean(recordId?.startsWith('edit-'));
+  const id = recordId?.replace(/^(?:intake-|edit-)/, '');
   const activeOrder =
     data.orders.find((o) => o.id === id) ||
     data.orders.find((o) => o.id === data.intakes.find((i) => i.id === id)?.order_id);
@@ -143,6 +146,9 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
     setEditor(null);
     setOmission(null);
   }, [id]);
+  useEffect(() => {
+    if (!editingOrder) giftPrompt.current = undefined;
+  }, [editingOrder]);
   async function mutate<T>(name: string, args: Record<string, unknown>): Promise<T> {
     if (!navigator.onLine) throw new Error('Offline');
     const origin = view.current;
@@ -156,8 +162,8 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
   }
   async function freshSeed(): Promise<EditorSeed | null> {
     const latest = await refresh();
-    if (editor?.mode === 'edit') {
-      const order = latest.orders.find((o) => o.id === editor.order?.id && o.status === 'published');
+    if (editingOrder) {
+      const order = latest.orders.find((o) => o.id === activeOrder?.id && o.status === 'published');
       return order
         ? { mode: 'edit', order, intake: latest.intakes.find((i) => i.order_id === order.id) }
         : null;
@@ -201,8 +207,9 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
     setOmission(null);
     navigate('orders');
   };
+  const refreshOrder = async () => { await refresh(); };
   const detail = Boolean(id || editor || omission);
-  const orderDetail = Boolean(activeOrder && !editor && !omission);
+  const orderDetail = editingOrder || Boolean(activeOrder && !editor && !omission);
   return (
     <div class={'owner-orders' + (detail ? ' has-detail' : '') + (orderDetail ? ' full-order' : '')}>
       {loadError && (
@@ -236,7 +243,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
                 id="order-search"
                 type="search"
                 aria-label="Поиск заказов"
-                placeholder="Автомобиль, VIN или номер"
+                placeholder="Автомобиль или VIN"
                 value={query}
                 onInput={(e) => setQuery(e.currentTarget.value)}
               />
@@ -282,7 +289,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
               <h2>Подходящие заказы не найдены</h2>
               <p>
                 {query
-                  ? 'Попробуйте другой автомобиль, VIN или номер заказа.'
+                  ? 'Попробуйте другой автомобиль или VIN.'
                   : 'Здесь появятся заказы и заявки менеджеров.'}
               </p>
             </div>
@@ -320,6 +327,12 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
                   )
                 }
               />
+            ) : activeOrder && editingOrder ? (
+              <OwnerOrderEdit key={activeOrder.id} order={activeOrder} intake={activeIntake}
+                promptGift={giftPrompt.current === activeOrder.id} offer={data.giftOffer}
+                giftError={data.giftError} client={client} staff={data.staff} mutate={mutate}
+                refreshOrder={refreshOrder} notify={setNotice} reload={freshSeed} saved={afterSave}
+                close={() => navigate('orders', activeOrder.id)} />
             ) : activeOrder ? (
               <OwnerDetail
                 key={activeOrder.id}
@@ -327,15 +340,14 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
                 offer={data.giftOffer}
                 intake={activeIntake}
                 client={client}
-                staff={data.staff}
                 mutate={mutate}
-                reload={async () => {
-                  await refresh();
-                }}
+                reload={refreshOrder}
                 notify={setNotice}
-                edit={(promptGift = false) =>
-                  setEditor({ mode: 'edit', order: activeOrder, intake: activeIntake, promptGift })
-                }
+                edit={(promptGift = false) => {
+                  setNotice('');
+                  giftPrompt.current = promptGift ? activeOrder.id : undefined;
+                  navigate('orders', 'edit-' + activeOrder.id);
+                }}
                 omit={() => setOmission(activeOrder)}
                 back={back}
               />

@@ -47,11 +47,14 @@ def exercise_owner_review(browser, base, smoke, output):
     partial = visit('Belgee X50', 'review', [item('Двери', 1000), item('Бампер', None, [], 'pending')], planned_date='2026-11-02')
     active = visit('Geely Okavango', 'active', [item('Фары', 1250)])
     cancelled = visit('Geely Tugella', 'cancelled', [item('Багажник', None, [], 'cancelled')], planned_date='2026-10-20')
-    # Minsk midnight falls at 21:00 UTC. Only Monjaro closed in November.
-    current = visit('Geely Monjaro', 'closed', [item('Капот', 31000, [first, second], agreed=29000)],
+    # Minsk midnight falls at 21:00 UTC. Two orders closed on November 1.
+    current = visit('Geely Monjaro', 'closed', [item('Капот', 30000, [first, second], agreed=28000), item('Фары', 1000)],
                      '2026-10-31T21:00:00Z', planned_date='2026-10-18')
+    visits[-1]['tasks'][0]['completed_at'] = '2026-10-31T18:30:00Z'
+    visits[-1]['tasks'][1]['completed_at'] = '2026-10-31T20:00:00Z'
     previous = visit('Belgee X70', 'closed', [item('Крылья', 48000), item('Сохранённая работа', 2013, [], 'pending')],
                      '2026-10-31T20:59:59Z', planned_date='2026-10-16')
+    later = visit('Geely Cityray', 'closed', [item('Двери', 2500)], '2026-11-01T00:01:00+02:00', planned_date='2026-10-17')
     fixture = {'orders': visits, 'reviewPrices': prices}
     labels = ('На проверке', 'Все заказы', 'Отчёты и история')
 
@@ -77,7 +80,7 @@ def exercise_owner_review(browser, base, smoke, output):
             expect(page.get_by_role('heading', name=labels[0], exact=True)).to_be_visible()
             for order_id in (ready, missing, zero, unavailable, partial):
                 expect(order_link(page, order_id)).to_be_visible()
-            for order_id in (active, current, previous, cancelled):
+            for order_id in (active, current, previous, later, cancelled):
                 expect(order_link(page, order_id)).to_have_count(0)
             card = order_card(page, ready)
             def job(card, name):
@@ -133,13 +136,13 @@ def exercise_owner_review(browser, base, smoke, output):
             expect(order_card(page, ready).locator('time')).to_have_attribute('datetime', '2026-10-30')
             expect(order_card(page, active)).to_contain_text('Дата не назначена')
             archive = page.locator('.owner-archive')
-            for order_id in (current, previous, cancelled):
+            for order_id in (current, previous, later, cancelled):
                 expect(order_link(page, order_id)).to_be_hidden()
             archive.locator('summary').click()
             expect(archive).to_have_attribute('open', '')
-            for order_id in (current, previous, cancelled):
+            for order_id in (current, previous, later, cancelled):
                 expect(order_link(page, order_id)).to_be_visible()
-            assert archive.locator('article').evaluate_all(order_ids) == [previous, current, cancelled]
+            assert archive.locator('article').evaluate_all(order_ids) == [previous, later, current, cancelled]
             expect(order_card(page, current)).to_contain_text('Закрыт')
             expect(order_card(page, cancelled)).to_contain_text('Отменён')
             expect(order_card(page, ready)).to_have_class(re.compile(r'\border-weekday-5\b'))
@@ -152,9 +155,10 @@ def exercise_owner_review(browser, base, smoke, output):
             expect(nav.get_by_role('link', name=labels[2])).to_have_attribute('aria-current', 'page')
             expect(page.get_by_role('heading', name=labels[2], exact=True)).to_be_visible()
             expect(order_card(page, previous).locator('time')).to_have_attribute('datetime', '2026-10-31')
-            assert page.locator('.owner-board > .owner-board-list > article').evaluate_all(order_ids) == [previous, current]
+            assert page.locator('.owner-board > .owner-board-list > article').evaluate_all(order_ids) == [later, current, previous]
+            expect(order_card(page, current).locator('.owner-board-services li > span:first-child')).to_have_text(['Фары', 'Капот'])
             summary = page.get_by_role('region', name='Итог за месяц')
-            expect(summary).to_contain_text(re.compile(r'310,00\s*BYN'))
+            expect(summary).to_contain_text(re.compile(r'335,00\s*BYN'))
             month = page.get_by_label('Месяц отчёта')
             month.select_option('2026-10')
             expect(summary).to_contain_text(re.compile(r'500,13\s*BYN'))

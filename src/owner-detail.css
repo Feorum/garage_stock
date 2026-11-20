@@ -3,17 +3,38 @@
 .owner-board-detail:has(.full-order) > h1 {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
 }
-.order-detail-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .125rem var(--gap-control); }
-.order-detail-head h2 { grid-area: 1 / 1; align-self: center; }
-.order-detail-head .order-back {
-  grid-area: 1 / 2; align-self: center; min-height: 44px; padding: .25rem;
-  border: 0; background: none; color: var(--accent); font-size: .88rem;
+.order-back {
+  min-height: 44px; margin-block-end: var(--gap-tight); padding: 0 var(--gap-tight);
+  border: 0; background: none; color: var(--accent); font-size: .9rem;
 }
-.order-detail-head p { grid-column: 1 / -1; }
+.order-back:hover { text-decoration: underline; }
+.order-detail-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .125rem var(--gap-control); }
+.order-detail-head h2 { grid-area: 1 / 1; align-self: center; margin: 0; }
+.order-detail-head .owner-board-phase { grid-area: 1 / 2; align-self: center; }
+.order-detail-head > p, .order-detail-head .order-manager-comment { grid-column: 1 / -1; }
 .order-detail-head p { color: var(--muted); margin: 0; font-size: .875rem; }
 .order-detail-head p:empty { display: none; }
-.order-detail-head h2 { margin: 0; }
-.order-detail-meta { font-weight: 600; }
+.order-detail-head .order-manager-comment {
+  display: grid; gap: .125rem; padding: var(--gap-tight) var(--gap-control); margin-block-start: var(--gap-tight);
+  background: var(--surface-raised); border-radius: .25rem;
+}
+.order-detail-head .order-manager-comment h3 { margin: 0; font-size: .8rem; color: var(--muted); }
+.order-detail-head .order-manager-comment p, .order-detail-instructions { white-space: pre-wrap; overflow-wrap: anywhere; }
+.order-detail-head .order-manager-comment p { color: var(--ink); }
+.owner-price-section { display: grid; min-width: 0; gap: var(--gap-tight); }
+.owner-price-section h3 { margin: 0; }
+.owner-order-detail .owner-price-rows { display: grid; gap: .125rem; padding: 0; margin: 0; list-style: none; }
+.owner-price-rows li {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); gap: var(--gap-control);
+  align-items: start; padding: var(--gap-tight) var(--gap-row); background: var(--surface-raised);
+  border-radius: .25rem; line-height: 1.3; overflow-wrap: anywhere;
+}
+.owner-price-rows strong { font-weight: 600; }
+.owner-price-rows span { font-variant-numeric: tabular-nums; text-align: end; }
+.owner-price-rows li.is-cancelled { color: var(--muted); }
+.owner-price-rows li.is-cancelled strong { text-decoration: line-through; }
+.owner-price-actions > .button { font-size: .875rem; }
+.owner-order-detail > .order-actions > .button { padding-inline: var(--gap-control); font-size: .875rem; }
 .order-price-list {
   table-layout: fixed;
   border-collapse: collapse;
@@ -66,9 +87,8 @@
 .owner-order-detail .financial-summary { margin: 0; padding: var(--gap-control); background: var(--surface-raised); }
 .owner-order-detail .financial-summary dl { margin: 0; }
 .owner-order-detail .financial-summary dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
-.order-management > summary, .order-handoff-history > summary { cursor: pointer; font-weight: 600; }
-.order-management[open] > summary, .order-handoff-history[open] > summary { margin-bottom: .5rem; }
-.order-management > .order-actions { border: 0; padding-top: 0; }
+.order-handoff-history > summary { min-height: 44px; align-content: center; cursor: pointer; font-weight: 600; }
+.order-handoff-history[open] > summary { margin-bottom: var(--gap-tight); }
 @media (max-width: 650px) {
   .owner-order-pane > .owner-order-detail { padding: .75rem; }
   .order-price-list, .order-price-list tbody { display: block; }

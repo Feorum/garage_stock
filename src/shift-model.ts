@@ -1,5 +1,5 @@
 import { workshopDay } from './workspace-types';
-import { compareOrderDays, orderDay, workshopOrderDay } from './order-calendar';
+import { compareOrderDays, newestFirst, orderDay, workshopOrderDay } from './order-calendar';
 
 export type ParticipantStatus = 'assigned' | 'working' | 'blocked' | 'confirmed';
 export interface Participant {
@@ -48,6 +48,7 @@ export interface VehicleWorkflow {
   holder_name?: string | null;
   taken_at?: string | null;
   handed_at?: string | null;
+  handed_by?: string | null;
   handoff_note?: string | null;
   returned_at?: string | null;
   return_note?: string | null;
@@ -173,8 +174,8 @@ export function visibleProgress(order: Order) {
   return { completed: order.vehicle_workflow?.completed_count ?? order.tasks.filter(task => task.status === 'completed').length,
     unfinished: order.vehicle_workflow?.unfinished_count ?? order.tasks.filter(task => !isTerminal(task)).length };
 }
-export function sortVisits<T extends Order>(orders: T[], day: (order: T) => string = orderDay) {
-  return orders.map(order => ({ order, day: day(order) })).sort((a, b) =>
+export function sortVisits<T extends Order>(orders: T[]) {
+  return orders.map(order => ({ order, day: orderDay(order) })).sort((a, b) =>
     compareOrderDays(a.day, b.day) ||
     (a.order.order_number || '').localeCompare(b.order.order_number || '', 'ru', { numeric: true }) ||
     a.order.id.localeCompare(b.order.id)).map(({ order }) => order);
@@ -191,14 +192,29 @@ interface Group {
   title: string;
   orders: Order[];
 }
-export function historyOrderDay(order: Order, id: string) {
-  const scheduled = orderDay(order);
-  if (scheduled) return scheduled;
+export function hasMechanicHistory(order: Order, id: string) {
+  const flow = order.vehicle_workflow;
+  return order.tasks.some(task => mine(task, id) === 'confirmed') || flow?.handed_by === id ||
+    (!!flow?.handed_at && flow.holder_id === id);
+}
+
+export function historyOrderDate(order: Order, id: string) {
   const times = order.tasks.filter((task) => mine(task, id) === 'confirmed').map((task) => finishedAt(task, id));
-  if (order.vehicle_workflow?.handed_at) times.push(order.vehicle_workflow.handed_at);
-  return workshopOrderDay(times.sort().pop());
+  const flow = order.vehicle_workflow;
+  if (flow?.handed_at && (flow.handed_by === id || flow.holder_id === id)) times.push(flow.handed_at);
+  const latest = times.sort(newestFirst)[0];
+  const actualDay = workshopOrderDay(latest);
+  return { day: actualDay || orderDay(order), timestamp: actualDay ? latest : undefined };
+}
+
+export function sortHistoryVisits<T extends Order>(orders: T[], mechanic: string) {
+  return orders.filter(order => hasMechanicHistory(order, mechanic))
+    .map(order => ({ order, ...historyOrderDate(order, mechanic) }))
+    .sort((a, b) => b.day.localeCompare(a.day) || newestFirst(a.timestamp, b.timestamp) || a.order.id.localeCompare(b.order.id))
+    .map(({ order }) => order);
 }
 export function vehicleGroups(section: Section, orders: Order[], id: string): Group[] {
+  if (section === 'history') return [{ title: 'История по автомобилям', orders: sortHistoryVisits(orders, id) }];
   const groups = new Map<string, Order[]>();
   function add(title: string, order: Order) {
     const group = groups.get(title) || [];
@@ -214,16 +230,10 @@ export function vehicleGroups(section: Section, orders: Order[], id: string): Gr
     'Переданы владельцу',
     'Завершённые автомобили',
   ];
-  for (const order of sortVisits(orders, section === 'history' ? entry => historyOrderDay(entry, id) : orderDay)) {
+  for (const order of sortVisits(orders)) {
     const workflow = order.vehicle_workflow;
     const member = order.tasks.some((task) => mine(task, id));
     const holder = workflow?.holder_id === id;
-    const historical =
-      order.tasks.some((task) => mine(task, id) === 'confirmed') || (holder && !!workflow?.handed_at);
-    if (section === 'history') {
-      if (historical) add('История по автомобилям', order);
-      continue;
-    }
     if (section === 'manager-orders') {
       if (order.source !== 'manager' || order.status !== 'published') continue;
       if (workflow?.state === 'available' && workflow.can_take) add('Можно взять', order);
@@ -233,20 +243,13 @@ export function vehicleGroups(section: Section, orders: Order[], id: string): Gr
     }
     if (section === 'assigned' && order.source !== 'owner') continue;
     if (order.status !== 'published') {
-      if (section === 'my-work' && historical) add('Завершённые автомобили', order);
+      if (section === 'my-work' && hasMechanicHistory(order, id)) add('Завершённые автомобили', order);
     } else if (workflow?.state === 'active' && holder) add('Мои автомобили в работе', order);
     else if (workflow?.state === 'active' && member) add('Работаю в команде', order);
     else if (workflow?.state === 'review' && (member || holder)) add('Переданы владельцу', order);
     else if (workflow?.can_take) add(order.source === 'owner' ? 'Назначенные автомобили' : 'Можно взять', order);
     else if (!workflow && member) add('Назначенные автомобили', order);
   }
-  if (section === 'history')
-    return [
-      {
-        title: 'История по автомобилям',
-        orders: groups.get('История по автомобилям') || [],
-      },
-    ];
   return (section === 'manager-orders' ? queueTitles : shiftTitles)
     .filter((title) => groups.has(title))
     .map((title) => ({ title, orders: groups.get(title)! }));

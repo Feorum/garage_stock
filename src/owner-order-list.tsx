@@ -17,7 +17,6 @@ function OrderRows({ rows, selectedId, open }: { rows: Row[]; selectedId?: strin
       row.order ? orderAuthor(row.order) : 'Менеджер',
       row.source && row.label,
       row.row && 'Строка ' + row.row,
-      row.order?.order_number,
       row.order?.vehicle_workflow?.holder_name,
       row.order?.manager_label || raw?.manager_label,
     ].filter(Boolean);
