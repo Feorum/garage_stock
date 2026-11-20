@@ -203,8 +203,9 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
     navigate('orders');
   };
   const detail = Boolean(id || editor || omission);
+  const orderDetail = Boolean(activeOrder && !editor && !omission);
   return (
-    <div class={'owner-orders' + (detail ? ' has-detail' : '')}>
+    <div class={'owner-orders' + (detail ? ' has-detail' : '') + (orderDetail ? ' full-order' : '')}>
       {loadError && (
         <p role="alert" class="notice">
           {loadError}{' '}
@@ -229,7 +230,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
         </p>
       )}
       <div class="owner-order-layout">
-        <section class="owner-order-index" aria-label="Список заказов">
+        {!orderDetail && <section class="owner-order-index" aria-label="Список заказов">
           <div class="order-toolbar">
             <div class="order-search-controls">
               <input
@@ -339,7 +340,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
               );
             })}
           </div>
-        </section>
+        </section>}
         {detail && (
           <section class="owner-order-pane" aria-label="Подробности заказа">
             {editor ? (

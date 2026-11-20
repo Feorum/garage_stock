@@ -4,6 +4,8 @@ export interface Candidate { mechanic_id: string; name: string; former: boolean 
 export interface Share extends Candidate { basis_points: number; kopeks: number }
 export interface ProposedShare extends Candidate { basis_points: number; kopeks: number | null }
 export interface Payout {
+  version?: number;
+  candidates?: Candidate[];
   pool_kopeks: number | null;
   shares: Share[];
   suggested_pool_kopeks?: number | null;
@@ -29,6 +31,7 @@ export interface PayItem extends Payout, PrivatePricing {
   completed_at: string;
   candidates: Candidate[];
 }
+export type PayEditorItem = Pick<PayItem, 'task_id' | 'version' | 'pool_kopeks' | 'shares' | 'suggested_shares' | 'suggested_pool_kopeks' | 'candidates'>;
 export interface Revision { version: number; actor_name: string; saved_at: string; pool_kopeks: number; shares: Share[]; reason: string }
 
 const moneyFormat = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'BYN', currencyDisplay: 'code' });
@@ -48,6 +51,22 @@ export function hundredths(value: string): number | null {
   const match = /^(\d{1,10})(?:[,.](\d{1,2}))?$/.exec(value.trim());
   if (!match) return null;
   return Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'));
+}
+
+export function initialAmounts(item: PayEditorItem): Record<string, string> {
+  const shares = item.pool_kopeks == null ? item.suggested_shares || [] : item.shares;
+  const amounts: Record<string, string> = {};
+  for (const person of item.candidates) {
+    const share = shares.find(s => s.mechanic_id === person.mechanic_id);
+    if (share || !person.former) amounts[person.mechanic_id] = share?.kopeks == null ? '' : decimal(share.kopeks);
+  }
+  return amounts;
+}
+
+export function equalAmounts(ids: string[], total: number): Record<string, string> {
+  const each = Math.floor(total / ids.length);
+  const remainder = total % ids.length;
+  return Object.fromEntries([...ids].sort().map((id, i) => [id, decimal(each + (i < remainder ? 1 : 0))]));
 }
 
 export async function payRead<T>(client: GarageClient, method: string, args?: Record<string, unknown>): Promise<T> {

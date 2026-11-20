@@ -1,5 +1,5 @@
 import './owner-workflow.css';
-import { useRef, useState } from 'preact/hooks';
+import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { customerPrice, money, decimal, hundredths, payRead, type Payout, type PrivatePricing } from './pay-model';
 import { isConflict } from './owner-model';
 import type { GarageClient } from './shift-model';
@@ -24,7 +24,7 @@ export function PayoutSummary({ payout }: { payout: Payout }) {
         <ul>
           {shares!.map((s) => (
             <li key={s.mechanic_id}>
-              {s.name} · {decimal(s.basis_points)}%{s.kopeks != null && ' · ' + money(s.kopeks)}
+              {s.name} · {s.kopeks == null ? 'Сумма не указана' : money(s.kopeks)}
             </li>
           ))}
         </ul>
@@ -38,22 +38,26 @@ export function TaskPricing({
   taskId,
   value,
   reload,
+  onClose,
 }: {
   client: GarageClient;
   taskId: string;
   value: PrivatePricing;
   reload(): Promise<void>;
+  onClose?(message?: string): void;
 }) {
-  const [edit, setEdit] = useState(false);
-  const [base, setBase] = useState(0);
-  const [amount, setAmount] = useState('');
-  const [memo, setMemo] = useState('');
+  const [edit, setEdit] = useState(Boolean(onClose));
+  const [base, setBase] = useState(value.private_version ?? 0);
+  const [amount, setAmount] = useState(value.override_kopeks == null ? '' : decimal(value.override_kopeks));
+  const [memo, setMemo] = useState(value.private_comment || '');
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
   const request = useRef({ key: '', id: '' });
   const sending = useRef(false);
+  const amountInput = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => { if (edit) amountInput.current?.focus(); }, [edit]);
   const stale = conflict || (edit && base !== value.private_version);
   function open() {
     setBase(value.private_version ?? 0);
@@ -83,14 +87,22 @@ export function TaskPricing({
     try {
       await payRead(client, 'garage_save_task_pricing', { ...args, p_request_id: request.current.id });
       request.current = { key: '', id: '' };
-      await reload();
       setEdit(false);
       setSaved(true);
+      try {
+        await reload();
+      } catch {
+        const message = 'Стоимость сохранена. Обновите данные заказа.';
+        if (onClose) onClose(message);
+        else setError(message);
+        return;
+      }
+      onClose?.('Стоимость и комментарий сохранены.');
     } catch (failure) {
       if (isConflict(failure)) {
         setConflict(true);
         setError('Стоимость или комментарий изменились в другой сессии.');
-        await reload();
+        await reload().catch(() => {});
       } else setError('Сохранение не подтверждено. Проверьте связь и повторите попытку.');
     } finally {
       sending.current = false;
@@ -100,13 +112,13 @@ export function TaskPricing({
   const price = customerPrice(value);
   return (
     <section class="owner-task-price" aria-label="Стоимость работы · только владельцу">
-      <dl class="task-price-values">
+      {!onClose && <dl class="task-price-values">
         <div>
           <dt>Цена для клиента</dt>
           <dd>{price == null ? 'Цена не указана' : money(price)}</dd>
         </div>
-      </dl>
-      {value.private_comment && (
+      </dl>}
+      {!onClose && value.private_comment && (
         <p class="owner-private-comment">
           <strong>Личный комментарий владельца</strong>
           <br />
@@ -121,6 +133,7 @@ export function TaskPricing({
               Стоимость работы, BYN
               <input
                 type="text"
+                ref={amountInput}
                 inputMode="decimal"
                 autoComplete="off"
                 value={amount}
@@ -138,7 +151,8 @@ export function TaskPricing({
             </label>
             {stale && (
               <div class="notice">
-                <p>Ваш ввод сохранён в форме. Сравните его с актуальными значениями выше.</p>
+                <p>Ваш ввод сохранён. Актуальная цена: {price == null ? 'не указана' : money(price)}.
+                  {value.private_comment && ' Комментарий: ' + value.private_comment}</p>
                 {base !== value.private_version ? (
                   <button
                     class="button"
@@ -152,7 +166,7 @@ export function TaskPricing({
                     Продолжить с моими значениями
                   </button>
                 ) : (
-                  <button class="button" type="button" onClick={() => void reload()}>
+                  <button class="button" type="button" onClick={() => void reload().catch(() => {})}>
                     Обновить стоимость
                   </button>
                 )}
@@ -168,6 +182,7 @@ export function TaskPricing({
                 onClick={() => {
                   setEdit(false);
                   setError('');
+                  onClose?.();
                 }}
               >
                 Отмена
@@ -176,7 +191,7 @@ export function TaskPricing({
           </fieldset>
         </form>
       ) : (
-        value.private_version != null && (
+        !onClose && value.private_version != null && (
           <button class="button" type="button" onClick={open}>
             Изменить стоимость
           </button>

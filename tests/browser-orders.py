@@ -178,6 +178,7 @@ def run(args):
             smoke.ready(page, 'Test Owner')
             page.locator(f'[data-order-id="{owner_order["id"]}"]').click()
             card = page.locator(f'[data-task-id="{pending["id"]}"]')
+            card.get_by_role('button', name='Команда и заметки', exact=True).click()
             card.get_by_role('button', name='Переназначить', exact=True).click()
             card.get_by_role('combobox', name='Новый механик', exact=True).select_option(OTHER)
             card.get_by_label('Причина', exact=True).fill('Synthetic reassignment reason')

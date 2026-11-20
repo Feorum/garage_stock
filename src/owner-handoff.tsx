@@ -95,8 +95,10 @@ export function OwnerHandoff({
       )}
       {workflow.returned_at && <p>Последний возврат · {instantLabel(workflow.returned_at)}</p>}
       {workflow.return_note && <p class="handoff-note">Механику при возврате · {workflow.return_note}</p>}
-      {(review || workflow.handed_at) && (
-        <div class="handoff-snapshot">
+      {snapshot.length > 0 && (
+        <details class="order-handoff-history">
+          <summary>Состав работ при передаче</summary>
+          <div class="handoff-snapshot">
           <SnapshotList
             title="Выполнено при передаче"
             tasks={snapshot.filter((t) => t.status === 'completed')}
@@ -111,7 +113,8 @@ export function OwnerHandoff({
               tasks={snapshot.filter((t) => t.status === 'cancelled')}
             />
           )}
-        </div>
+          </div>
+        </details>
       )}
       {(workflow.can_return || workflow.can_close) && (
         <fieldset disabled={busy}>

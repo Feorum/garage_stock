@@ -1,156 +1,167 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { GarageClient } from './shift-model';
-import { decimal, hundredths, money, payRead, title, type PayItem } from './pay-model';
+import { equalAmounts, hundredths, initialAmounts, money, payRead, type PayEditorItem } from './pay-model';
 
 interface Props {
-  item: PayItem;
+  item: PayEditorItem;
   client: GarageClient;
+  unavailable?: boolean;
   close(): void;
   saved(): Promise<void>;
+  reloadItem(): Promise<PayEditorItem | null>;
 }
 
-export function PayEditor({ item, client, close, saved }: Props) {
-  const [version, setVersion] = useState(item.version);
-  const initialPool = item.pool_kopeks ?? item.suggested_pool_kopeks;
-  const [pool, setPool] = useState(initialPool == null ? '' : decimal(initialPool));
-  const [equal, setEqual] = useState(
-    item.pool_kopeks == null ? Boolean(item.suggested_shares?.length) : Boolean(item.equal_split)
-  );
+const rosterKey = (item: PayEditorItem) => JSON.stringify(item.candidates.map(p => [p.mechanic_id, p.former]).sort());
+
+export function PayEditor({ item, client, close, saved, reloadItem, unavailable }: Props) {
+  const [base, setBase] = useState(item);
+  const sourceAtMerge = useRef(item);
+  const [amounts, setAmounts] = useState(() => initialAmounts(item));
   const [reason, setReason] = useState('');
   const [zero, setZero] = useState(false);
-  const [parts, setParts] = useState<Record<string, string>>(() => {
-    const result: Record<string, string> = {};
-    const final = item.candidates.filter(person => !person.former);
-    const initialShares = item.pool_kopeks == null ? item.suggested_shares || [] : item.shares;
-    for (const person of item.candidates) {
-      const prior = initialShares.find(share => share.mechanic_id === person.mechanic_id);
-      if (prior) result[person.mechanic_id] = decimal(prior.basis_points);
-      else if (!person.former) result[person.mechanic_id] = final.length === 1 ? '100' : '';
-    }
-    return result;
-  });
+  const [acknowledged, setAcknowledged] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [latest, setLatest] = useState<PayItem | null>(null);
+  const [conflict, setConflict] = useState<PayEditorItem | 'reload' | 'unavailable' | null>(null);
   const request = useRef({ fingerprint: '', id: '' });
-  const poolField = useRef<HTMLInputElement>(null);
-  useLayoutEffect(() => { poolField.current?.focus(); }, []);
-  const inFlight = useRef(false);
-  const cents = hundredths(pool);
-  const chosen = item.candidates.filter(person => person.mechanic_id in parts);
-  const values = chosen.map(person => hundredths(parts[person.mechanic_id]));
-  const total = values.reduce<number>((sum, part) => sum + (part ?? 0), 0);
-  const reasonNeeded = version > 0 || chosen.some(person => person.former);
-  const previews = new Map<string, number>();
-  if (cents != null && total === 10000 && values.every(n => n != null && n <= 10000)) {
-    const denominator = equal ? chosen.length : 10000;
-    const ranked = chosen.map((person, index) => {
-      const weight = equal ? 1 : values[index]!;
-      // Divide first so even large BYN inputs stay within the exact integer range.
-      const tail = (cents % denominator) * weight;
-      const base = Math.floor(cents / denominator) * weight + Math.floor(tail / denominator);
-      return { id: person.mechanic_id, base, remainder: tail % denominator };
-    }).sort((a, b) => b.remainder - a.remainder || a.id.localeCompare(b.id));
-    const extra = cents - ranked.reduce((sum, person) => sum + person.base, 0);
-    ranked.forEach((person, i) => previews.set(person.id, person.base + Number(i < extra)));
+  const sending = useRef(false);
+  const mounted = useRef(false);
+  const form = useRef<HTMLFormElement>(null);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    form.current?.querySelector<HTMLInputElement>('input[inputmode="decimal"]')?.focus();
+    return () => { mounted.current = false; };
+  }, []);
+
+  const incoming = item.version > base.version || (item.version === base.version &&
+    rosterKey(item) !== rosterKey(base) && rosterKey(item) !== rosterKey(sourceAtMerge.current));
+  const latest = unavailable ? 'unavailable' : conflict ?? (incoming ? item : null);
+  const chosen = base.candidates.filter(person => person.mechanic_id in amounts);
+  const missing = base.shares.filter(person => !base.candidates.some(candidate => candidate.mechanic_id === person.mechanic_id));
+  const filled = chosen.map(p => amounts[p.mechanic_id].trim()).filter(Boolean).map(hundredths);
+  const subtotal = filled.reduce<number>((sum, n) => sum + (n ?? 0), 0);
+  const valid = filled.every(n => n !== null) && subtotal <= 999999999999;
+  const total = chosen.length && valid && filled.length === chosen.length ? subtotal : null;
+  const needsReason = base.version > 0 || chosen.some(person => person.former);
+
+  function change(next: Record<string, string>) {
+    setAmounts(next);
+    setZero(false);
+    setError('');
+  }
+  async function loadCurrent() {
+    try {
+      const current = await reloadItem();
+      if (mounted.current) setConflict(current || 'unavailable');
+    } catch {
+      if (mounted.current) setConflict('reload');
+    }
+  }
+  function useCurrent(current: PayEditorItem) {
+    const next = initialAmounts(current);
+    // A new contributor needs an explicit amount; preserve all still-eligible draft rows.
+    for (const p of current.candidates) {
+      if (p.mechanic_id in amounts) next[p.mechanic_id] = amounts[p.mechanic_id];
+      else if (!base.candidates.some(person => person.mechanic_id === p.mechanic_id) && !p.former) next[p.mechanic_id] = '';
+      else if (p.former && base.candidates.some(person => person.mechanic_id === p.mechanic_id)) delete next[p.mechanic_id];
+    }
+    setBase(current);
+    sourceAtMerge.current = item;
+    request.current = { fingerprint: '', id: '' };
+    setAmounts(next);
+    setConflict(null);
+    setAcknowledged(false);
+    setZero(false);
+    setError('');
   }
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
-    if (inFlight.current || latest) return;
-    setError('');
-    if (cents === null) return setError('Введите сумму в BYN, с точностью до копейки.');
-    if (cents === 0 && !zero) return setError('Подтвердите нулевую сумму.');
-    if (values.some(value => value === null || value > 10000) || total !== 10000)
-      return setError('Укажите долю каждого выбранного механика. Сумма долей должна составлять 100%.');
-    if (reasonNeeded && !reason.trim()) return setError('Укажите причину изменения или включения прежнего участника.');
+    if (sending.current || latest) return;
+    if (total === null) return setError('Введите корректную сумму в BYN для каждого выбранного механика.');
+    if (total === 0 && !zero) return setError('Подтвердите нулевую сумму.');
+    if (missing.length && !acknowledged) return setError('Проверьте изменения состава механиков.');
+    if (needsReason && !reason.trim()) return setError('Укажите причину изменения распределения.');
     const args = {
-      p_task_id: item.task_id, p_expected_version: version, p_pool_kopeks: cents,
-      p_shares: chosen.map((person, index) => ({ mechanic_id: person.mechanic_id, basis_points: values[index] })),
-      p_reason: reason.trim(), p_zero_confirmed: cents === 0 && zero, ...(equal ? { p_equal_split: true } : {})
+      p_task_id: base.task_id, p_expected_version: base.version,
+      p_amounts: chosen.map(p => ({ mechanic_id: p.mechanic_id, kopeks: hundredths(amounts[p.mechanic_id])! })),
+      p_reason: reason.trim(), p_zero_confirmed: total === 0 && zero,
     };
     const fingerprint = JSON.stringify(args);
     if (request.current.fingerprint !== fingerprint) request.current = { fingerprint, id: crypto.randomUUID() };
-    inFlight.current = true;
+    sending.current = true;
     setSaving(true);
+    setError('');
     try {
-      await payRead(client, 'garage_pay_save', { ...args, p_request_id: request.current.id });
-      await saved();
+      await payRead(client, 'garage_pay_save_amounts', { ...args, p_request_id: request.current.id });
+      if (mounted.current) await saved();
     } catch (failure) {
-      if ((failure as { code?: string }).code === '40001') {
-        try {
-          const list = await payRead<PayItem[]>(client, 'garage_pay_worklist');
-          const current = list.find(row => row.task_id === item.task_id);
-          if (current) setLatest(current);
-          setError('Распределение изменено в другой сессии. Ваш ввод сохранён.');
-        } catch {
-          setError('Распределение изменилось. Проверьте связь и повторите, чтобы получить последнюю версию.');
-        }
-      } else {
-        setError('Сохранение не подтверждено. Проверьте связь и повторите с теми же данными.');
-      }
+      if (!mounted.current) return;
+      const issue = failure as {code?: string};
+      if (issue.code === '40001') {
+        setConflict('reload');
+        await loadCurrent();
+      } else if (issue.code === '42501') setError('Для сохранения нужен доступ владельца.');
+      else if (issue.code === '22023') setError('Проверьте введённые суммы, состав механиков и причину изменения.');
+      else setError('Сохранение не подтверждено. Проверьте связь и повторите с теми же данными.');
     } finally {
-      inFlight.current = false;
-      setSaving(false);
+      sending.current = false;
+      if (mounted.current) setSaving(false);
     }
   }
 
-  function formerParticipation(id: string, included: boolean) {
-    const next = { ...parts };
-    if (included) next[id] = '';
-    else delete next[id];
-    setParts(next);
-    setEqual(false);
-    setError('');
-  }
-
-  return <form class="pay-editor" onSubmit={submit} onInput={event => {
-    const control = event.target;
-    if (control instanceof HTMLInputElement && control.type === 'checkbox') return;
-    if (!latest && error) setError('');
-  }}>
+  return <form ref={form} class="pay-editor" onSubmit={submit}>
     <fieldset disabled={saving}>
-      <legend class="sr-only">{title(item)} · {item.vehicle}</legend>
-      <label class="pay-pool">Сумма для распределения, BYN
-        <input required ref={poolField} inputMode="decimal" autoComplete="off" value={pool}
-          onInput={event => { setPool(event.currentTarget.value); setZero(false); }} />
-      </label>
-      {cents === 0 && <label class="pay-check"><input type="checkbox" checked={zero} required
-        onChange={event => { setZero(event.currentTarget.checked); setError(''); }} /> Подтверждаю сумму 0,00 BYN</label>}
-      <fieldset class="pay-shares"><legend>{equal ? 'Доли механиков · поровну' : 'Доли механиков'}</legend>
-        {!equal && item.suggested_shares?.length ? <button type="button" class="button" onClick={() => {
-          setParts(Object.fromEntries(item.suggested_shares!.map(s => [s.mechanic_id, decimal(s.basis_points)])));
-          setEqual(true);
-          setError('');
-        }}>Вернуть равные доли</button> : null}
-        {item.candidates.map(person => <div key={person.mechanic_id} class="pay-person">
-          {person.former && <label class="pay-check"><input type="checkbox" checked={person.mechanic_id in parts}
-            onChange={event => formerParticipation(person.mechanic_id, event.currentTarget.checked)} />
-            Включить прежнего участника · {person.name}</label>}
-          {person.mechanic_id in parts && <label>Доля · {person.name}, %
-            <input required inputMode="decimal" autoComplete="off" value={parts[person.mechanic_id]}
-              onInput={event => {
-                setEqual(false);
-                setParts({ ...parts, [person.mechanic_id]: event.currentTarget.value });
-              }} />
-          </label>}
-          {previews.has(person.mechanic_id) && <span>К распределению · {money(previews.get(person.mechanic_id)!)}</span>}
-        </div>)}
-        <p class="muted">Сумма долей · {decimal(total)}%</p>
-      </fieldset>
-      <label>{reasonNeeded ? 'Причина распределения' : 'Примечание (необязательно)'}
-        <textarea rows={2} maxLength={2000} required={reasonNeeded} value={reason}
-          onInput={event => setReason(event.currentTarget.value)} />
-      </label>
+      <legend>Оплата механикам</legend>
+      {base.candidates.map(person => <div key={person.mechanic_id} class="pay-person">
+        {person.former && <label class="pay-check"><input type="checkbox" checked={person.mechanic_id in amounts}
+          onChange={event => {
+            const next = { ...amounts };
+            if (event.currentTarget.checked) next[person.mechanic_id] = '';
+            else delete next[person.mechanic_id];
+            change(next);
+          }} /> Включить прежнего участника · {person.name}</label>}
+        {person.mechanic_id in amounts && <label class="pay-amount">
+          <span>{person.name}</span>
+          <span><input type="text" required inputMode="decimal" autoComplete="off" aria-label={person.name + ', BYN'}
+            value={amounts[person.mechanic_id]} placeholder="—" onInput={e => change({...amounts, [person.mechanic_id]: e.currentTarget.value})} />
+            <small aria-hidden="true">BYN</small></span>
+        </label>}
+      </div>)}
+      <div class="pay-total">
+        <strong>Итого механикам <output aria-label="Итого механикам">{total == null ? '—' : money(total)}</output></strong>
+        {chosen.length > 1 && <button type="button" class="button button-small"
+          disabled={!valid || !filled.length}
+          onClick={() => change(equalAmounts(chosen.map(p => p.mechanic_id), subtotal))}>Разделить поровну</button>}
+      </div>
+      {total === 0 && <label class="pay-check"><input type="checkbox" checked={zero} required
+        onChange={e => { setZero(e.currentTarget.checked); setError(''); }} /> Подтверждаю сумму 0,00 BYN</label>}
+      {missing.length > 0 && <div class="pay-conflict">
+        <p>В сохранённом распределении есть механики, которые больше не входят в состав этой работы.</p>
+        <ul>{missing.map(p => <li key={p.mechanic_id}>{p.name} · {money(p.kopeks)}</li>)}</ul>
+        <label class="pay-check"><input type="checkbox" checked={acknowledged} required onChange={e => setAcknowledged(e.currentTarget.checked)} />
+          Сохранить новое распределение без этих механиков</label>
+      </div>}
+      {needsReason ? <label>Причина распределения<textarea rows={2} required maxLength={2000} value={reason}
+        onInput={e => setReason(e.currentTarget.value)} /></label> : <details>
+        <summary>Добавить примечание</summary>
+        <textarea rows={2} aria-label="Примечание к распределению" maxLength={2000} value={reason} onInput={e => setReason(e.currentTarget.value)} />
+      </details>}
       {latest && <section class="pay-conflict" aria-label="Последняя сохранённая версия">
-        <strong>Сохранённая версия {latest.version} · {latest.pool_kopeks === null ? 'Ожидает распределения' : money(latest.pool_kopeks)}</strong>
-        <ul>{latest.shares.map(share => <li key={share.mechanic_id}>{share.name} · {decimal(share.basis_points)}% · {money(share.kopeks)}</li>)}</ul>
-        <button class="button" type="button" onClick={() => { setVersion(latest.version); setLatest(null); setError(''); }}>Продолжить с моими значениями</button>
+        {typeof latest === 'object' ? <>
+          <strong>Сохранённая версия {latest.version} · {latest.pool_kopeks === null ? 'Ожидает распределения' : money(latest.pool_kopeks)}</strong>
+          <ul>{latest.shares.map(p => <li key={p.mechanic_id}>{p.name} · {money(p.kopeks)}</li>)}</ul>
+          <p>Актуальный состав · {latest.candidates.filter(p => !p.former).map(p => p.name).join(', ')}</p>
+          <button class="button" type="button" onClick={() => useCurrent(latest)}>Продолжить с моими значениями</button>
+        </> : <>
+          <p>{latest === 'unavailable' ? 'Работа больше недоступна для распределения.' : 'Распределение изменилось. Обновите данные работы.'}</p>
+          <button class="button" type="button" onClick={() => void loadCurrent()}>Обновить данные</button>
+        </>}
       </section>}
-      <p role="status" class="pay-error">{error}</p>
-      <div class="pay-buttons">
-        <button class="button button-primary" type="submit" disabled={Boolean(latest)}>{saving ? 'Сохраняем…' : 'Сохранить распределение'}</button>
+      <p role="alert" class="pay-error">{error}</p>
+      <div class="work-decisions">
         <button class="button" type="button" onClick={close}>Закрыть</button>
+        <button class="button button-primary" type="submit" disabled={Boolean(latest)}>{saving ? 'Сохраняем…' : 'Сохранить распределение'}</button>
       </div>
     </fieldset>
   </form>;

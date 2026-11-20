@@ -12,8 +12,8 @@ Mechanics open the Owner’s orders (B), switch to Manager orders (G), or review
 - A contributor can send a vehicle to the Owner with completed or outstanding work. The Owner’s review tab lists each submitted vehicle with its jobs and agreed customer prices. The Owner can accept a completed vehicle or send it back with an optional note. A partial handoff shows which jobs are unfinished and can be returned directly to the mechanics.
 - Owners can create, interpret, edit and close orders, or record omitted work with its contributors and actual completion time. Source identities and the approved 19-work, 17-group catalogue still govern intake. The tinted package requires an explicit 5% or 15% option.
 - Reports count each completed service once and distinguish individual participation. Operational team status is visible on shared vehicles. Task notes, private intake text and financial fields have separate audiences.
-- In the Owner's order detail, each service shows its model-specific price. The Owner can edit the customer calculation and keep a private comment. A missing rate stays visible for review. Restoring the catalogue price keeps the original rate snapshot available.
-- A new completion proposes the full listed price in BYN, shared equally among confirmed contributors. The Owner can change the pay pool and each mechanic's percentage. A past participant can be included with a reason. Customer-price adjustments, mechanic pay and the business ledger are independent. Only the Owner can retrieve financial data or private calculation comments.
+- The Owner sees every job on one order screen, with its catalogue price, agreed customer price and mechanic pay side by side. A free job shows zero, and a missing rate is marked as unknown. Customer price adjustments and private notes can be edited within the order.
+- On a completed job, the Owner enters a BYN amount for each mechanic. The total updates as they type. An equal split is available, including for totals with an odd kopek. Earlier allocations remain available in the payment history. Mechanic pay is independent of the customer price, and only the Owner can view or change it.
 
 The Manager integration reads an approved complete copy of the existing
 operational spreadsheet. It keeps its existing vehicle rows, work-list columns,
@@ -104,6 +104,7 @@ in order before publishing the app. These migrations add shared mechanic check-o
 targeted board updates and per-job prices for Owner review.
 Apply `20261120155825_reversible_mechanic_checks.sql` and
 `20261120155922_preserve_pay_history_on_recheck.sql` together for reversible checkmarks.
+Apply `20261120162315_exact_mechanic_pay_amounts.sql` before deploying the order detail editor for per-mechanic BYN amounts.
 
 ## Validate
 

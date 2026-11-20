@@ -42,6 +42,8 @@ export function createClient() {
   const inlineCheckedOrders = new Set();
   const inlineChecks = new Map();
   const pricing = new Map();
+  const payouts = new Map();
+  const payHistory = clone(fixture.payHistory || {});
   const errorCounts = new Map();
   let serial = 0;
   let lostCreateResponse = false;
@@ -113,18 +115,20 @@ export function createClient() {
   function withTaskPricing(summary) {
     const itemKey = 'tasks' in summary ? 'tasks' : 'items';
     const items = (summary[itemKey] || []).map(item => {
+      if (item.payout && payouts.has(item.task_id)) Object.assign(item.payout, clone(payouts.get(item.task_id)));
       const stored = pricing.get(item.task_id);
       const catalogue = item.catalogue_kopeks ?? (item.net_amount != null ? Math.round(item.net_amount * 100) : null);
-      const override = stored?.override_kopeks ?? null;
+      const override = stored ? stored.override_kopeks : item.override_kopeks ?? null;
       const effective = override ?? catalogue;
       const tax = effective !== null && item.net_amount != null ? Math.round(effective * (item.vat_rate ?? .2)) : null;
       return {...item, catalogue_kopeks: catalogue, effective_kopeks: effective,
         effective_tax_kopeks: tax, effective_gross_kopeks: tax !== null ? effective + tax : null,
-        override_kopeks: override, private_comment: stored?.private_comment || '', private_version: stored?.version || 0};
+        override_kopeks: override, private_comment: stored?.private_comment ?? item.private_comment ?? '',
+        private_version: stored?.version ?? item.private_version ?? 0};
     });
-    const total = items.length && items.every(item => item.effective_kopeks != null)
+    const total = items.every(item => item.effective_kopeks != null)
       ? items.reduce((sum, item) => sum + item.effective_kopeks, 0) : null;
-    const tax = items.length && items.every(item => item.effective_tax_kopeks != null)
+    const tax = items.every(item => item.effective_tax_kopeks != null)
       ? items.reduce((sum, item) => sum + item.effective_tax_kopeks, 0) : null;
     return {...summary, [itemKey]: items, effective_total_kopeks: total, effective_tax_kopeks: tax,
       effective_gross_kopeks: tax !== null && total !== null ? total + tax : null};
@@ -165,6 +169,10 @@ export function createClient() {
     if (!session && !(fixture.allowLateRpcResponse && authenticatedAtRequest)) return errorResult('Sign in to continue.', '42501');
     if (globalThis.__garageRpcFixture) return globalThis.__garageRpcFixture(name, args);
     const owner = currentRole() === 'admin';
+    if (name.startsWith('garage_pay_') && !owner) return errorResult('Owner access required.', '42501');
+    if (name === 'garage_pay_worklist') return { data: (fixture.payWorklist || []).map(row =>
+      clone({...row, ...payouts.get(row.task_id)})), error: null };
+    if (name === 'garage_pay_history') return { data: clone(payHistory[args.p_task_id] || []), error: null };
     if (name.startsWith('garage_ledger_') && ledgerRpc) return ledgerRpc(name, args, owner);
     if (['garage_sheet_pull_sources', 'garage_connect_sheet_pull', 'garage_sheet_pull_reviews', 'garage_prepare_sheet_reader', 'garage_set_sheet_active'].includes(name)) {
       if (!owner) return errorResult('Owner access required.', '42501');
@@ -223,7 +231,10 @@ export function createClient() {
       if (!owner) return errorResult('Owner access required.', '42501');
       const order = orders.find(item => item.id === args.p_order_id);
       const items = (order?.tasks || []).map(task => ({ task_id: task.id, work_code: task.work_code, status: 'needs_pricing' }));
-      return { data: withTaskPricing(clone(fixture.financials || { status: 'needs_pricing', currency: 'BYN', tasks: items, totals: null })), error: null };
+      const summary = clone(fixture.financials || { status: 'needs_pricing', currency: 'BYN', tasks: items, totals: null });
+      const cancelled = new Set((order?.tasks || []).filter(task => task.status === 'cancelled').map(task => task.id));
+      if (summary.tasks) summary.tasks = summary.tasks.filter(task => !cancelled.has(task.task_id));
+      return { data: withTaskPricing(summary), error: null };
     }
     if (name === 'garage_quote_order') {
       if (!owner) return errorResult('Owner access required.', '42501');
@@ -323,6 +334,29 @@ export function createClient() {
         completed_at: args.p_completed_at, mechanic_ids: args.p_mechanic_ids, blocker_reason: '', version: 1 });
       order.version += 1;
       result = { data: { order_id: order.id, order_number: order.order_number, order_version: order.version, task_id: taskId }, error: null };
+    } else if (name === 'garage_pay_save_amounts') {
+      const id = args.p_task_id;
+      const source = fixture.financials?.tasks?.find(row => row.task_id === id)?.payout
+        || fixture.payWorklist?.find(row => row.task_id === id);
+      if (!source) return errorResult('Task unavailable.', '40001');
+      const current = {...source, ...payouts.get(id)};
+      if (current.version !== args.p_expected_version) return errorResult('Payout changed.', '40001');
+      const amounts = args.p_amounts;
+      if (!Array.isArray(amounts) || !amounts.length || amounts.some(row => !Number.isSafeInteger(row.kopeks) || row.kopeks < 0)
+          || new Set(amounts.map(row => row.mechanic_id)).size !== amounts.length) return errorResult('Invalid amounts.', '22023');
+      if (current.candidates.some(person => !person.former && !amounts.some(row => row.mechanic_id === person.mechanic_id))
+          || amounts.some(row => !current.candidates.some(person => person.mechanic_id === row.mechanic_id)))
+        return errorResult('Payout roster changed.', '40001');
+      const shares = amounts.map(row => ({...current.candidates.find(person => person.mechanic_id === row.mechanic_id), ...row}));
+      const pool_kopeks = shares.reduce((sum, row) => sum + row.kopeks, 0);
+      if (pool_kopeks > 999999999999 || !pool_kopeks && !args.p_zero_confirmed
+          || (current.version > 0 || shares.some(person => person.former)) && !args.p_reason?.trim())
+        return errorResult('Check amount and reason.', '22023');
+      const revision = {version: current.version + 1, pool_kopeks, shares};
+      payouts.set(id, revision);
+      (payHistory[id] ||= []).unshift({...clone(revision), saved_at: new Date().toISOString(),
+        actor_name: fixture.profile?.name || 'Владелец', reason: args.p_reason});
+      result = {data: revision.version, error: null};
     } else if (name === 'garage_save_task_pricing') {
       if (!owner) return errorResult('Owner access required.', '42501');
       const old = pricing.get(args.p_task_id);

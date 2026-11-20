@@ -1,0 +1,96 @@
+.owner-orders.full-order.has-detail .owner-order-layout { grid-template-columns: minmax(0, 1fr); }
+.owner-order-pane > .owner-order-detail { min-width: 0; gap: .85rem; }
+.owner-board-detail:has(.full-order) > h1 {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+}
+.order-detail-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .2rem .6rem; }
+.order-detail-head h2 { grid-area: 1 / 1; align-self: center; }
+.order-detail-head .order-back {
+  grid-area: 1 / 2; align-self: center; min-height: 44px; padding: .25rem;
+  border: 0; background: none; color: var(--accent); font-size: .88rem;
+}
+.order-detail-head p { grid-column: 1 / -1; }
+.order-detail-head p { color: var(--muted); margin: 0; font-size: .875rem; }
+.order-detail-head p:empty { display: none; }
+.order-detail-head h2 { margin: 0; }
+.order-detail-meta { font-weight: 600; }
+.order-price-list {
+  table-layout: fixed;
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+  font-size: .94rem;
+}
+.order-price-list th, .order-price-list td {
+  padding: .65rem .6rem;
+  border-bottom: 1px solid var(--line);
+  text-align: start;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.order-price-list thead th, .job-column-label {
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.order-price-list thead { background: var(--surface-raised); }
+.order-price-list thead th:first-child { width: 40%; }
+.order-job th { font-weight: 400; }
+.order-job th > *, .order-job td > * { display: block; }
+.order-job small, .order-job p { margin: .2rem 0 0; color: var(--muted); font-size: .8rem; line-height: 1.35; }
+.order-job p { white-space: pre-line; }
+.order-job .job-team small { display: block; }
+.order-job .job-state { display: inline-block; }
+.order-job.is-cancelled .job-name { color: var(--muted); text-decoration: line-through; }
+.order-job td .job-column-label { display: none; }
+.order-job .job-amount { font-weight: 650; }
+.order-job .job-link {
+  min-height: 2rem;
+  margin: .12rem 0 0;
+  border: 0;
+  padding: .3rem 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  line-height: 1.25;
+  font-size: .83rem;
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.job-link:hover { text-decoration: underline; }
+.job-editor-row > td { background: var(--surface-raised); }
+.job-editor-row fieldset, .job-management { min-width: 0; }
+.job-management .task-actions { margin: 0; }
+.job-editor-row .owner-task-price { padding: .25rem; border: 0; }
+.owner-order-detail .financial-summary { margin: 0; padding: .6rem; background: var(--surface-raised); }
+.owner-order-detail .financial-summary dl { margin: 0; }
+.owner-order-detail .financial-summary dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.order-management > summary, .order-handoff-history > summary { cursor: pointer; font-weight: 600; }
+.order-management[open] > summary, .order-handoff-history[open] > summary { margin-bottom: .5rem; }
+.order-management > .order-actions { border: 0; padding-top: 0; }
+@media (max-width: 650px) {
+  .owner-order-pane > .owner-order-detail { padding: .75rem; }
+  .order-price-list, .order-price-list tbody { display: block; }
+  .order-price-list thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .order-price-list .order-job {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: .35rem;
+    border-top: 1px solid var(--line);
+    padding: .65rem 0;
+  }
+  .order-price-list .order-job > * { border: 0; padding: 0; }
+  .order-job th { grid-column: 1 / -1; }
+  .order-job .job-name, .order-job .job-state { display: inline; }
+  .order-job .job-state { margin-inline-start: .5rem; }
+  .order-job td .job-column-label { display: block; margin: 0 0 .2rem; }
+  .order-job td .job-amount { font-size: .86rem; }
+  .order-job .job-link { min-height: 44px; }
+  .order-price-list .job-editor-row, .order-price-list .job-editor-row > td { display: block; }
+  .job-editor-row > td { padding: .6rem .35rem; }
+}
+@media (max-width: 360px) {
+  .order-price-list .order-job { grid-template-columns: minmax(0, .94fr) minmax(0, 1fr) minmax(0, 1.06fr); }
+  .order-job .job-link { font-size: .78rem; }
+}

@@ -39,9 +39,11 @@ def exercise_owner_order(db, directory, chromium, owner, first, second):
                 expect(panel.get_by_role('heading', name=vehicle)).to_be_visible()
                 for name in ['Андрей', 'Миша']:
                     expect(panel.get_by_text(name + ' · Назначено', exact=True)).to_be_visible()
+                panel.get_by_text('Действия с заказом', exact=True).click()
                 panel.get_by_role('button', name='Изменить заказ', exact=True).click()
                 page.get_by_label('Цвет (необязательно)', exact=True).fill('Белый')
                 page.get_by_role('button', name='Сохранить изменения', exact=True).click()
+                panel.get_by_text('Действия с заказом', exact=True).click()
                 panel.get_by_role('button', name='Добавить пропущенную выполненную работу').click()
                 page.get_by_role('combobox', name='Пропущенная работа из каталога', exact=True).select_option('W09')
                 page.get_by_role('combobox', name='Исполнитель', exact=True).select_option(first)

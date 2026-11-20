@@ -162,19 +162,16 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
                 assert current()['status'] == 'closed'
                 pay.get_by_role('link', name='Все заказы', exact=True).click()
                 pay.locator(f'main a[href="#orders/{record["id"]}"]').click()
-                pay.locator(f'section.task-row[data-task-id="{task_id}"]').get_by_role('link', name='Оплата механикам').click()
-                expect(pay).to_have_url(f'{base}/index.html#pay/{task_id}')
-                card = pay.locator(f'.pay-card[data-task-id="{task_id}"]')
-                expect(card.get_by_label('Сумма для распределения, BYN')).to_have_value('20,01')
+                card = pay.locator(f'tbody[data-task-id="{task_id}"]')
+                card.get_by_role('button', name='Распределить', exact=True).click()
+                expect(card.get_by_label('Итого механикам')).to_have_text(re.compile(r'20,01\s*BYN'))
                 card.get_by_role('button', name='Сохранить распределение', exact=True).click()
                 expect(pay.get_by_text('Распределение сохранено.', exact=True)).to_be_visible()
-                pay.get_by_role('link', name='Все работы', exact=True).click()
-                pay.get_by_role('combobox', name='Показать', exact=True).select_option('allocated')
-                expect(card).to_be_visible()
+                expect(pay).to_have_url(f'{base}/index.html#orders/{record["id"]}')
+                expect(card.get_by_role('button', name='Изменить распределение')).to_be_visible()
                 saved = next(item for item in db.rpc(owner, 'garage_pay_worklist') if item['task_id'] == task_id)
                 assert saved['pool_kopeks'] == 2001 and saved['version'] == 1
                 assert {share['kopeks'] for share in saved['shares']} == {1000, 1001}
-                assert saved['equal_split']
                 assert len(db.rpc(owner, 'garage_pay_history', p_task_id=task_id)) == 1
             finally:
                 browser.close()

@@ -42,7 +42,7 @@ RPC = {
     'garage_list_orders', 'garage_manager_intakes', 'garage_staff',
     'garage_create_order', 'garage_task_action', 'garage_team_action', 'garage_save_team_order', 'garage_vehicle_action',
     'garage_order_financials', 'garage_record_team_omission', 'garage_quote_order',
-    'garage_pay_worklist', 'garage_pay_history', 'garage_pay_save', 'garage_save_task_pricing',
+    'garage_pay_worklist', 'garage_pay_history', 'garage_pay_save', 'garage_pay_save_amounts', 'garage_save_task_pricing',
     'garage_owner_gift_offer', 'garage_save_order_with_gift', 'garage_owner_review_prices',
     'garage_check_work', 'garage_uncheck_work', 'garage_submit_work',
 }
@@ -52,7 +52,7 @@ PARAM_TYPES = {
     'p_order': 'jsonb', 'p_tasks': 'jsonb', 'p_options': 'jsonb', 'p_mechanic_ids': 'uuid[]',
     'p_action': 'text', 'p_mode': 'text', 'p_note': 'text', 'p_vehicle': 'text', 'p_source': 'text',
     'p_vehicle_group_code': 'text', 'p_work_code': 'text', 'p_expected_version': 'integer',
-    'p_pool_kopeks': 'bigint', 'p_shares': 'jsonb', 'p_reason': 'text', 'p_zero_confirmed': 'boolean',
+    'p_pool_kopeks': 'bigint', 'p_shares': 'jsonb', 'p_amounts': 'jsonb', 'p_reason': 'text', 'p_zero_confirmed': 'boolean',
     'p_completed_at': 'timestamptz', 'p_instructions': 'text', 'p_due_date': 'date', 'p_priority': 'text',
     'p_vin': 'text', 'p_colour': 'text', 'p_manager_label': 'text', 'p_planned_date': 'date',
     'p_override_kopeks': 'bigint', 'p_private_comment': 'text',
@@ -432,7 +432,7 @@ if __name__ == '__main__':
     try:
         with Database() as database:
             database.setup()
-            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql'):
+            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql', 'pay-amounts.sql'):
                 database.sql((ROOT / 'tests' / suite).read_text())
             database.sql("""
                 insert into garage_price_lists (id,name,source_sha256,status)
@@ -449,9 +449,11 @@ if __name__ == '__main__':
                 from team_browser import exercise_browser
                 from owner_browser import exercise_owner_order
                 from price_browser import exercise_owner_pricing
+                from order_pay_browser import exercise_order_pay
                 exercise_browser(database, args.directory, args.chromium, OWNER, A, B, C)
                 exercise_owner_order(database, args.directory, args.chromium, OWNER, A, B)
                 database.sql("insert into garage_pay.gift_offer(gift_work_code, qualifying_count) values ('W09', 2);")
                 exercise_owner_pricing(database, args.directory, args.chromium, OWNER, A, B)
+                exercise_order_pay(database, args.directory, args.chromium, OWNER, A, B)
     except subprocess.CalledProcessError as failure:
         raise SystemExit(failure.stderr or str(failure)) from failure

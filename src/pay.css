@@ -14,14 +14,17 @@
 .pay-editor { border-top: 1px solid var(--line); padding-top: 1rem; margin-top: .75rem; }
 .pay-editor fieldset { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: .75rem; }
 .pay-editor legend { padding: 0 0 .6rem; font-weight: 700; }
-.pay-workspace .pay-person { display: grid; gap: .35rem; align-content: end; }
-.pay-workspace .pay-check { display: flex; align-items: center; gap: .5rem; min-height: 44px; }
-.pay-workspace .pay-check input { width: 1.1rem; height: 1.1rem; min-height: 0; }
+.pay-editor .pay-person { display: grid; gap: .35rem; }
+.pay-editor .pay-amount { display: grid; grid-template-columns: minmax(0, 1fr) minmax(6.2rem, 8.5rem); align-items: center; gap: .6rem; margin: 0; }
+.pay-amount > span:first-child { overflow-wrap: anywhere; }
+.pay-amount > span:last-child { display: flex; align-items: center; position: relative; }
+.pay-amount input { width: 100%; min-width: 0; padding-inline: .55rem 2.6rem; margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.pay-amount small { position: absolute; inset-inline-end: .55rem; pointer-events: none; font-weight: 550; color: var(--muted); }
+.pay-editor .pay-check { display: flex; align-items: center; gap: .5rem; min-height: 44px; }
+.pay-editor .pay-check input { flex: none; width: 1.1rem; height: 1.1rem; min-height: 0; margin: 0; }
+.pay-total { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .5rem .85rem; border-top: 1px solid var(--line); padding-top: .5rem; }
+.pay-total output { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pay-editor summary { min-height: 44px; align-content: center; cursor: pointer; }
 .pay-error { color: var(--danger); }
 .pay-error:empty { display: none; }
 .pay-conflict { padding: .75rem; border: 1px solid var(--line); }
-@media(min-width: 45rem) {
-  .pay-pool { max-width: 26rem; }
-  .pay-shares { grid-template-columns: repeat(auto-fit,minmax(12rem,1fr)); }
-  .pay-shares > p { grid-column: 1 / -1; }
-}

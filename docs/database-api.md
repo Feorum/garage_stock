@@ -128,9 +128,16 @@ The private order quote and detail show the agreed customer price for each job.
 `garage_save_task_pricing` saves a versioned override in integer kopeks and a private
 Owner comment. An explicit zero makes the customer charge zero. Clearing the
 override restores the original rate. Unpriced work stays unknown until priced.
-On eligible completions, the full listed price proposes a pay pool
-split equally among confirmed contributors. Each kopek is allocated, and
-saved distributions retain the Owner's chosen amount and percentages.
+For an eligible completed job, the order financials include the saved allocation,
+the suggested equal split and the mechanics eligible for payment. The Owner
+can edit a single job using this order-scoped response.
+
+`garage_pay_save_amounts(p_task_id,p_expected_version,p_amounts,p_reason,p_zero_confirmed,p_request_id)`
+accepts one `{mechanic_id, kopeks}` entry per selected mechanic. The server
+stores each exact amount and sums them to obtain the job payout. A customer
+discount or gift has no effect on this amount. Existing allocations are read
+from their saved kopeks. The original allocation RPC remains available to
+previously installed clients.
 
 `garage_owner_gift_offer` reads the workshop's privately configured promotion.
 The Owner can accept or decline it in the order editor. Accepting calls
