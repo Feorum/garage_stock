@@ -153,7 +153,7 @@ export function OwnerHandoff({
               </button>
             </p>
           )}
-          <div class="button-row">
+          <div class="work-decisions">
             {workflow.can_return && (
               <button
                 class="button"

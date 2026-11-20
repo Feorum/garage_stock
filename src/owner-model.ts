@@ -72,20 +72,14 @@ export interface TaskPrice extends PrivatePricing {
   task_id?: string;
   work_code?: string;
   status?: string;
-  net_amount?: number | null;
-  gross_amount?: number | null;
   payout?: Payout | null;
 }
 export interface Money {
   effective_total_kopeks?: number | null;
-  effective_tax_kopeks?: number | null;
-  effective_gross_kopeks?: number | null;
   items?: TaskPrice[];
   tasks?: TaskPrice[];
   status: string;
   net_amount?: number | null;
-  vat_amount?: number | null;
-  gross_amount?: number | null;
 }
 export type Mutate = <T>(name: string, args: Record<string, unknown>) => Promise<T>;
 export const protectedTask = (t: Task) =>

@@ -61,6 +61,15 @@ input[type='checkbox'], input[type='radio'] { width: 1.1rem; height: 1.1rem; mar
 .button-primary:enabled:hover, a.button-primary:hover { background: #ffd293; color: var(--accent-ink); border-color: #ffd293; }
 .button-small { font-size: .85rem; padding-inline: .85rem; }
 .button-row, .shift-button-strip, .order-actions, .task-actions, .form-actions, .shift-secondary-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.work-decisions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.5rem), 1fr));
+  gap: .5rem;
+  width: 100%;
+  max-width: 25rem;
+  margin-inline-start: auto;
+}
+.work-decisions > .button { min-width: 0; min-height: 48px; padding: .55rem .65rem; overflow-wrap: anywhere; }
 .field-hint, .order-meta, .shift-hint { font-size: .875rem; line-height: 1.5; }
 .sr-only, .skip-link:not(:focus) { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .skip-link:focus { position: fixed; z-index: 20; inset-block-start: .5rem; inset-inline-start: .5rem; padding: .7rem 1rem; border-radius: .4rem; background: var(--accent); color: var(--accent-ink); }
@@ -343,7 +352,6 @@ html:has(.workspace) { scroll-padding-block-end: calc(5rem + env(safe-area-inset
 .vehicle-handoff label { color: var(--ink); font-weight: 600; font-size: .94rem; }
 .vehicle-handoff label .shift-hint { font-weight: 400; font-size: .85rem; }
 .vehicle-handoff textarea { display: block; margin-top: .45rem; min-height: 4.75rem; font-weight: 400; }
-.vehicle-handoff .shift-button-strip .button { min-height: 46px; }
 .vehicle-receipt { display: grid; gap: .75rem; margin-block: .75rem; padding: .95rem; border: 1px solid var(--control-line); border-inline-start: 3px solid var(--info); border-radius: .4rem; }
 .vehicle-receipt p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .vehicle-checklist { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(13rem,100%),1fr)); gap: .7rem; }
@@ -358,7 +366,6 @@ html:has(.workspace) { scroll-padding-block-end: calc(5rem + env(safe-area-inset
   .vehicle-index-row { padding-inline: 0; }
   .vehicle-index-button { flex-basis: 100%; }
   .vehicle-take, .vehicle-controls > .button { width: 100%; }
-  .vehicle-handoff .shift-button-strip > .button-primary { flex: 1 1 auto; }
 }
 
 .gift-dialog {

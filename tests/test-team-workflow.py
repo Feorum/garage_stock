@@ -44,7 +44,7 @@ RPC = {
     'garage_order_financials', 'garage_record_team_omission', 'garage_quote_order',
     'garage_pay_worklist', 'garage_pay_history', 'garage_pay_save', 'garage_save_task_pricing',
     'garage_owner_gift_offer', 'garage_save_order_with_gift', 'garage_owner_review_prices',
-    'garage_check_work', 'garage_submit_work',
+    'garage_check_work', 'garage_uncheck_work', 'garage_submit_work',
 }
 PARAM_TYPES = {
     'p_order_id': 'uuid', 'p_order_ids': 'uuid[]', 'p_id': 'uuid', 'p_task_id': 'uuid', 'p_request_id': 'uuid',
@@ -251,6 +251,32 @@ def check_handoff_race(db):
         assert reviewed['handoff_tasks'][0]['status'] == 'completed'
 
 
+def check_undo_handoff_race(db):
+    label = create(db, 'Передача одновременно со снятием отметки')
+    job_id = task(db, A, label)['id']
+    for actor in (A, B):
+        db.rpc(actor, 'garage_check_work', p_task_id=job_id, p_request_id=str(uuid4()))
+    before = order(db, B, label)
+    gate = Barrier(2)
+
+    def send(actor, method, params):
+        gate.wait(timeout=10)
+        return db.transport(actor, method, {**params, 'p_request_id': str(uuid4())})
+
+    with ThreadPoolExecutor(max_workers=2) as sessions:
+        undo = sessions.submit(send, A, 'garage_uncheck_work', {
+            'p_task_id': job_id, 'p_expected_version': before['tasks'][0]['version']})
+        submit = sessions.submit(send, B, 'garage_submit_work', {
+            'p_order_id': before['id'], 'p_expected_version': before['version'], 'p_note': ''})
+        undone, handed = undo.result(), submit.result()
+    assert (undone['error'] is None) != (handed['error'] is None), (undone, handed)
+    after = order(db, OWNER, label)
+    confirmed = {p['mechanic_id'] for p in after['tasks'][0]['participants'] if p['status'] == 'confirmed'}
+    assert after['tasks'][0]['status'] == 'completed'
+    assert confirmed == ({B} if undone['error'] is None else {A, B}), confirmed
+    assert (after['vehicle_workflow']['state'] == 'review') == (handed['error'] is None)
+
+
 def check_inline_work(db):
     label = create(db, 'Совместные отметки без бронирования')
     available = order(db, A, label)
@@ -406,7 +432,7 @@ if __name__ == '__main__':
     try:
         with Database() as database:
             database.setup()
-            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql'):
+            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql'):
                 database.sql((ROOT / 'tests' / suite).read_text())
             database.sql("""
                 insert into garage_price_lists (id,name,source_sha256,status)
@@ -418,6 +444,7 @@ if __name__ == '__main__':
             exercise_database(database)
             check_handoff_race(database)
             check_inline_work(database)
+            check_undo_handoff_race(database)
             if not args.sql_only:
                 from team_browser import exercise_browser
                 from owner_browser import exercise_owner_order

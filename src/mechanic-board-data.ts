@@ -6,6 +6,7 @@ import type { Client } from './workspace-types';
 
 export interface BoardTask extends Task {
   can_check_work?: boolean;
+  can_uncheck_work?: boolean;
 }
 export interface BoardOrder extends Order {
   tasks: BoardTask[];
@@ -86,13 +87,14 @@ export function useBoardOrders(client: Client, profileId: string) {
   return { orders, error, online, refresh };
 }
 
-interface Change {
+type Change = {
   orderId: string;
-  taskId?: string;
-  version?: number;
-  note?: string;
   requestId: string;
-}
+} & (
+  | { action: 'check'; taskId: string }
+  | { action: 'uncheck'; taskId: string; version: number }
+  | { action: 'submit'; taskId?: never; version: number; note: string }
+);
 export interface ChangeState {
   change: Change;
   status: 'pending' | 'unknown' | 'rejected';
@@ -133,13 +135,17 @@ export function useBoardChanges(client: Client, refresh: () => Promise<void>) {
     update(key, { change, status: 'pending' });
     let accepted = false;
     try {
-      const result = change.taskId
-        ? await client.rpc('garage_check_work', { p_task_id: change.taskId, p_request_id: change.requestId })
-        : await client.rpc('garage_submit_work', {
+      const result = change.action === 'submit'
+        ? await client.rpc('garage_submit_work', {
             p_order_id: change.orderId,
             p_expected_version: change.version,
             p_note: change.note,
             p_request_id: change.requestId,
+          })
+        : await client.rpc(change.action === 'check' ? 'garage_check_work' : 'garage_uncheck_work', {
+            p_task_id: change.taskId,
+            p_request_id: change.requestId,
+            ...(change.action === 'uncheck' ? { p_expected_version: change.version } : {}),
           });
       if (result.error) throw { ...result.error, status: result.status };
       accepted = true;
@@ -165,9 +171,12 @@ export function useBoardChanges(client: Client, refresh: () => Promise<void>) {
 
   return {
     changes,
-    check: (orderId: string, taskId: string) => execute({ orderId, taskId, requestId: crypto.randomUUID() }),
+    check: (orderId: string, taskId: string) =>
+      execute({ action: 'check', orderId, taskId, requestId: crypto.randomUUID() }),
+    uncheck: (orderId: string, taskId: string, version: number) =>
+      execute({ action: 'uncheck', orderId, taskId, version, requestId: crypto.randomUUID() }),
     submit: (orderId: string, version: number, note: string) =>
-      execute({ orderId, version, note: note.trim(), requestId: crypto.randomUUID() }),
+      execute({ action: 'submit', orderId, version, note: note.trim(), requestId: crypto.randomUUID() }),
     retry: (state: ChangeState) => execute(state.change, true),
     dismiss: (key: string) => {
       if (current.current[key]?.status === 'rejected') update(key);

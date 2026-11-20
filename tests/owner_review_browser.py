@@ -1,7 +1,8 @@
-"""Exercise the Owner's three tabs, frozen net prices and closed history."""
+"""Exercise the Owner's review decisions, agreed job prices and catalogue history."""
 import re
 
 from playwright.sync_api import expect
+from order_browser_helpers import check_decision_buttons
 
 
 def exercise_owner_review(browser, base, smoke, output):
@@ -16,32 +17,33 @@ def exercise_owner_review(browser, base, smoke, output):
         order_id = f'80000000-0000-4000-8001-{number:012d}'
         work = []
         money = []
-        for index, (label, status, amount, participants) in enumerate(services, 1):
+        for index, (label, status, catalogue, agreed, participants) in enumerate(services, 1):
             task_id = f'80000000-0000-4000-8002-{number * 10 + index:012d}'
             work.append({'id': task_id, 'work_code': f'W{index:02}', 'work_name': label, 'status': status,
                          'participants': participants, 'version': 1})
-            money.append({'task_id': task_id, 'net_kopeks': amount})
+            money.append({'task_id': task_id, 'net_kopeks': catalogue, 'effective_kopeks': agreed})
         visits.append({'id': order_id, 'vehicle': code, 'order_number': f'T-{number}', 'source': 'manager', 'version': 1,
                        'status': state if state in ('closed', 'cancelled') else 'published',
                        'vehicle_group_code': 'VG02', 'created_at': '2026-10-20T08:30:00Z', 'closed_at': closed_at, 'tasks': work,
-                       'vehicle_workflow': {'state': state, 'handed_at': '2026-11-03T09:00:00Z' if state == 'review' else None}})
+                       'vehicle_workflow': {'state': state, 'origin': 'inline', 'handed_by': first['mechanic_id'],
+                                            'handed_at': '2026-11-03T09:00:00Z' if state == 'review' else None}})
         prices.append({'order_id': order_id, 'created_at': '2026-10-20T08:30:00Z', 'closed_at': closed_at, 'tasks': money})
         return order_id
 
-    def item(label, price, participants=(first,), state='completed'):
-        return label, state, price, list(participants)
+    def item(label, price, participants=(first,), state='completed', *, agreed=None):
+        return label, state, price, price if agreed is None else agreed, list(participants)
 
-    ready = visit('Geely Atlas', 'review', [item('Капот', 23145, [first, second]), item('Зеркала', 455),
+    ready = visit('Geely Atlas', 'review', [item('Капот', 23145, [first, second], agreed=17890), item('Зеркала', 455),
                                            item('Отменённый бампер', 99999, [], 'cancelled')])
     missing = visit('Geely Emgrand', 'review', [item('Пороги', 3000), item('Кромки', None)])
-    zero = visit('Geely Coolray', 'review', [item('Защита', 0)])
+    zero = visit('Geely Coolray', 'review', [item('Защита', 5400, agreed=0)])
     unavailable = visit('Geely Galaxy', 'review', [item('Лобовое стекло', None)])
     prices.pop()  # Simulate an operational record absent from a partial pricing response.
     partial = visit('Belgee X50', 'review', [item('Двери', 1000), item('Бампер', None, [], 'pending')])
     active = visit('Geely Okavango', 'active', [item('Фары', 1250)])
     cancelled = visit('Geely Tugella', 'cancelled', [item('Багажник', None, [], 'cancelled')])
     # Minsk midnight falls at 21:00 UTC. Only Monjaro closed in November.
-    current = visit('Geely Monjaro', 'closed', [item('Капот', 31000, [first, second])], '2026-10-31T21:00:00Z')
+    current = visit('Geely Monjaro', 'closed', [item('Капот', 31000, [first, second], agreed=29000)], '2026-10-31T21:00:00Z')
     previous = visit('Belgee X70', 'closed', [item('Крылья', 48000), item('Сохранённая работа', 2013, [], 'pending')],
                      '2026-10-31T20:59:59Z')
     fixture = {'orders': visits, 'reviewPrices': prices}
@@ -67,25 +69,31 @@ def exercise_owner_review(browser, base, smoke, output):
                 assert min(bounds['height'], bounds['width']) >= 44, bounds
             expect(nav.get_by_role('link', name=labels[0])).to_have_attribute('aria-current', 'page')
             expect(page.get_by_role('heading', name=labels[0], exact=True)).to_be_visible()
-            for order_id in (ready, missing, zero, unavailable):
+            for order_id in (ready, missing, zero, unavailable, partial):
                 expect(order_link(page, order_id)).to_be_visible()
-            for order_id in (partial, active, current, previous, cancelled):
+            for order_id in (active, current, previous, cancelled):
                 expect(order_link(page, order_id)).to_have_count(0)
             card = order_card(page, ready)
-            expect(card).to_contain_text(re.compile(r'236,00\s*BYN'))
+            def job(card, name):
+                return card.get_by_role('listitem').filter(has_text=re.compile('^' + re.escape(name)))
+
+            expect(job(card, 'Капот')).to_contain_text(re.compile(r'178,90\s*BYN'))
+            expect(job(card, 'Зеркала')).to_contain_text(re.compile(r'4,55\s*BYN'))
+            expect(card).not_to_contain_text('231,45')
             expect(card).not_to_contain_text('Отменённый бампер')
-            expect(card.get_by_text('Исполнитель А', exact=True)).to_have_count(2)
-            expect(card.get_by_text('Исполнитель Б', exact=True)).to_have_count(1)
-            expect(card).not_to_contain_text(re.compile(r'Выполнили|Выполнено'))
-            assert card.get_by_text('Исполнитель Б', exact=True).evaluate(
-                "el => getComputedStyle(el).getPropertyValue('--executor-color').trim().toLowerCase()"
-            ) == second['color'].lower()
-            expect(order_card(page, missing)).to_contain_text('Ставка не указана')
-            expect(order_card(page, missing)).not_to_contain_text(re.compile(r'\d,\d\d\s*BYN'))
-            expect(order_card(page, zero)).to_contain_text(re.compile(r'0,00\s*BYN'))
-            expect(order_card(page, unavailable)).to_contain_text('Стоимость недоступна')
+            expect(card).not_to_contain_text(re.compile(r'Исполнитель [АБ]|НДС|VAT'))
+            expect(job(order_card(page, missing), 'Пороги')).to_contain_text(re.compile(r'30,00\s*BYN'))
+            expect(job(order_card(page, missing), 'Кромки')).to_contain_text('Цена не указана')
+            expect(job(order_card(page, zero), 'Защита')).to_contain_text(re.compile(r'0,00\s*BYN'))
+            expect(job(order_card(page, unavailable), 'Лобовое стекло')).to_contain_text('Цена недоступна')
+            unfinished = order_card(page, partial)
+            expect(job(unfinished, 'Бампер')).to_contain_text('Не завершено')
+            expect(unfinished.get_by_role('button', name='Подтвердить', exact=True)).to_have_count(0)
+            confirm = card.get_by_role('button', name='Подтвердить', exact=True)
+            check_decision_buttons(page, card.get_by_role('button', name='На доработку', exact=True), confirm)
+            confirm.focus()
             batches = page.evaluate("__garageCalls.filter(c => c.name === 'garage_owner_review_prices').map(c => c.args.p_order_ids)")
-            assert set().union(*map(set, batches)) == {ready, missing, zero, unavailable}, batches
+            assert set().union(*map(set, batches)) == {ready, missing, zero, unavailable, partial}, batches
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             page.screenshot(path=output / f'owner-review-{width}.png')
             order_link(page, ready).click()
@@ -109,6 +117,57 @@ def exercise_owner_review(browser, base, smoke, output):
             expect(order_link(page, current)).to_be_visible()
             order_link(page, current).click()
             expect(page.get_by_role('region', name='Подробности заказа')).to_contain_text('Geely Monjaro')
+
+            nav.get_by_role('link', name=labels[0]).click()
+            note = 'Перепроверить кромку перед выдачей'
+            return_button = unfinished.get_by_role('button', name='На доработку', exact=True)
+            return_button.click()
+            unfinished.get_by_role('button', name='Отмена', exact=True).click()
+            assert not decision_calls(page, partial)
+            return_button.click()
+            comment = unfinished.get_by_label('Комментарий механику (необязательно)', exact=True)
+            comment.fill(note)
+            send = unfinished.get_by_role('button', name='Вернуть в работу', exact=True)
+            check_decision_buttons(page, unfinished.get_by_role('button', name='Отмена', exact=True), send)
+            send.focus()
+            unfinished.screenshot(path=output / f'owner-return-{width}.png')
+            if width == 320:
+                # Another session updated the work while the Owner was writing. Refresh the board in place.
+                page.evaluate("""id => {
+                    __garageOrderState.orders.find(o => o.id === id).version++;
+                    window.dispatchEvent(new Event('focus'));
+                }""", partial)
+                accept_changes = unfinished.get_by_role('button', name='Использовать актуальную версию', exact=True)
+                expect(accept_changes).to_be_visible()
+                expect(comment).to_have_value(note)
+                expect(send).to_be_disabled()
+                assert not decision_calls(page, partial)
+                accept_changes.click()
+            send.click()
+            expect(unfinished).to_have_count(0)
+            writes = decision_calls(page, partial)
+            assert len(writes) == 1 and writes[0]['p_action'] == 'return' and writes[0]['p_note'] == note, writes
+            assert writes[0]['p_expected_version'] == (2 if width == 320 else 1)
+            returned = page.evaluate("id => __garageOrderState.orders.find(o => o.id === id)", partial)
+            assert returned['vehicle_workflow']['state'] == 'available' and returned['vehicle_workflow']['return_note'] == note
+            assert [t['status'] for t in returned['tasks']] == ['completed', 'pending']
+
+            # Simulate losing the connection before the server received the first confirmation.
+            page.evaluate("""() => {
+                __garageTest.rpcErrors = { garage_vehicle_action: {times: 1, message:'Network timeout', code:'NETWORK'} };
+            }""")
+            card.get_by_role('button', name='Подтвердить', exact=True).click()
+            card.get_by_role('button', name='Проверить отправку', exact=True).click()
+            expect(card).to_have_count(0)
+            confirmations = decision_calls(page, ready)
+            assert len(confirmations) == 2 and confirmations[0] == confirmations[1], confirmations
+            assert confirmations[0]['p_action'] == 'close' and confirmations[0]['p_request_id']
+            assert page.evaluate("id => __garageOrderState.orders.find(o => o.id === id).status", ready) == 'closed'
             assert not errors and not requests, (errors, requests)
         finally:
             context.close()
+
+
+def decision_calls(page, order_id):
+    return page.evaluate("""id => __garageCalls.filter(c => c.name === 'garage_vehicle_action'
+                            && c.args.p_order_id === id).map(c => c.args)""", order_id)

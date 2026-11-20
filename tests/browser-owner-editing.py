@@ -83,7 +83,7 @@ def run(args):
         browser = playwright.chromium.launch(executable_path=args.chromium, headless=True, args=['--no-sandbox'])
         try:
             exercise_owner_review(browser, base, smoke, args.output)
-            passed.append('Owner tabs distinguish fully submitted work, catalogue net, unknown prices, and closed history')
+            passed.append('Owner review shows agreed job prices and handles inline confirmation or return on mobile and desktop')
             fixture = {'orders': [order(177, 2), order(0, 3, source=False), order(168, 1)], 'managerIntakes': [intake()]}
             if args.before_directory:
                 before_server, before_base = smoke.serve(args.before_directory.resolve())
@@ -143,7 +143,9 @@ def run(args):
             for code in ['W01', 'W09', 'W19']:
                 page.locator(f'#new-work-{code}').check()
             page.get_by_role('combobox', name='Светопропускание', exact=True).select_option('15')
-            expect(form.locator('[data-price-kind="catalogue"]').get_by_text('360,00 BYN', exact=True)).to_be_visible()
+            expect(form.locator('[data-price-kind="effective"]').get_by_text('300,00 BYN', exact=True)).to_be_visible()
+            expect(form.locator('.financial-summary')).not_to_contain_text('НДС')
+            expect(form.locator('.financial-summary dd')).to_have_count(1)
             page.get_by_label('Указания (необязательно)', exact=True).fill('Only approved operational instructions')
             page.get_by_role('button', name='Опубликовать заказ', exact=True).click()
             expect(page.locator('[data-intake-id]')).to_have_count(0)
@@ -214,7 +216,7 @@ def run(args):
             page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
             page.locator('#new-work-W01').check()
             page.locator('#new-work-W09').check()
-            expect(page.locator('.order-price-preview [data-price-kind="catalogue"]').get_by_text('240,00 BYN', exact=True)).to_be_visible()
+            expect(page.locator('.order-price-preview [data-price-kind="effective"]').get_by_text('200,00 BYN', exact=True)).to_be_visible()
             page.locator('#new-work-W02').check()
             page.get_by_role('link', name='Отчёты и история', exact=True).click()
             page.get_by_role('link', name='Подключения таблиц', exact=True).click()
@@ -233,7 +235,7 @@ def run(args):
             page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
             page.locator('#new-work-W01').check()
             page.get_by_role('button', name='Повторить расчёт', exact=True).click()
-            expect(page.locator('.order-price-preview [data-price-kind="catalogue"]').get_by_text('120,00 BYN', exact=True)).to_be_visible()
+            expect(page.locator('.order-price-preview [data-price-kind="effective"]').get_by_text('100,00 BYN', exact=True)).to_be_visible()
             expect(page.locator('#new-work-W01')).to_be_checked()
             expect(page.get_by_label('Автомобиль', exact=True)).to_have_value('Keep choices after quote failure')
             passed.append('failed server quote can retry without losing work choices or entered fields')
@@ -287,7 +289,7 @@ def run(args):
                 page.get_by_role('combobox', name='Исполнитель', exact=True).select_option(ME)
                 page.get_by_label('Дата и время выполнения', exact=True).fill('2026-11-12T13:45')
                 page.get_by_label('Причина исправления', exact=True).fill('Owner confirmed omitted completed A-pillar work.')
-                expect(page.locator('.completion-form [data-price-kind="catalogue"]').get_by_text('120,00 BYN', exact=True)).to_be_visible()
+                expect(page.locator('.completion-form [data-price-kind="effective"]').get_by_text('100,00 BYN', exact=True)).to_be_visible()
                 if not lost_response:
                     page.screenshot(path=str(args.output / 'owner-omitted-completion-desktop.png'), full_page=True)
                     page.set_viewport_size({'width': 390, 'height': 844})

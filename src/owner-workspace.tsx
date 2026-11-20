@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { OwnerOrders } from './owner-orders';
+import { ReviewCard, type ReviewRate } from './owner-review';
 import type { OwnerOrder } from './owner-model';
 import { Reports } from './reports';
 import { ShiftView } from './shift';
@@ -25,7 +26,7 @@ interface PriceRow {
   order_id: string;
   created_at: string;
   closed_at: string | null;
-  tasks: { task_id: string; net_kopeks: number | null }[];
+  tasks: ReviewRate[];
 }
 type Prices = Map<string, PriceRow>;
 type Total = number | 'missing' | 'unavailable' | 'loading';
@@ -64,7 +65,7 @@ function catalogueTotal(orders: BoardOrder[], prices: Prices | null): Total {
 
 function BoardPrice({ total }: { total: Total }) {
   return <div class="owner-board-price">
-    <span><strong>По прайсу</strong><small>Без НДС</small></span>
+    <span><strong>По прайсу</strong></span>
     {typeof total === 'number'
       ? <b>{numberFormat.format(total / 100)} <small>BYN</small></b>
       : <span class="unpriced">{total === 'missing' ? 'Ставка не указана' : total === 'loading' ? 'Загрузка…' : 'Стоимость недоступна'}</span>}
@@ -103,8 +104,8 @@ function ServiceCredits({ tasks }: { tasks: Task[] }) {
   })}</ul>;
 }
 
-function OrderCard({ order, mode, price, repeated }: {
-  order: BoardOrder; mode: 'review' | 'orders' | 'history'; price?: Total; repeated: boolean;
+function OrderCard({ order, mode, repeated }: {
+  order: BoardOrder; mode: 'orders' | 'history'; repeated: boolean;
 }) {
   const source = order.source === 'manager' ? 'Заказ менеджера' : 'Заказ владельца';
   const state = orderState(order);
@@ -114,11 +115,9 @@ function OrderCard({ order, mode, price, repeated }: {
       aria-label={`${order.vehicle} · ${order.order_number} · ${state.label}`}>
       <h2>{order.vehicle}</h2>
       <span class="owner-board-meta">{meta}</span>
-      {mode === 'review' ? <span class="owner-board-chevron" aria-hidden="true">›</span> :
-        <span class={'owner-board-phase phase-' + state.tone}>{state.label}</span>}
+      <span class={'owner-board-phase phase-' + state.tone}>{state.label}</span>
     </a>
     {mode !== 'orders' && <ServiceCredits tasks={order.tasks} />}
-    {price !== undefined && <BoardPrice total={price} />}
   </article>;
 }
 
@@ -128,6 +127,12 @@ function Board({ client, profile, section }: Props) {
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const [month, setMonth] = useState('');
+  const [online, setOnline] = useState(navigator.onLine);
+  const [feedback, setFeedback] = useState('');
+  function refreshReview(message?: string) {
+    if (message) setFeedback(message);
+    setRevision(n => n + 1);
+  }
   useEffect(() => {
     let disposed = false;
     let pending = false;
@@ -142,9 +147,13 @@ function Board({ client, profile, section }: Props) {
         if (!Array.isArray(result)) throw new Error('Invalid order list');
         setOrders(result);
         setError('');
-      } catch {
+      } catch (failure) {
         if (disposed) return;
-        setOrders(null);
+        const code = (failure as { code?: string })?.code || '';
+        if (code === '42501' || code.startsWith('PGRST30')) {
+          setOrders(null);
+          setPricing(null);
+        }
         setError('Не удалось загрузить заказы.');
       } finally {
         pending = false;
@@ -152,10 +161,12 @@ function Board({ client, profile, section }: Props) {
       if (again) { again = false; void refresh(); }
     }
     const visible = () => { if (document.visibilityState === 'visible') void refresh(); };
+    const connection = () => { setOnline(navigator.onLine); if (navigator.onLine) visible(); };
     void refresh();
     const unsubscribe = subscribeBoardUpdates(client, profile.id, visible);
     const timer = window.setInterval(visible, 30000);
-    window.addEventListener('online', visible);
+    window.addEventListener('online', connection);
+    window.addEventListener('offline', connection);
     window.addEventListener('focus', visible);
     document.addEventListener('visibilitychange', visible);
     return () => {
@@ -163,7 +174,8 @@ function Board({ client, profile, section }: Props) {
       scope.abort();
       unsubscribe();
       window.clearInterval(timer);
-      window.removeEventListener('online', visible);
+      window.removeEventListener('online', connection);
+      window.removeEventListener('offline', connection);
       window.removeEventListener('focus', visible);
       document.removeEventListener('visibilitychange', visible);
     };
@@ -183,12 +195,13 @@ function Board({ client, profile, section }: Props) {
     const label = monthFormat.format(new Date(value + '-15T12:00:00Z')).replace(/\s*г\.$/u, '');
     return label.charAt(0).toLocaleUpperCase('ru') + label.slice(1);
   };
-  const queue = section === 'shift' ? all.filter(completedReview).sort((a, b) =>
+  const queue = section === 'shift' ? all.filter(o => o.status === 'published' && o.vehicle_workflow?.state === 'review').sort((a, b) =>
     (a.vehicle_workflow?.handed_at || '').localeCompare(b.vehicle_workflow?.handed_at || '') || a.id.localeCompare(b.id)) :
     section === 'reports' ? closed : [...all].sort((a, b) =>
       boardDay(b).localeCompare(boardDay(a)) || (b.created_at || '').localeCompare(a.created_at || '') || a.id.localeCompare(b.id));
-  // Versions and service membership identify the frozen catalogue rows that can
-  // affect this view. Unrelated board invalidations need no financial request.
+  // Customer price changes do not advance the public order version. Refresh
+  // them with each review read; history uses the frozen catalogue snapshots.
+  const reviewSnapshot = section === 'shift' ? orders : null;
   const pricedOrders = section === 'shift' ? queue : section === 'reports' ? monthly : [];
   const pricingKey = JSON.stringify(pricedOrders.map(o => [o.id, o.version,
     o.tasks.filter(t => t.status !== 'cancelled').map(t => t.id).sort()]).sort(([a], [b]) => String(a).localeCompare(String(b))));
@@ -213,7 +226,7 @@ function Board({ client, profile, section }: Props) {
     }
     void loadPrices();
     return () => scope.abort();
-  }, [client, pricingKey, revision]);
+  }, [client, pricingKey, revision, reviewSnapshot]);
   const priceError = pricing?.key === pricingKey && !pricing.rates;
   const prices = pricing?.key === pricingKey ? pricing.rates : null;
   const totalFor = (list: BoardOrder[]): Total => priceError ? 'unavailable' : catalogueTotal(list, prices);
@@ -224,7 +237,8 @@ function Board({ client, profile, section }: Props) {
 
   return <div class="owner-board">
     <h1 data-route-heading tabIndex={-1}>{section === 'shift' ? 'На проверке' : section === 'orders' ? 'Все заказы' : 'Отчёты и история'}</h1>
-    {(error || priceError) && <p role="alert" class="notice">{error || 'Не удалось загрузить ставки по прайсу.'}{' '}
+    {feedback && <p role="status" class="owner-review-feedback">{feedback}</p>}
+    {(error || priceError) && <p role="alert" class="notice">{error || 'Не удалось загрузить цены работ.'}{' '}
       <button class="button" type="button" onClick={() => setRevision(n => n + 1)}>Повторить</button></p>}
     {!orders && !error && <p role="status">Загружаем заказы…</p>}
     {orders && <>
@@ -237,9 +251,11 @@ function Board({ client, profile, section }: Props) {
         </section>
         <h2 class="owner-history-title">История заказов</h2>
       </>}
-      {queue.length ? <div class="owner-board-list">{queue.map(order => <OrderCard key={order.id} order={order} mode={mode}
-        repeated={frequencies.get(cardKey(order))! > 1} price={mode === 'review' ? totalFor([order]) : undefined} />)}</div> :
-        <p class="owner-board-empty">{mode === 'review' ? 'Нет полностью выполненных заказов, переданных на проверку.' :
+      {queue.length ? <div class="owner-board-list">{queue.map(order => mode === 'review'
+        ? <ReviewCard key={order.id} order={order} rates={prices?.get(order.id)?.tasks} loadingPrices={!priceError && !prices}
+            client={client} current={!error && online} refresh={refreshReview} />
+        : <OrderCard key={order.id} order={order} mode={mode} repeated={frequencies.get(cardKey(order))! > 1} />)}</div> :
+        <p class="owner-board-empty">{mode === 'review' ? 'Нет заказов на проверке.' :
           mode === 'history' ? 'Закрытых заказов пока нет.' : 'Заказов пока нет.'}</p>}
     </>}
     {section === 'orders' && <nav class="owner-board-tools" aria-label="Инструменты заказов">

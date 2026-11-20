@@ -31,8 +31,8 @@ def exercise_gift_offer(page, db, base, owner, mechanic):
         expect(dialog).to_have_count(0)
         expect(page.locator('#new-work-W09')).to_be_checked()
         gift = page.locator('.quote-items li').filter(has_text='Зона над лобовым')
-        expect(gift).to_contain_text(re.compile(r'Ставка без НДС.*7,77'))
-        expect(gift).to_contain_text(re.compile(r'Стоимость для клиента без НДС.*0,00'))
+        expect(gift.locator('span')).to_have_text(re.compile(r'^0,00\s*BYN$'))
+        expect(page.locator('.financial-summary')).not_to_contain_text(re.compile(r'НДС|\bVAT\b', re.I))
         expect(page.locator('[data-price-kind="effective"]')).to_contain_text('31,12')
         page.locator('#team-W09').get_by_role('checkbox', name='Андрей', exact=True).check()
 
@@ -102,6 +102,9 @@ def exercise_owner_pricing(db, directory, chromium, owner, first, second):
                 page.goto(f'{base}/index.html#orders/{order_id}')
                 row = page.locator(f'section.task-row[data-task-id="{task_id}"]')
                 expect(row).to_contain_text(re.compile(r'20[,.]01'))
+                expect(row.locator('.task-price-values dd')).to_have_text(re.compile(r'20,01\s*BYN'))
+                expect(page.locator('.financial-summary dd')).to_have_text(re.compile(r'20,01\s*BYN'))
+                expect(page.locator('main')).not_to_contain_text(re.compile(r'НДС|\bVAT\b', re.I))
                 edit = row.get_by_role('button', name='Изменить стоимость', exact=True)
                 edit.click()
                 amount = row.get_by_label('Стоимость работы, BYN', exact=True)
@@ -111,6 +114,8 @@ def exercise_owner_pricing(db, directory, chromium, owner, first, second):
                 memo.fill(note)
                 save.click()
                 expect(edit).to_be_visible()
+                expect(row.locator('.task-price-values dd')).to_have_text(re.compile(r'^0,00\s*BYN$'))
+                expect(page.locator('.financial-summary dd')).to_have_text(re.compile(r'^0,00\s*BYN$'))
                 saved = db.rpc(owner, 'garage_order_financials', p_order_id=order_id)
                 assert saved['effective_total_kopeks'] == saved['effective_tax_kopeks'] == saved['effective_gross_kopeks'] == 0, saved
                 assert saved['net_amount'] == 20.01 and saved['gross_amount'] == 24.01, saved
@@ -122,6 +127,7 @@ def exercise_owner_pricing(db, directory, chromium, owner, first, second):
                 expect(edit).to_be_visible()
                 restored = db.rpc(owner, 'garage_order_financials', p_order_id=order_id)
                 assert restored['effective_total_kopeks'] == 2001 and restored['effective_gross_kopeks'] == 2401, restored
+                expect(row.locator('.task-price-values dd')).to_have_text(re.compile(r'20,01\s*BYN'))
                 exercise_gift_offer(page, db, base, owner, first)
                 assert not errors and not requests, (errors, requests)
                 context.close()

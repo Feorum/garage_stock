@@ -262,12 +262,12 @@ export function VehicleDetail({
               </button>
             </p>
           )}
-          <div class="shift-button-strip">
-            <button class="button button-primary" disabled={locked || stale}>
-              Передать владельцу
-            </button>
+          <div class="work-decisions">
             <button type="button" class="button" disabled={saving} onClick={() => setDraft(null)}>
               Отмена
+            </button>
+            <button type="submit" class="button button-primary" disabled={locked || stale}>
+              Передать владельцу
             </button>
           </div>
         </form>

@@ -7,8 +7,7 @@
 .owner-board-open:focus-visible { outline-offset: -4px; }
 .owner-board-open h2, .owner-month h2 { margin: 0; font-size: 1.18rem; line-height: 1.25; letter-spacing: -.025em; }
 .owner-board-meta { grid-column: 1; color: var(--muted); font-size: .79rem; }
-.owner-board-phase, .owner-board-chevron { grid-column: 2; grid-row: 1 / span 2; }
-.owner-board-chevron { font-size: 1.45rem; color: var(--muted); font-weight: 400; }
+.owner-board-phase { grid-column: 2; grid-row: 1 / span 2; }
 .owner-board-phase { justify-self: end; max-width: min(8.5rem,30vw); padding: .25rem .55rem; border-radius: .3rem; color: var(--muted); background: var(--surface-raised); font-size: .77rem; font-weight: 650; text-align: center; line-height: 1.3; }
 .owner-board-phase.phase-active { color: var(--green); background: var(--green-soft); }
 .owner-board-phase.phase-review, .owner-board-phase.phase-partial { color: var(--warning); background: var(--warning-soft); }
@@ -34,6 +33,22 @@
 .owner-board-tools a:focus-visible, .owner-board-tools a:hover { color: var(--ink); }
 .owner-board-empty { color: var(--muted); padding-block: .9rem; }
 .owner-board > [role=alert] { margin-bottom: 1rem; }
+.owner-review-card h2 { margin: 0; font-size: 1.1rem; }
+.owner-review-title { display: flex; align-items: center; justify-content: space-between; gap: .75rem; min-height: 44px; padding: .65rem .85rem; color: var(--ink); text-decoration: none; }
+.owner-review-title:hover span { text-decoration: underline; }
+.owner-review-title:focus-visible { outline-offset: -4px; }
+.owner-review-title small { flex-shrink: 0; color: var(--muted); font-size: .77rem; font-weight: 500; }
+.owner-review-jobs { list-style: none; margin: 0; padding: 0 .85rem; }
+.owner-review-jobs li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: .25rem .75rem; border-top: 1px solid var(--line); padding-block: .5rem; font-size: .94rem; }
+.owner-review-jobs small { display: block; color: var(--warning); font-size: .75rem; }
+.owner-review-amount { max-width: 10rem; font-size: .88rem; font-weight: 650; font-variant-numeric: tabular-nums; text-align: end; }
+.owner-review-controls { padding: .65rem .85rem; border-top: 1px solid var(--line); }
+.owner-review-controls .button { font-size: .88rem; padding-inline: .7rem; }
+.owner-review-controls label { display: grid; gap: .3rem; margin-bottom: .55rem; }
+.owner-review-controls textarea { min-height: 3.5rem; }
+.owner-review-warning { margin-top: .5rem; color: var(--warning); }
+.owner-review-warning button { margin-top: .35rem; }
+.owner-review-feedback { margin: 0 0 .75rem; color: var(--green); }
 .owner-handoff .handoff-note strong { display: block; font-size: .86rem; margin-bottom: .18rem; }
 @media(min-width: 900px) {
   .owner-board-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr)); align-items: start; }

@@ -108,19 +108,27 @@ vehicle for more work or close it when it has at least one completion and no
 unfinished services. Cached clients retain the `garage_vehicle_action` API.
 Board updates signal authorized recipients to refresh their own order view.
 
+On an open visit, `garage_uncheck_work(p_task_id,p_expected_version,p_request_id)`
+withdraws the caller’s own checklist confirmation. Use the task’s
+`can_uncheck_work` flag to enable the control. Replaying the same request
+returns its original result. A stale task version requires a refresh.
+The last withdrawal reopens the service and removes its current completion
+from reports. An Owner’s existing payroll allocation and its audit history
+survive a correction and a later recheck.
+
 ## Owner calculations
 
 `garage_owner_review_prices(p_order_ids)` accepts up to 100 order IDs per call.
-Each non-cancelled service contributes its original pre-VAT catalogue amount
-once, in integer kopeks. A missing snapshot amount is null. The Owner’s review
-and history screens distinguish an unknown total from an explicitly zero rate.
+Each non-cancelled service appears once. The review card uses `effective_kopeks`,
+the latest agreed customer price, including explicit zero for a gift. Clearing an
+adjustment restores the original catalogue rate. History uses that original rate
+from `net_kopeks`. An unknown amount is null in either field.
 
-The private order quote and detail include each original catalogue amount,
-the effective customer price, and recalculated tax and gross totals.
+The private order quote and detail show the agreed customer price for each job.
 `garage_save_task_pricing` saves a versioned override in integer kopeks and a private
 Owner comment. An explicit zero makes the customer charge zero. Clearing the
 override restores the original rate. Unpriced work stays unknown until priced.
-On eligible completions, the full listed pre-VAT price proposes a pay pool
+On eligible completions, the full listed price proposes a pay pool
 split equally among confirmed contributors. Each kopek is allocated, and
 saved distributions retain the Owner's chosen amount and percentages.
 
@@ -138,13 +146,13 @@ Owner-only tables are `garage_price_lists`, `garage_price_matrix`, and
 columns. Direct financial reads require active Owner status; Mechanics and
 anonymous clients cannot retrieve values, including through the financial RPC.
 
-An approved list has a source fingerprint, BYN currency, its VAT rate, explicit
+An approved list has a source fingerprint, BYN currency, explicit
 effective date and status. Matrix keys are list ID, approved vehicle group and
 work code. Load numeric source cells only; blank/dash combinations are excluded
 from operational availability and never become zero-priced entries.
 
-At order publication, the server freezes the applicable net amount and tax
-calculation per task. Used list versions are protected against repricing.
+At order publication, the server freezes the applicable catalogue amount per task.
+Used list versions are protected against repricing.
 Missing rates are represented explicitly as unknown. Source amounts are recorded
 rates, not proof of customer revenue, actual payments, profit or mechanic wages.
 Raw financial sources, seed SQL and extracted matrix values must remain outside

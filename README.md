@@ -8,11 +8,12 @@ Live app: https://feorum.github.io/garage_stock/.
 Mechanics open the Owner’s orders (B), switch to Manager orders (G), or review their history using three bottom tabs. Each visit shows the scheduled date and a short service list. Expanding a vehicle leaves it available to other mechanics. The workshop uses Europe/Minsk for dates and reporting.
 
 - Checking a service records the signed-in mechanic’s contribution. Multiple mechanics can check the same service and see each executor’s name and color. The vehicle and its other tasks remain usable while the check is being saved. Authorized private assignments continue to limit which Owner services a mechanic can see.
-- A contributor can send a vehicle to the Owner with completed or outstanding work. The Owner’s checked-box tab shows fully completed, submitted orders at the original catalogue rate before VAT. The full list also contains partial handoffs. The book opens reports and history.
+- On an open vehicle, tapping a checked service again removes that mechanic’s own checkmark. The job stays complete while another mechanic’s check remains. Removing the last check reopens the job. Handoff freezes the checklist until the Owner returns the vehicle.
+- A contributor can send a vehicle to the Owner with completed or outstanding work. The Owner’s review tab lists each submitted vehicle with its jobs and agreed customer prices. The Owner can accept a completed vehicle or send it back with an optional note. A partial handoff shows which jobs are unfinished and can be returned directly to the mechanics.
 - Owners can create, interpret, edit and close orders, or record omitted work with its contributors and actual completion time. Source identities and the approved 19-work, 17-group catalogue still govern intake. The tinted package requires an explicit 5% or 15% option.
 - Reports count each completed service once and distinguish individual participation. Operational team status is visible on shared vehicles. Task notes, private intake text and financial fields have separate audiences.
 - In the Owner's order detail, each service shows its model-specific price. The Owner can edit the customer calculation and keep a private comment. A missing rate stays visible for review. Restoring the catalogue price keeps the original rate snapshot available.
-- A new completion proposes the full listed pre-VAT price in BYN, shared equally among confirmed contributors. The Owner can change the pay pool and each mechanic's percentage. A past participant can be included with a reason. Customer-price adjustments, mechanic pay and the business ledger are independent. Only the Owner can retrieve financial data or private calculation comments.
+- A new completion proposes the full listed price in BYN, shared equally among confirmed contributors. The Owner can change the pay pool and each mechanic's percentage. A past participant can be included with a reason. Customer-price adjustments, mechanic pay and the business ledger are independent. Only the Owner can retrieve financial data or private calculation comments.
 
 The Manager integration reads an approved complete copy of the existing
 operational spreadsheet. It keeps its existing vehicle rows, work-list columns,
@@ -97,10 +98,12 @@ workbook promotion privately in `garage_pay.gift_offer`. The Owner chooses
 whether to include the gift in the order editor. The customer charge becomes
 zero and the mechanic pay suggestion still uses the original listed rate.
 
-For the inline workshop boards, apply `20261118223856_inline_work_checks.sql`
-and then `20261119000002_owner_review_catalogue.sql` before publishing the app.
-These migrations add shared mechanic check-offs, recipient-specific board updates,
-and the Owner’s review totals. Cached clients can still use the earlier APIs.
+For the inline workshop boards, apply `20261118223856_inline_work_checks.sql`,
+`20261119000002_owner_review_catalogue.sql` and `20261120155421_owner_review_agreed_prices.sql`
+in order before publishing the app. These migrations add shared mechanic check-offs,
+targeted board updates and per-job prices for Owner review.
+Apply `20261120155825_reversible_mechanic_checks.sql` and
+`20261120155922_preserve_pay_history_on_recheck.sql` together for reversible checkmarks.
 
 ## Validate
 

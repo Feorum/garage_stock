@@ -1,6 +1,6 @@
 import './owner-workflow.css';
 import { useRef, useState } from 'preact/hooks';
-import { money, decimal, hundredths, payRead, type Payout, type PrivatePricing } from './pay-model';
+import { customerPrice, money, decimal, hundredths, payRead, type Payout, type PrivatePricing } from './pay-model';
 import { isConflict } from './owner-model';
 import type { GarageClient } from './shift-model';
 
@@ -18,7 +18,7 @@ export function PayoutSummary({ payout }: { payout: Payout }) {
       <p>
         {amount == null
           ? 'Ставка не указана. Введите сумму при распределении.'
-          : (proposed ? 'По ставке без НДС · ' : 'Сумма механикам · ') + money(amount)}
+          : (proposed ? 'По прайсу · ' : 'Сумма механикам · ') + money(amount)}
       </p>
       {Boolean(shares?.length) && (
         <ul>
@@ -97,34 +97,14 @@ export function TaskPricing({
       setBusy(false);
     }
   }
+  const price = customerPrice(value);
   return (
     <section class="owner-task-price" aria-label="Стоимость работы · только владельцу">
-      <h4>Стоимость работы · только владельцу</h4>
       <dl class="task-price-values">
         <div>
-          <dt>Ставка по прайсу без НДС</dt>
-          <dd>{value.catalogue_kopeks == null ? 'Не указана' : money(value.catalogue_kopeks)}</dd>
+          <dt>Цена для клиента</dt>
+          <dd>{price == null ? 'Цена не указана' : money(price)}</dd>
         </div>
-        <div>
-          <dt>Стоимость для клиента без НДС</dt>
-          <dd>{value.effective_kopeks == null ? 'Требует расчёта' : money(value.effective_kopeks)}</dd>
-        </div>
-        {'effective_tax_kopeks' in value && (
-          <div>
-            <dt>НДС для клиента</dt>
-            <dd>
-              {value.effective_tax_kopeks == null ? 'Требует расчёта' : money(value.effective_tax_kopeks)}
-            </dd>
-          </div>
-        )}
-        {'effective_gross_kopeks' in value && (
-          <div>
-            <dt>Стоимость для клиента с НДС</dt>
-            <dd>
-              {value.effective_gross_kopeks == null ? 'Требует расчёта' : money(value.effective_gross_kopeks)}
-            </dd>
-          </div>
-        )}
       </dl>
       {value.private_comment && (
         <p class="owner-private-comment">
@@ -148,7 +128,10 @@ export function TaskPricing({
                 onInput={(e) => setAmount(e.currentTarget.value)}
               />
             </label>
-            <small>Оставьте сумму пустой, чтобы использовать ставку по прайсу.</small>
+            <small>
+              {value.catalogue_kopeks == null ? 'Цена в прайсе не указана.' :
+                `По прайсу — ${money(value.catalogue_kopeks)}. Оставьте поле пустым, чтобы применить эту цену.`}
+            </small>
             <label>
               Личный комментарий владельца
               <textarea maxLength={2000} value={memo} onInput={(e) => setMemo(e.currentTarget.value)} />

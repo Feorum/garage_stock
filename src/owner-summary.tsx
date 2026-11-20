@@ -1,7 +1,7 @@
 import { quoteWithGift } from './owner-gift';
 import { useEffect, useState } from 'preact/hooks';
 import type { GarageClient } from './shift-model';
-import { money } from './pay-model';
+import { customerPrice, money } from './pay-model';
 import {
   read,
   workName,
@@ -13,72 +13,30 @@ import {
 } from './owner-model';
 
 export function Price({ value, preview = false }: { value: Money; preview?: boolean }) {
-  const rows = [
-    ['Без НДС', value.net_amount],
-    ['НДС', value.vat_amount],
-    ['С НДС', value.gross_amount],
-  ] as const;
-  const complete =
-    value.status === 'priced' && rows.every(([, n]) => n != null && Number.isFinite(Number(n)));
-  const fmt = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'BYN' });
+  const total = value.effective_total_kopeks !== undefined
+    ? value.effective_total_kopeks
+    : value.status === 'priced' && value.net_amount != null ? Math.round(value.net_amount * 100) : null;
   return (
     <section class="financial-summary" aria-label="Стоимость · только владельцу">
-      <p>{preview ? 'Выбранные работы' : 'Сохранённые расценки'} · только владельцу · BYN</p>
-      {preview && Boolean(value.items?.length) && (
+      {preview && value.items && value.items.length > 0 && (
         <ul class="quote-items">
-          {value.items!.map((item, index) => (
-            <li key={item.task_id || item.work_code || index}>
-              <strong>{workName(item.work_code || '')}</strong>
-              <span>
-                Ставка без НДС ·{' '}
-                {item.catalogue_kopeks != null
-                  ? money(item.catalogue_kopeks)
-                  : item.net_amount != null
-                    ? fmt.format(item.net_amount)
-                    : 'не указана'}
-              </span>
-              {item.override_kopeks != null && (
-                <span>Стоимость для клиента без НДС · {money(item.override_kopeks)}</span>
-              )}
-            </li>
-          ))}
+          {value.items.map((item, index) => {
+            const price = customerPrice(item);
+            return (
+              <li key={item.task_id || item.work_code || index}>
+                <strong>{workName(item.work_code || '')}</strong>
+                <span>{price == null ? 'Цена не указана' : money(price)}</span>
+              </li>
+            );
+          })}
         </ul>
       )}
-      <h4>Справочно · по прайсу</h4>
-      {complete ? (
-        <dl data-price-kind="catalogue">
-          {rows.map(([title, n]) => (
-            <div key={title}>
-              <dt>{title}</dt>
-              <dd>{fmt.format(Number(n))}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : (
-        <div class="notice">
-          <strong>Требуется проверка владельца</strong>
-          <p>Стоимость части работ ещё не подтверждена. Неизвестные суммы не считаются нулевыми.</p>
+      <dl data-price-kind="effective">
+        <div>
+          <dt>Итого для клиента</dt>
+          <dd>{total == null ? 'Уточните цену работ' : money(total)}</dd>
         </div>
-      )}
-      {'effective_total_kopeks' in value && (
-        <>
-          <h4>Итого для клиента</h4>
-          <dl data-price-kind="effective">
-            {(
-              [
-                ['Без НДС', value.effective_total_kopeks],
-                ['НДС', value.effective_tax_kopeks],
-                ['С НДС', value.effective_gross_kopeks],
-              ] as const
-            ).map(([label, sum]) => (
-              <div key={label}>
-                <dt>{label}</dt>
-                <dd>{sum == null ? 'Требует расчёта' : money(sum)}</dd>
-              </div>
-            ))}
-          </dl>
-        </>
-      )}
+      </dl>
     </section>
   );
 }

@@ -11,11 +11,10 @@ export interface Payout {
   equal_split?: boolean;
 }
 export interface PrivatePricing {
+  net_amount?: number | null;
   catalogue_kopeks?: number | null;
   override_kopeks?: number | null;
   effective_kopeks?: number | null;
-  effective_tax_kopeks?: number | null;
-  effective_gross_kopeks?: number | null;
   private_version?: number;
   private_comment?: string;
 }
@@ -35,6 +34,11 @@ export interface Revision { version: number; actor_name: string; saved_at: strin
 const moneyFormat = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'BYN', currencyDisplay: 'code' });
 const dateFormat = new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Minsk', dateStyle: 'short', timeStyle: 'short' });
 export const money = (kopeks: number) => moneyFormat.format(kopeks / 100);
+export function customerPrice(value: PrivatePricing): number | null {
+  if (value.effective_kopeks !== undefined) return value.effective_kopeks;
+  return value.override_kopeks ?? value.catalogue_kopeks
+    ?? (value.net_amount == null ? null : Math.round(value.net_amount * 100));
+}
 export const date = (value: string) => dateFormat.format(new Date(value));
 export const decimal = (hundredths: number) => (hundredths / 100).toFixed(2).replace('.', ',');
 export const title = (item: PayItem) => item.work_name + (item.options?.tint_percent ? ' · ' + item.options.tint_percent + '%' : '');

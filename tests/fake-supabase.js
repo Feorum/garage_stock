@@ -40,6 +40,7 @@ export function createClient() {
   ]);
   const receipts = new Map();
   const inlineCheckedOrders = new Set();
+  const inlineChecks = new Map();
   const pricing = new Map();
   const errorCounts = new Map();
   let serial = 0;
@@ -69,7 +70,11 @@ export function createClient() {
     const can_check_work = currentRole() === 'mechanic' && order.status === 'published' &&
       workflow(order).state !== 'review' && task.status !== 'cancelled' &&
       (order.source === 'manager' || !!me) && me?.status !== 'confirmed';
+    const can_uncheck_work = currentRole() === 'mechanic' && order.status === 'published' &&
+      ['available', 'active'].includes(workflow(order).state) && task.status === 'completed' &&
+      me?.status === 'confirmed' && inlineChecks.has(task.id + ':' + user.id);
     return { ...clone(task), participants, my_status: me?.status || null, can_see_notes, can_check_work,
+      can_uncheck_work,
       roster_locked: participants.some(person => person.status === 'confirmed'),
       notes: can_see_notes ? clone(task.notes || []) : [], blocker_reason: can_see_notes ? task.blocker_reason : '' };
   }
@@ -338,6 +343,7 @@ export function createClient() {
       }
       if (me?.status !== 'confirmed') {
         const instant = new Date().toISOString();
+        inlineChecks.set(task.id + ':' + user.id, { member: me && clone(me), status: task.status });
         const worker = me || { mechanic_id: user.id, name: memberName(user.id) };
         Object.assign(worker, {status: 'confirmed', confirmed_at: instant, confirmation_origin: 'mechanic'});
         if (!me) people.push(worker);
@@ -349,6 +355,27 @@ export function createClient() {
         order.version++;
         inlineCheckedOrders.add(order.id);
       }
+      result = { data: { order_id: order.id, task_id: task.id, status: task.status, version: task.version }, error: null };
+    } else if (name === 'garage_uncheck_work') {
+      const order = orders.find(item => item.tasks.some(task => task.id === args.p_task_id));
+      const task = order?.tasks.find(item => item.id === args.p_task_id);
+      if (!task || !readable(task, order).can_uncheck_work) return errorResult('Work unavailable.', '42501');
+      if (task.version !== args.p_expected_version) return errorResult('Work changed.', '40001');
+      const key = task.id + ':' + user.id;
+      const before = inlineChecks.get(key);
+      inlineChecks.delete(key);
+      const people = task.participants.filter(p => p.mechanic_id !== user.id);
+      if (before.member) people.push(before.member);
+      const credited = people.find(p => p.status === 'confirmed');
+      task.participants = people;
+      if (!credited) {
+        task.status = ['in_progress', 'blocked'].includes(before.status) ? before.status : 'pending';
+        task.completed_at = null;
+      }
+      if (task.working_mechanic_id === user.id)
+        task.working_mechanic_id = credited?.mechanic_id || (task.status === 'pending' ? null : user.id);
+      task.version++;
+      order.version++;
       result = { data: { order_id: order.id, task_id: task.id, status: task.status, version: task.version }, error: null };
     } else if (name === 'garage_submit_work') {
       const order = orders.find(item => item.id === args.p_order_id);

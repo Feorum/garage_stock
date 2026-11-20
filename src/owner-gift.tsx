@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'preact/hooks';
-import { availableWorks, workName, type Money, type TaskPrice } from './owner-model';
+import { availableWorks, workName, type Money } from './owner-model';
+import { customerPrice } from './pay-model';
 
 export interface GiftOffer {
   work_code: string;
@@ -17,27 +18,13 @@ export function qualifies(offer: GiftOffer | null, group: string, codes: string[
 export function quoteWithGift(quote: Money, code?: string): Money {
   if (!code || !quote.items?.some((item) => item.work_code === code)) return quote;
   const items = quote.items.map((item) =>
-    item.work_code === code
-      ? {
-          ...item,
-          override_kopeks: 0,
-          effective_kopeks: 0,
-          effective_tax_kopeks: 0,
-          effective_gross_kopeks: 0,
-        }
-      : item,
+    item.work_code === code ? { ...item, override_kopeks: 0, effective_kopeks: 0 } : item,
   );
-  function total(key: 'effective_kopeks' | 'effective_tax_kopeks' | 'effective_gross_kopeks') {
-    const values = items.map((item: TaskPrice) => item[key]);
-    return values.reduce<number | null>((sum, n) => (sum == null || n == null ? null : sum + n), 0);
-  }
-  return {
-    ...quote,
-    items,
-    effective_total_kopeks: total('effective_kopeks'),
-    effective_tax_kopeks: total('effective_tax_kopeks'),
-    effective_gross_kopeks: total('effective_gross_kopeks'),
-  };
+  const total = items.reduce<number | null>((sum, item) => {
+    const price = customerPrice(item);
+    return sum == null || price == null ? null : sum + price;
+  }, 0);
+  return { ...quote, items, effective_total_kopeks: total };
 }
 
 export function GiftDialog({ offer, choose }: { offer: GiftOffer; choose(accept: boolean): void }) {

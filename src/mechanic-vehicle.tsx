@@ -15,22 +15,19 @@ export function WorkRow({
   readOnly,
   disabled,
   pending,
-  check,
+  toggle,
 }: {
   task: BoardTask;
   ownId: string;
   readOnly: boolean;
   disabled: boolean;
   pending: boolean;
-  check(): void;
+  toggle(checked: boolean): void;
 }) {
   const checked = participants(task).filter((person) => person.status === 'confirmed');
-  const allowed =
-    !readOnly &&
-    !!task.can_check_work &&
-    task.status !== 'cancelled' &&
-    !checked.some((person) => person.mechanic_id === ownId) &&
-    task.my_status !== 'confirmed';
+  const ownCheck = task.my_status === 'confirmed' || checked.some((person) => person.mechanic_id === ownId);
+  const allowed = !readOnly && task.status !== 'cancelled' &&
+    (ownCheck ? task.can_uncheck_work : task.can_check_work);
   const name = taskName(task);
   const markers = checked.length > 0 && (
     <span class="mb-executors" id={'mb-executors-' + task.id}>
@@ -46,15 +43,15 @@ export function WorkRow({
           type="button"
           class="mb-work mb-check"
           role="checkbox"
-          aria-checked="false"
+          aria-checked={ownCheck}
           aria-label={name}
           aria-describedby={checked.length ? 'mb-executors-' + task.id : undefined}
           aria-busy={pending}
           disabled={disabled || pending}
-          onClick={check}
+          onClick={() => toggle(!ownCheck)}
         >
           <span class="mb-box" aria-hidden="true">
-            {pending ? '…' : ''}
+            {ownCheck ? '✓' : pending ? '…' : ''}
           </span>
           <span class="mb-work-name">{name}</span>
           {markers}
@@ -185,12 +182,12 @@ export function HandoffForm({
           </button>
         </div>
       )}
-      <div class="shift-button-strip">
-        <button class="button button-primary" disabled={disabled || stale}>
-          Передать владельцу
-        </button>
+      <div class="work-decisions">
         <button type="button" class="button" disabled={sending} onClick={cancel}>
           Отмена
+        </button>
+        <button type="submit" class="button button-primary" disabled={disabled || stale}>
+          Передать владельцу
         </button>
       </div>
     </form>

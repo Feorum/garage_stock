@@ -1,5 +1,6 @@
 """Cross-session browser checks; SQL assertions use the same disposable database as the browsers."""
 import asyncio
+import re
 from threading import Barrier
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -19,6 +20,10 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
     record = next(row for row in db.rpc(owner, 'garage_list_orders') if row['vehicle'] == label)
     task_id = next(t['id'] for t in record['tasks'] if t['work_code'] == 'W01')
     extra_task = next(t for t in record['tasks'] if t['work_code'] == 'W09')
+    db.rpc(owner, 'garage_save_task_pricing', p_task_id=task_id, p_expected_version=0,
+           p_override_kopeks=1550, p_private_comment='', p_request_id=str(uuid4()))
+    db.rpc(owner, 'garage_save_task_pricing', p_task_id=extra_task['id'], p_expected_version=0,
+           p_override_kopeks=0, p_private_comment='', p_request_id=str(uuid4()))
     server, base = smoke.serve(directory.resolve())
     sessions = []
     competing = Barrier(2)
@@ -47,7 +52,7 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
                 first_checks.add(subject)
                 await asyncio.to_thread(competing.wait, 12)
             result = await asyncio.to_thread(db.transport, subject, method, params)
-            if method in ('garage_check_work', 'garage_submit_work', 'garage_vehicle_action') and not result['error']:
+            if method in ('garage_check_work', 'garage_uncheck_work', 'garage_submit_work', 'garage_vehicle_action') and not result['error']:
                 recipients = list(revisions)
                 current_rows = await asyncio.gather(*(asyncio.to_thread(board_revision, recipient) for recipient in recipients))
                 for recipient, revision in zip(recipients, current_rows):
@@ -118,26 +123,45 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
                 assert db.sql("select count(*) from garage_task_completions where task_id=:'id';", {'id':task_id}) == '1'
                 assert len([row for row in db.rpc(owner,'garage_pay_worklist') if row['task_id'] == task_id]) == 1
                 assert {p['mechanic_id'] for p in next(t for t in current()['tasks'] if t['id'] == task_id)['participants']} == {mechanic_a,mechanic_b}
+                self_check = work(a).get_by_role('checkbox')
+                expect(self_check).to_be_checked()
+                expect(work(b).get_by_role('checkbox')).to_be_checked()
+                expect(work(other).get_by_role('checkbox')).not_to_be_checked()
+                self_check.click()
+                for page in (a, b, other):
+                    expect(work(page).locator(f'[data-mechanic-id="{mechanic_a}"]')).to_have_count(0)
+                    expect(work(page).locator(f'[data-mechanic-id="{mechanic_b}"]')).to_be_visible()
+                expect(work(b).get_by_role('checkbox')).to_be_checked()
+                assert next(t for t in current()['tasks'] if t['id'] == task_id)['status'] == 'completed'
+                self_check.click()
+                for page in (a, b):
+                    expect(work(page).locator(f'[data-mechanic-id="{mechanic_a}"]')).to_be_visible()
                 handoff(a, 'Проверить вторую услугу до выдачи')
-                pay = new_page(browser, owner, 'Test Owner', 'admin', 'orders/' + record['id'])
-                review = pay.get_by_role('region', name='Передача автомобиля', exact=True)
-                expect(review.get_by_text('Проверить вторую услугу до выдачи', exact=True)).to_be_visible()
-                expect(review.get_by_role('listitem').filter(has_text=extra_task['work_name'])).to_be_visible()
+                pay = new_page(browser, owner, 'Test Owner', 'admin', 'shift')
+                review = pay.locator(f'article[data-order-id="{record["id"]}"]')
+                first_task = next(task for task in record['tasks'] if task['id'] == task_id)
+                expect(review.get_by_role('listitem').filter(has_text=first_task['work_name'])).to_contain_text(re.compile(r'15,50\s*BYN'))
+                expect(review.get_by_role('listitem').filter(has_text=extra_task['work_name'])).to_contain_text(re.compile(r'0,00\s*BYN'))
+                expect(review.get_by_role('button', name='Подтвердить', exact=True)).to_have_count(0)
                 workflow = current()['vehicle_workflow']
                 assert workflow['state'] == 'review' and workflow['unfinished_count'] == 1
                 assert not workflow['can_close']
-                review.get_by_label('Механику при возврате (необязательно)', exact=True).fill('Закончить вторую услугу')
+                review.get_by_role('button', name='На доработку', exact=True).click()
+                review.get_by_label('Комментарий механику (необязательно)', exact=True).fill('Закончить вторую услугу')
                 review.get_by_role('button', name='Вернуть в работу', exact=True).click()
-                expect(review.get_by_role('button', name='Вернуть в работу', exact=True)).to_have_count(0)
-                open_visit(a, record['id'])
+                expect(review).to_have_count(0)
+                returned = open_visit(a, record['id'])
+                returned.get_by_text('Указания и заметки', exact=True).click()
+                expect(returned.get_by_text('Закончить вторую услугу', exact=True)).to_be_visible()
+                expect(self_check).to_be_enabled()
                 work(a, extra_task['id']).get_by_role('checkbox').click()
                 expect(work(a,extra_task['id']).locator(f'[data-mechanic-id="{mechanic_a}"]')).to_be_visible()
                 handoff(a, 'Все услуги проверены', complete=True)
-                pay.reload()
-                expect(review.get_by_text('Все услуги проверены', exact=True)).to_be_visible()
-                review.get_by_role('button', name='Принять и закрыть заказ', exact=True).click()
-                expect(review.get_by_role('button', name='Принять и закрыть заказ', exact=True)).to_have_count(0)
+                review.get_by_role('button', name='Подтвердить', exact=True).click()
+                expect(review).to_have_count(0)
                 assert current()['status'] == 'closed'
+                pay.get_by_role('link', name='Все заказы', exact=True).click()
+                pay.locator(f'main a[href="#orders/{record["id"]}"]').click()
                 pay.locator(f'section.task-row[data-task-id="{task_id}"]').get_by_role('link', name='Оплата механикам').click()
                 expect(pay).to_have_url(f'{base}/index.html#pay/{task_id}')
                 card = pay.locator(f'.pay-card[data-task-id="{task_id}"]')

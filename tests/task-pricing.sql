@@ -44,6 +44,9 @@ begin
     and row->>'effective_tax_kopeks'='0' and row->>'effective_gross_kopeks'='0'
     and row->>'catalogue_kopeks'='120005' and row->'payout'='null'
     and f->'effective_total_kopeks'='null','explicit zero and one missing amount');
+  select x into strict row from jsonb_array_elements(public.garage_owner_review_prices(array[ord])->0->'tasks') x
+    where x->>'task_id'=unpriced::text;
+  perform pg_temp.price_assert(row->'effective_kopeks'='null','review preserves unknown price');
   q:=public.garage_quote_order('VG02',jsonb_build_array(jsonb_build_object('work_code','W01','id',t)),ord);
   perform pg_temp.price_assert(q->>'effective_total_kopeks'='0' and q->'items'->0->>'private_comment'='Private test memo','retained quote keeps private override');
   q:=public.garage_quote_order('VG02',jsonb_build_array(jsonb_build_object('work_code','W02','id',t)),ord);
@@ -54,6 +57,9 @@ begin
     and f->'effective_gross_kopeks'='null','effective net known, VAT unknown for unpriced manual amount');
   perform public.garage_save_task_pricing(t,1,null,'Independent memo',gen_random_uuid());
   perform pg_temp.price_assert(public.garage_order_financials(ord)->>'effective_total_kopeks'='121005','clearing override restores source rate');
+  select x into strict row from jsonb_array_elements(public.garage_owner_review_prices(array[ord])->0->'tasks') x
+    where x->>'task_id'=t::text;
+  perform pg_temp.price_assert(row->>'effective_kopeks'='120005','review restores the recorded rate when an override is cleared');
   perform pg_temp.price_assert(public.garage_list_orders()::text not like '%Independent memo%','private comment absent from operational payload');
 end $$;
 reset role;
@@ -125,6 +131,11 @@ begin
     "62900000-0000-4000-8000-000000000005":1175}'::jsonb,
     'frozen catalogue alone supplies the net, including true zero and unknown');
   perform pg_temp.price_assert(jsonb_array_length(visit->'tasks')=4,'one row per service across a three-person team');
+  select jsonb_object_agg(t->>'task_id',t->'effective_kopeks') into amounts from jsonb_array_elements(visit->'tasks') t;
+  perform pg_temp.price_assert(amounts='{"62900000-0000-4000-8000-000000000001":0,
+    "62900000-0000-4000-8000-000000000002":1000,"62900000-0000-4000-8000-000000000003":0,
+    "62900000-0000-4000-8000-000000000005":1175}'::jsonb,
+    'review returns the latest agreed price once per job, including gifts and manually priced work');
   perform pg_temp.price_assert((visit->>'closed_at')::timestamptz='2026-10-31 21:00Z'::timestamptz,'historical close instant');
   perform pg_temp.price_assert(visit::text !~ 'private_comment|pool_kopeks|override_kopeks|Courtesy service','minimal report projection');
 end $$;

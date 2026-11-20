@@ -120,6 +120,7 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
   async function repeat(state: ChangeState) {
     const accepted = await actions.retry(state);
     if (accepted && !state.change.taskId) completedSubmission(state.change.orderId);
+    if (accepted && state.change.taskId) focusWork(state.change.taskId);
   }
   function feedback(inPanel: boolean) {
     return Object.entries(actions.changes).map(([id, state]) => {
@@ -149,6 +150,9 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
       if (document.activeElement === document.body || document.activeElement === region.current)
         region.current?.querySelector<HTMLElement>(selector)?.focus({ preventScroll: !scroll });
     });
+  }
+  function focusWork(id: string) {
+    restoreFocus(`[data-task-id="${CSS.escape(id)}"] .mb-work`);
   }
 
   return (
@@ -228,10 +232,11 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
                                 readOnly={history || !editable(order)}
                                 disabled={locked || sending || change?.status === 'unknown'}
                                 pending={change?.status === 'pending'}
-                                check={async () => {
+                                toggle={async (checked) => {
                                   setNotice('');
-                                  if (await actions.check(order.id, task.id))
-                                    restoreFocus(`[data-task-id="${CSS.escape(task.id)}"] [role="group"]`);
+                                  const saved = checked ? await actions.check(order.id, task.id) :
+                                    await actions.uncheck(order.id, task.id, task.version);
+                                  if (saved) focusWork(task.id);
                                 }}
                               />
                             );

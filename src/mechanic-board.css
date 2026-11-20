@@ -11,13 +11,14 @@
 .mb-panel { padding: 0 14px 14px; }
 .mb-work-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
 .mb-work-list li { border-bottom: 1px solid var(--line); }
-.mb-work { width: 100%; display: flex; align-items: center; flex-wrap: wrap; min-height: 47px; gap: 5px 10px; padding: 9px 0; color: var(--ink); background: none; border: 0; font: inherit; font-size: .9375rem; text-align: start; line-height: 1.4; }
+.mb-work { width: 100%; display: flex; align-items: center; flex-wrap: wrap; min-height: 48px; gap: 5px 10px; padding: 9px 0; color: var(--ink); background: none; border: 0; font: inherit; font-size: .9375rem; text-align: start; line-height: 1.4; }
 .mb-work-name { flex: 1 1 6rem; overflow-wrap: anywhere; }
 .mb-work small { color: var(--muted); }
 .mb-box { width: 21px; height: 21px; display: grid; place-items: center; flex: none; border: 1.7px solid #93a09e; border-radius: 5px; }
 .mb-check:hover:not(:disabled) .mb-box { border-color: var(--accent); }
+.mb-check[aria-checked="true"] .mb-box { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 700; }
 .mb-executors { display: flex; flex-wrap: wrap; gap: 4px; max-width: 100%; margin-inline-start: auto; }
-.mb-handoff { width: 100%; margin-top: 13px; }
+.mb-handoff { display: flex; width: 100%; max-width: 25rem; min-height: 48px; margin: 12px 0 0 auto; }
 .mb-handoff:not(.button-primary) { background: transparent; }
 .mb-handoff-form { margin-top: .75rem; }
 .mb-blocked,.mb-feedback,.mb-history-note { font-size: .875rem; margin: .4rem 0 .65rem; }
