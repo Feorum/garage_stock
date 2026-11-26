@@ -1,8 +1,11 @@
 begin;
 insert into auth.users(id,email,raw_user_meta_data,raw_app_meta_data) values
   ('ac100000-0000-4000-8000-000000000001','delete-owner@example.invalid','{"name":"Fixture owner for deletion"}','{}'),
-  ('ac100000-0000-4000-8000-000000000002','new@accounts.garage.invalid','{"name":"Fixture pending mechanic"}','{"garage_registration_pending":true}'),
+  ('ac100000-0000-4000-8000-000000000002','new@accounts.garage.invalid','{"name":"Fixture pending mechanic"}','{}'),
   ('ac100000-0000-4000-8000-000000000003','another@accounts.garage.invalid','{"name":"Fixture rejected mechanic"}','{"garage_registration_pending":true}');
+-- GoTrue adds Admin Create User's application metadata after the INSERT.
+update auth.users set raw_app_meta_data='{"provider":"email","garage_registration_pending":true}'
+  where id='ac100000-0000-4000-8000-000000000002';
 update public.profiles set role='admin' where id='ac100000-0000-4000-8000-000000000001';
 
 set local role service_role;
