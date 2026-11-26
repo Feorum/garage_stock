@@ -1,4 +1,5 @@
 const OWNER = [
+  { id: 'home', label: 'Главная', icon: 'home' },
   { id: 'shift', label: 'На проверке', icon: 'review' },
   { id: 'orders', label: 'Все заказы', icon: 'orders' },
   { id: 'reports', label: 'Отчёты и история', icon: 'book' },
@@ -18,6 +19,10 @@ export function getSections(role) {
   if (role === 'mechanic') return MECHANIC;
   return [];
 }
+// A saved order opens over the current list. Creation and management are full pages.
+export function isOwnerOrderDetail(section, record) {
+  return section === 'orders' && Boolean(record) && !['new', 'custom-new', 'tools'].includes(record);
+}
 export function resolveRoute(role, hash = '') {
   const [id, rawRecord] = hash.replace(/^#/, '').split('/');
   const sections = getSections(role);
@@ -25,7 +30,7 @@ export function resolveRoute(role, hash = '') {
   const legacy = role === 'mechanic' && ['assigned', 'my-work'].includes(id);
   const match = sections.find(item => item.id === (tool?.tab || id));
   const section = match || sections[0];
-  const record = (match || legacy) && /^[A-Za-z0-9_-]{1,100}$/.test(rawRecord || '') ? rawRecord : undefined;
+  const record = match?.id !== 'home' && (match || legacy) && /^[A-Za-z0-9_-]{1,100}$/.test(rawRecord || '') ? rawRecord : undefined;
   const routeId = (tool || legacy) ? id : section?.id;
   return { section, id: routeId, record, label: tool?.label || section?.label };
 }

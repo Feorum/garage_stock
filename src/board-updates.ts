@@ -6,9 +6,10 @@ export function subscribeBoardUpdates(
   profileId: string,
   onSignal: () => void,
   connection?: (connected: boolean) => void,
+  scope = 'board',
 ) {
   const channel = client
-    .channel?.('workshop-board-' + profileId)
+    .channel?.('workshop-' + scope + '-' + profileId)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'garage_board_updates', filter: 'recipient_id=eq.' + profileId },

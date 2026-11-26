@@ -68,7 +68,7 @@ def run(browser, base):
         page.expose_function('__garageRpcFixture', fixture.rpc)
         page.goto(base + '/index.html#orders/visit')
         section = page.locator('.order-payroll')
-        section.locator('summary').first.click()
+        page.get_by_role('button', name='Оплата механиков', exact=True).click()
         expect(section.get_by_text('Всего в премиальный фонд').locator('..')).to_contain_text(re.compile(r'69,00\sBYN'))
         section.get_by_role('button', name='Изменить сумму · Андрей').click()
         section.get_by_label('Андрей, BYN').fill('235,00')
@@ -108,7 +108,7 @@ def run(browser, base):
         section.get_by_role('button', name='Отмена', exact=True).click()
         fixture.pay = {'applicable': False, 'historical': True}
         page.reload()
-        section.locator('summary').first.click()
+        page.get_by_role('button', name='Оплата механиков', exact=True).click()
         expect(section.get_by_role('link', name='Распределение по работам')).to_be_visible()
         expect(section.get_by_role('button', name='Сохранить расчёт')).to_have_count(0)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')

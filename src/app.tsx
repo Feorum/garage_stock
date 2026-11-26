@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { createAuthController } from './auth.js';
-import { getSections, resolveRoute } from './navigation.js';
+import { getSections, isOwnerOrderDetail, resolveRoute } from './navigation.js';
 import { installRussianValidation } from './locale.js';
 import type { Section as ShiftSection } from './shift-model';
 import { MechanicBoard } from './mechanic-board';
@@ -98,6 +98,7 @@ function TabIcon({ icon }: { icon: string }) {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+      {icon === 'home' && <><path d="m3 10 9-7.5 9 7.5M5.5 9v11h13V9" /><path d="M10 20v-6h4v6" /></>}
       {icon === 'review' && <><rect x="3.5" y="3.5" width="17" height="17" rx="3" /><path d="m7.5 12 3 3 6-6" /></>}
       {icon === 'orders' && <><path d="M8 5H5v16h14V5h-3" /><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M8 11h8m-8 4h5" /></>}
       {icon === 'book' && <path d="M12 5.5C9 3.8 5.5 3.7 2.5 4.5v15c3-.8 6.5-.7 9.5 1 3-1.7 6.5-1.8 9.5-1v-15c-3-.8-6.5-.7-9.5 1Zm0 0v15" />}
@@ -112,7 +113,10 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
   const positions = useRef(new Map<string, number>());
   const main = useRef<HTMLElement>(null);
   const previous = useRef(hash);
+  const drawerOrigin = useRef('orders');
   const route = resolveRoute(profile.role, hash);
+  const drawer = profile.role === 'admin' && isOwnerOrderDetail(route.id, route.record);
+  const visibleRoute = drawer ? resolveRoute(profile.role, '#' + drawerOrigin.current) : route;
   const navigate: Navigate = (section, recordId) => {
     location.hash = recordId ? section + '/' + encodeURIComponent(recordId) : section;
   };
@@ -132,12 +136,22 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
     };
   }, []);
   useLayoutEffect(() => {
-    document.title = route.label + ' · Garage';
+    document.title = (drawer ? 'Карточка заказа' : route.label) + ' · Garage';
+    const origin = drawerOrigin.current;
+    if (profile.role === 'admin') {
+      if (!route.record && route.id === route.section.id) drawerOrigin.current = route.id;
+      else if (!drawer) drawerOrigin.current = 'orders';
+    }
     if (previous.current === hash) return;
     const prior = resolveRoute(profile.role, previous.current);
     previous.current = hash;
     // Inline rows retain their focus and scroll position when opened or folded.
     if (profile.role === 'mechanic' && prior.id === route.id) return;
+    // The order dialog owns focus and restores it to the originating row on close.
+    if (profile.role === 'admin') {
+      const wasDrawer = isOwnerOrderDetail(prior.id, prior.record);
+      if (drawer || (wasDrawer && !route.record && route.id === origin)) return;
+    }
     const target = main.current?.querySelector<HTMLElement>('[data-route-heading]') || main.current;
     target?.focus({ preventScroll: true });
     window.scrollTo(0, positions.current.get(hash) ?? 0);
@@ -156,13 +170,12 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
         screen = <PayView client={client} profile={profile} recordId={route.record} />;
         break;
       default:
-        screen = <OwnerWorkspace {...props} />;
+        screen = <OwnerWorkspace {...props} backgroundSection={drawer ? drawerOrigin.current : undefined} />;
     }
   } else screen = <MechanicBoard {...props} section={route.id as ShiftSection} />;
   const roleName = profile.role === 'admin' ? 'Владелец' : 'Механик';
   const cabinet = profile.role === 'admin' ? 'Кабинет владельца' : 'Кабинет механика';
   const name = profile.name || roleName;
-  const initials = name.trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join('').toLocaleUpperCase('ru');
   const today = new Intl.DateTimeFormat('ru-RU', {
     day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Minsk',
   }).format(new Date());
@@ -175,14 +188,13 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
           <nav class="workspace-nav" aria-label={cabinet} data-workspace-role={profile.role}>
             {getSections(profile.role).map(item => (
               <a key={item.id} class="nav-link" href={'#' + item.id} aria-label={item.label} title={item.label}
-                aria-current={route.section.id === item.id ? 'page' : undefined}>
+                aria-current={visibleRoute.section.id === item.id ? 'page' : undefined}>
                 <TabIcon icon={item.icon} /><span class="nav-label">{item.label}</span>
               </a>
             ))}
           </nav>
         </div>
         <div class="account-identity">
-          <span class="profile-avatar" aria-hidden="true">{initials}</span>
           <div class="account-controls">
             <details class="account-menu">
               <summary>
@@ -206,7 +218,7 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
               stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
               <path d="M3 20V7l9-4 9 4v13h-3V10H6v10z M6 14h12 M6 17h12" />
             </svg>
-            Мастерская <span class="path-divider" aria-hidden="true">/</span> <b>{route.label}</b>
+            Мастерская <span class="path-divider" aria-hidden="true">/</span> <b>{visibleRoute.label}</b>
           </span>
           <div class="workspace-status">
             <span class="workshop-date">{today}</span>

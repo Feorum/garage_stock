@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import type { ComponentChildren, RefObject } from 'preact';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { OwnerOrders } from './owner-orders';
 import { ReviewCard, type ReviewRate } from './owner-review';
 import { orderAuthor, orderPhase, type OwnerOrder } from './owner-model';
@@ -12,8 +13,9 @@ import { workshopDay, type Client, type Navigate, type Profile } from './workspa
 import { compareOrderDays, formatOrderDay, newestFirst, orderDay, weekdayClass, workshopOrderDay } from './order-calendar';
 import './owner-workspace.css';
 import { CustomOrderError, CustomOrderPage, useCustomOrders } from './owner-custom-orders';
-import { dashboardOrders, ordersInWeek } from './dashboard-model';
-import { DashboardOverview } from './dashboard-overview';
+import { dashboardOrders } from './dashboard-model';
+import { DashboardHome } from './dashboard-home';
+import { isOwnerOrderDetail } from './navigation.js';
 import { DashboardOrderList } from './dashboard-order-list';
 
 interface Props {
@@ -21,6 +23,7 @@ interface Props {
   profile: Profile;
   section: string;
   recordId?: string;
+  backgroundSection?: string;
   navigate: Navigate;
 }
 interface PriceRow {
@@ -93,20 +96,20 @@ function HistoryCard({ order, day }: { order: OwnerOrder; day: string }) {
   </article>;
 }
 
-function OrdersDashboard({ client, orders, prices }: { client: Client; orders: OwnerOrder[] | null; prices: Prices | null }) {
-  const [week, setWeek] = useState<string | null>(null);
+function OrderViews({ client, orders, prices, home }: {
+  client: Client; orders: OwnerOrder[] | null; prices: Prices | null; home: boolean;
+}) {
   const custom = useCustomOrders(client, orders);
   const rows = useMemo(() => dashboardOrders(orders || [], custom.orders || [], prices), [orders, custom.orders, prices]);
-
   return <>
     {custom.error && <CustomOrderError retry={custom.retry} />}
-    {!custom.orders && !custom.error && <p role="status">Загружаем кастомные заказы…</p>}
-    {(orders || custom.orders?.length) ? <><DashboardOverview orders={rows} weekStart={week} onWeekChange={setWeek} />
-    <DashboardOrderList orders={ordersInWeek(rows, week)} weekStart={week} /></> : null}
+    {orders || custom.orders?.length
+      ? home ? <DashboardHome orders={rows} /> : <DashboardOrderList orders={rows} />
+      : !home && <a class="button button-primary" href="#orders/new">Новый заказ</a>}
   </>;
 }
 
-function Board({ client, profile, section }: Props) {
+function Board({ client, profile, section, drawerOpen }: Props & { drawerOpen: boolean }) {
   const [orders, setOrders] = useState<OwnerOrder[] | null>(null);
   const [pricing, setPricing] = useState<{ key: string; rates: Prices | null } | null>(null);
   const [error, setError] = useState('');
@@ -114,6 +117,11 @@ function Board({ client, profile, section }: Props) {
   const [month, setMonth] = useState('');
   const [online, setOnline] = useState(navigator.onLine);
   const [feedback, setFeedback] = useState('');
+  const wasDrawerOpen = useRef(drawerOpen);
+  useEffect(() => {
+    if (wasDrawerOpen.current && !drawerOpen) setRevision(current => current + 1);
+    wasDrawerOpen.current = drawerOpen;
+  }, [drawerOpen]);
   function refreshReview(message?: string) {
     if (message) setFeedback(message);
     setRevision(n => n + 1);
@@ -184,7 +192,8 @@ function Board({ client, profile, section }: Props) {
   // Review uses the current customer overrides. The journal and monthly report
   // use the catalogue amounts captured on the individual work items.
   const reviewSnapshot = section === 'shift' ? orders : null;
-  const pricedOrders = section === 'orders' ? all.filter(order => order.status !== 'cancelled')
+  const journal = section === 'orders' || section === 'home';
+  const pricedOrders = journal ? all.filter(order => order.status !== 'cancelled')
     : section === 'reports' ? monthly : queue;
   const pricingKey = JSON.stringify(pricedOrders.map(o => [o.id, o.version,
     o.tasks.filter(t => t.status !== 'cancelled').map(t => t.id).sort()]).sort(([a], [b]) => String(a).localeCompare(String(b))));
@@ -217,15 +226,15 @@ function Board({ client, profile, section }: Props) {
 
   return <div class="owner-board">
     <div class="owner-board-heading">
-      <h1 data-route-heading tabIndex={-1}>{review ? 'На проверке' : section === 'orders' ? 'Все заказы' : 'Отчёты и история'}</h1>
-      {section === 'orders' && <a class="button button-primary" href="#orders/new">Новый заказ</a>}
+      <h1 data-route-heading tabIndex={-1}>{section === 'home' ? 'Главная' : review ? 'На проверке'
+        : section === 'orders' ? 'Все заказы' : 'Отчёты и история'}</h1>
     </div>
     {feedback && <p role="status" class="owner-review-feedback">{feedback}</p>}
     {(error || priceError) && <p role="alert" class="notice">{error || 'Не удалось загрузить цены работ.'}{' '}
       <button class="button" type="button" onClick={() => setRevision(n => n + 1)}>Повторить</button></p>}
     {!orders && !error && <p role="status">Загружаем заказы…</p>}
-    {section === 'orders' && <OrdersDashboard client={client} orders={orders} prices={prices} />}
-    {orders && section !== 'orders' && <>
+    {journal && <OrderViews client={client} orders={orders} prices={prices} home={section === 'home'} />}
+    {orders && !journal && <>
       {section === 'reports' && <>
         <section class="owner-board-card owner-month" aria-label="Итог за месяц">
           {months.length > 1 ? <select aria-label="Месяц отчёта" value={selected} onChange={e => setMonth(e.currentTarget.value)}>
@@ -251,20 +260,72 @@ function Board({ client, profile, section }: Props) {
   </div>;
 }
 
+function OrderDrawer({ children, dismiss, behind }: {
+  children: ComponentChildren; dismiss: () => void; behind: RefObject<HTMLDivElement>;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useLayoutEffect(() => {
+    const dialog = ref.current!;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const background = behind.current;
+    dialog.showModal();
+    if (background) {
+      background.inert = true;
+      background.setAttribute('aria-hidden', 'true');
+    }
+    return () => {
+      if (background) {
+        background.inert = false;
+        background.removeAttribute('aria-hidden');
+      }
+      dialog.close();
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
+  }, []);
+  return <dialog class="owner-order-drawer" ref={ref} aria-label="Карточка заказа"
+    onCancel={event => { event.preventDefault(); dismiss(); }}
+    onClick={event => { if (event.target === event.currentTarget) dismiss(); }}>
+    <div class="owner-drawer-sheet">
+      <div class="owner-drawer-caption">
+        <span>Карточка заказа</span>
+        <button type="button" class="owner-drawer-close" aria-label="Закрыть карточку заказа" onClick={dismiss}>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+            stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+        </button>
+      </div>
+      {children}
+    </div>
+  </dialog>;
+}
+
 export function OwnerWorkspace(props: Props) {
-  const { section, recordId, profile } = props;
+  const { section, recordId, profile, navigate, client, backgroundSection } = props;
+  const drawer = isOwnerOrderDetail(section, recordId);
+  const behind = useRef<HTMLDivElement>(null);
   if (profile.role !== 'admin') return null;
-  if (!recordId) return <Board key={profile.id + '/' + section} {...props} />;
+  if (!recordId || drawer) {
+    const boardSection = drawer ? backgroundSection ?? 'orders' : section;
+    return <>
+      <div ref={behind}>
+        <Board key={profile.id + '/' + boardSection} {...props} section={boardSection} recordId={undefined} drawerOpen={drawer} />
+      </div>
+      {drawer && recordId && <OrderDrawer behind={behind} dismiss={() => navigate(boardSection)}>
+        {recordId.startsWith('custom-')
+          ? <CustomOrderPage key={recordId} client={client} record={recordId.slice(7)} navigate={navigate} />
+          : <OwnerOrders {...props} standalone closeDetail={() => navigate(boardSection)} />}
+      </OrderDrawer>}
+    </>;
+  }
   let title;
   let view;
   if (section === 'orders') {
     title = recordId === 'tools' ? 'Управление заказами' : 'Заказ';
-    view = recordId.startsWith('custom-')
-      ? <CustomOrderPage key={recordId} client={props.client} record={recordId.slice(7)} navigate={props.navigate} />
+    view = recordId === 'custom-new'
+      ? <CustomOrderPage key={recordId} client={client} record="new" navigate={navigate} />
       : <OwnerOrders {...props} recordId={recordId === 'tools' ? undefined : recordId} />;
   } else if (section === 'reports') {
     title = 'Отчёт по работам';
-    view = <Reports client={props.client} navigate={props.navigate} />;
+    view = <Reports client={client} navigate={navigate} />;
   } else {
     title = 'Смена и заявки';
     view = <ShiftView {...props} section="shift" recordId={recordId === 'attention' ? undefined : recordId} />;

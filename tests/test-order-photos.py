@@ -7,7 +7,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[1]
 workflow = run_path(str(ROOT / 'tests/test-team-workflow.py'))
 OWNER, A, B, C = [workflow[name] for name in ('OWNER', 'A', 'B', 'C')]
-MIGRATION = '20261126145852_order_photos.sql'
+MIGRATION = '20261126171123_custom_order_photos.sql'
 
 # The Storage service owns these relations in hosted Supabase. Only the fields used by
 # our bucket and policies are needed to exercise PostgreSQL RLS in the isolated fixture.
@@ -88,6 +88,25 @@ def run(db):
           id=second, version=orders[1]['version'])
     db.sql("update profiles set active=false where id=:'id';", {'id':B})
     assert visible(db, B, first) == '0'
+
+    custom = dict(vehicle='Кастомный заказ', visit_date='2026-11-26', services='Защита',
+                  status='open', customer_kopeks=None, payments=[], allocations=[])
+    saved = db.rpc(OWNER, 'garage_save_custom_order', p_order_id=None, p_expected_version=0,
+                   p_order=custom, p_request_id=str(uuid4()))
+    folder = 'custom/' + saved['id']
+    custom_photo = folder + '/' + str(uuid4()) + '.jpg'
+    insert(db, OWNER, custom_photo)
+    assert visible(db, OWNER, folder) == '1'
+    assert visible(db, A, folder) == '0'
+    denied(lambda: insert(db, A, folder + '/' + str(uuid4()) + '.png'))
+    denied(lambda: insert(db, OWNER, 'custom/' + first + '/' + str(uuid4()) + '.jpg'))
+    db.sql("update profiles set role='admin' where id=:'id';", {'id':C})
+    assert visible(db, C, folder) == '0'
+    denied(lambda: insert(db, C, folder + '/' + str(uuid4()) + '.jpg'))
+    db.rpc(OWNER, 'garage_save_custom_order', p_order_id=saved['id'], p_expected_version=saved['version'],
+           p_order=dict(custom, status='closed'), p_request_id=str(uuid4()))
+    assert visible(db, OWNER, folder) == '1'
+    denied(lambda: insert(db, OWNER, folder + '/' + str(uuid4()) + '.jpg'))
 
 
 if __name__ == '__main__':

@@ -158,6 +158,7 @@ def run(args):
             page.get_by_label('Указания (необязательно)', exact=True).fill('Only approved operational instructions')
             page.get_by_role('button', name='Опубликовать заказ', exact=True).click()
             expect(page.locator('[data-intake-id]')).to_have_count(0)
+            page.get_by_role('button', name='Цены', exact=True).click()
             expect(page.get_by_role('region', name='Прайс').locator('[data-task-id]')).to_have_count(3)
             expect(page.locator('.owner-order-index')).to_have_count(0)
             sent = calls(page, 'garage_save_team_order')
@@ -181,7 +182,7 @@ def run(args):
             card = expand(page, '[data-order-id]')
             expect(card.get_by_text('Текст таблицы изменился после проверки владельцем. Выбранные работы сохранены.', exact=True)).to_be_visible()
             detail = card.locator('.owner-order-detail')
-            expect(detail).not_to_contain_text(existing['order_number'])
+            expect(detail).to_contain_text(existing['order_number'])
             expect(detail.locator('.owner-board-phase')).to_have_text('В работе')
             expect(detail.get_by_text('Исходная заявка менеджера', exact=False)).to_have_count(0)
             expect(detail.get_by_role('button', name='К списку заказов', exact=True)).to_have_count(0)
@@ -193,7 +194,7 @@ def run(args):
             expect(detail.get_by_label('Причина', exact=True)).to_be_focused()
             detail.get_by_role('button', name='Оставить без изменений', exact=True).click()
             expect(cancel).to_be_focused()
-            detail.locator('footer').get_by_role('button', name='Изменить заказ', exact=True).click()
+            detail.get_by_role('button', name='Изменить заказ', exact=True).click()
             page.get_by_text('Данные и состав работ', exact=True).click()
             expect(page.get_by_role('combobox', name='Группа автомобилей', exact=True)).to_be_disabled()
             expect(page.locator('#new-work-W19')).to_be_checked()
@@ -310,6 +311,7 @@ def run(args):
                 page.get_by_role('combobox', name='Статус заказа', exact=True).select_option('all')
                 page.locator('.owner-archive summary').click()
                 card = expand(page, f'[data-order-id="{existing["id"]}"]')
+                card.get_by_role('button', name='Цены', exact=True).click()
                 card.get_by_role('button', name='Добавить пропущенную выполненную работу', exact=True).click()
                 expect(page.locator('.completion-form')).to_be_visible()
                 expect(page.locator('#completion-work option[value="W01"]')).to_have_js_property('disabled', True)
@@ -360,7 +362,7 @@ def run(args):
                 if role == 'mechanic':
                     card.get_by_text('Указания и заметки', exact=True).click()
                 else:
-                    expect(card.locator('.order-detail-head').get_by_role('region', name='Комментарий менеджера')).to_be_visible()
+                    expect(card.get_by_role('region', name='Комментарий менеджера')).to_be_visible()
                 expect(card.get_by_text(current['manager_comment'], exact=True)).to_be_visible()
                 assert card.locator('b').filter(has_text='Plain text').count() == 0
                 page.evaluate("__garageOrderState.orders[0].manager_comment = 'New Manager detail after Owner review'; __garageOrderState.orders[0].manager_comment_updated_at = '2026-11-15T12:15:00Z'")

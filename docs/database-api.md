@@ -309,3 +309,14 @@ A percentage is null when the amount or price is missing or the price is
 zero. For a later analysis, keep the highest revision
 per order and use only its selected recording mode. This also applies when a
 revision clears an earlier amount.
+
+### Order comments and custom photos
+
+Migration `20261126170903_owner_order_notes.sql` adds private order comments.
+`garage_owner_order_note` reads the note and its version.
+`garage_save_owner_order_note` requires the expected version and a request ID.
+The owner role is required for both operations. A custom order is scoped to its owner.
+
+Migration `20261126171123_custom_order_photos.sql` extends the existing private
+photo bucket with `custom/<order UUID>/<photo UUID>.<ext>` paths. The custom order
+owner can add photos while it is open and read existing photos after closing.

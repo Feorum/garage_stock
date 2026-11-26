@@ -39,6 +39,7 @@ export function createClient() {
     { id: '22222222-2222-4222-8222-222222222222', name: 'Other Mechanic' },
   ]);
   const receipts = new Map();
+  const ownerNotes = new Map();
   const inlineCheckedOrders = new Set();
   const inlineChecks = new Map();
   const pricing = new Map();
@@ -221,6 +222,22 @@ export function createClient() {
       return { data: clone(source), error: null };
     }
     if (name === 'garage_custom_orders') return owner ? { data: clone(fixture.customOrders || []), error: null } : errorResult('Owner access required.', '42501');
+    if (name === 'garage_owner_order_note' || name === 'garage_save_owner_order_note') {
+      const source = args.p_custom ? fixture.customOrders || [] : orders;
+      if (!owner || !source.some(order => order.id === args.p_order_id)) return errorResult('Order unavailable.', '42501');
+      const key = JSON.stringify([args.p_custom, args.p_order_id]);
+      const saved = ownerNotes.get(key) || { note: '', version: 0 };
+      if (name === 'garage_owner_order_note') return { data: clone(saved), error: null };
+      const fingerprint = JSON.stringify({ name, ...args });
+      const prior = receipts.get(args.p_request_id);
+      if (prior) return prior.fingerprint === fingerprint ? clone(prior.result) : errorResult('Request ID already used.');
+      if (saved.version !== args.p_expected_version) return errorResult('Order note changed.', '40001');
+      const data = { note: args.p_note, version: saved.version + 1 };
+      const result = { data, error: null };
+      ownerNotes.set(key, data);
+      receipts.set(args.p_request_id, { fingerprint, result });
+      return clone(result);
+    }
     if (name === 'garage_list_orders') return { data: visibleOrders(), error: null };
     if (name === 'garage_owner_review_prices') return owner
       ? { data: clone((fixture.reviewPrices || []).filter(row => args.p_order_ids?.includes(row.order_id))), error: null }

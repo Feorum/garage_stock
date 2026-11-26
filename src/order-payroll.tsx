@@ -176,9 +176,8 @@ function Calculation({ order, client, mutate, staff }: Props) {
   </div>;
 }
 export function OrderPayroll(props: Props) {
-  const [open, setOpen] = useState(() => location.hash === '#orders/' + encodeURIComponent(props.order.id) + '/payroll');
-  return <details open={open} class="order-payroll" onToggle={e => setOpen(e.currentTarget.open)}>
-    <summary>Выплаты и премиальный фонд</summary>
-    {open && <Calculation {...props} />}
-  </details>;
+  return <section class="order-payroll" aria-label="Выплаты и премиальный фонд">
+    <h3>Выплаты и премиальный фонд</h3>
+    <Calculation {...props} />
+  </section>;
 }

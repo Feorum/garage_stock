@@ -4,6 +4,10 @@ import { errorText, isConflict, read } from './owner-model';
 import { workshopDay, type Client, type Navigate } from './workspace-types';
 import { formatOrderDay } from './order-calendar';
 import { readRpc } from './workspace-rpc';
+import { OrderSectionBar, PhotoShortcut, type OrderSection } from './order-section-bar';
+import { OwnerOrderNote } from './owner-order-note';
+import { OrderPhotos } from './order-photos';
+import './owner-detail.css';
 import type { CustomOrderSummary as Summary } from './dashboard-model';
 
 type Item = { name: string; kopeks: number };
@@ -121,7 +125,16 @@ function CustomOrderEditor({ client, seed, navigate }: { client: Client; seed: C
   const [customer, setCustomer] = useState(seed?.customer_kopeks == null ? '' : decimal(seed.customer_kopeks));
   const [payments, setPayments] = useState<Line[]>(() => lines(seed?.payments ?? []));
   const [allocations, setAllocations] = useState<Line[]>(() => lines(seed?.allocations ?? []));
-  const [version, setVersion] = useState(seed?.version ?? 0);
+  const [savedOrder, setSavedOrder] = useState(seed);
+  const [section, setSection] = useState<OrderSection>(seed ? 'overview' : 'create');
+  const [photosVisited, setPhotosVisited] = useState(false);
+  const photoPanel = useRef<HTMLDivElement>(null);
+  function choose(next: OrderSection) {
+    if (next === 'photos') setPhotosVisited(true);
+    setSection(next);
+  }
+  const editSection = seed ? 'edit' : 'create';
+  const version = savedOrder?.version ?? 0;
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [conflict, setConflict] = useState(false);
@@ -133,23 +146,38 @@ function CustomOrderEditor({ client, seed, navigate }: { client: Client; seed: C
   const pay = items(payments), expenses = items(allocations);
   const balance = price !== null && pay && expenses
     ? price - [...pay, ...expenses].reduce((sum, row) => sum + row.kopeks, 0) : null;
-  async function save() {
+  const draft = { vehicle: vehicle.trim(), visit_date: visitDate, services, status, customer_kopeks: price, payments: pay, allocations: expenses };
+  const dirty = !savedOrder || vehicle.trim() !== savedOrder.vehicle || visitDate !== savedOrder.visit_date ||
+    services !== savedOrder.services || status !== savedOrder.status || price !== savedOrder.customer_kopeks ||
+    (customer.trim() !== '' && price === null) ||
+    JSON.stringify(pay) !== JSON.stringify(savedOrder.payments.map(({name, kopeks}) => ({name, kopeks}))) ||
+    JSON.stringify(expenses) !== JSON.stringify(savedOrder.allocations.map(({name, kopeks}) => ({name, kopeks})));
+  async function save(nextStatus = status) {
     if (lock.current || conflict) return;
     setFailed(true);
     if (!vehicle.trim() || !visitDate || (customer.trim() && price === null) || !pay || !expenses) {
-      setMessage('Укажите автомобиль и дату. Для каждой строки введите название и сумму в BYN с точностью до копейки.');
+      if (!vehicle.trim() || !visitDate) {
+        setSection(editSection);
+        setMessage('Укажите автомобиль и дату заказа.');
+      } else if (!pay) {
+        setSection('payroll');
+        setMessage('Для каждой выплаты укажите исполнителя и сумму с точностью до копейки.');
+      } else {
+        setSection('prices');
+        setMessage('Проверьте сумму для клиента, названия и суммы расходов.');
+      }
       return;
     }
     lock.current = true; setSaving(true); setMessage('');
-    const draft = { vehicle: vehicle.trim(), visit_date: visitDate, services, status, customer_kopeks: price, payments: pay, allocations: expenses };
-    const args = { p_order_id: seed?.id ?? null, p_expected_version: version, p_order: draft };
+    const args = { p_order_id: seed?.id ?? null, p_expected_version: version, p_order: { ...draft, status: nextStatus } };
     const payload = JSON.stringify(args);
     if (request.current?.payload !== payload) request.current = { payload, id: crypto.randomUUID() };
     try {
       const result = await read<CustomOrder>(client, 'garage_save_custom_order', { ...args, p_request_id: request.current.id });
       if (!live.current) return;
       request.current = null;
-      setFailed(false); setMessage('Кастомный заказ сохранён.'); setVersion(result.version);
+      setFailed(false); setMessage(nextStatus === status ? 'Кастомный заказ сохранён.' : 'Заказ принят и закрыт.');
+      setSavedOrder(result); setStatus(result.status);
       if (!seed) navigate('orders', 'custom-' + result.id);
     } catch (e) {
       if (live.current) { setConflict(isConflict(e)); setMessage(errorText(e)); }
@@ -158,25 +186,66 @@ function CustomOrderEditor({ client, seed, navigate }: { client: Client; seed: C
       if (live.current) setSaving(false);
     }
   }
-  return <form class="new-order-form custom-order-form" onSubmit={e => { e.preventDefault(); void save(); }}>
-    <a href="#orders">К списку заказов</a>
-    {seed ? <h2>Кастомный заказ</h2> : <OrderType custom change={() => navigate('orders', 'new')} />}
-    <fieldset disabled={saving}><legend>Заказ</legend>
-      <div class="form-grid"><label>Автомобиль<input required maxLength={240} value={vehicle} onInput={e => setVehicle(e.currentTarget.value)} /></label>
-        <label>Дата заказа<input type="date" required value={visitDate} onInput={e => setDate(e.currentTarget.value)} /></label>
-        <label>Состояние<select value={status} onChange={e => setStatus(e.currentTarget.value as Summary['status'])}>
-          <option value="open">Открыт</option><option value="closed">Закрыт</option>
-        </select></label></div>
-      <label class="order-field">Работы<textarea rows={3} maxLength={12000} value={services} onInput={e => setServices(e.currentTarget.value)} /></label>
-      <label class="order-field">Сумма для клиента, BYN<input inputMode="decimal" value={customer} onInput={e => setCustomer(e.currentTarget.value)} /></label>
-    </fieldset>
-    <fieldset disabled={saving} class="custom-distribution"><legend>Распределение средств</legend>
-      <AmountLines title="Выплаты исполнителям" nameLabel="Имя исполнителя" addLabel="Добавить исполнителя" rows={payments} change={setPayments} />
-      <AmountLines title="Расходы и прочее распределение" nameLabel="Назначение (например, плёнка)" addLabel="Добавить расход или распределение" rows={allocations} change={setAllocations} />
-      {balance !== null && <p>Свободный остаток <strong>{money(balance)}</strong></p>}
-    </fieldset>
-    {message && <p role={failed ? 'alert' : 'status'}>{message}</p>}
-    {conflict && <button class="button" type="button" onClick={() => window.location.reload()}>Загрузить сохранённую версию</button>}
-    <button type="submit" class="button button-primary" disabled={saving || conflict}>{saving ? 'Сохранение…' : 'Сохранить заказ'}</button>
-  </form>;
+  return <article class="owner-order-detail order-sheet custom-order-form">
+    <a class="order-back" href="#orders">К списку заказов</a>
+    {seed ? <div class="order-sheet-title"><span>Кастомный заказ</span></div> :
+      <OrderType custom change={() => navigate('orders', 'new')} />}
+    <OrderSectionBar selected={section} change={choose}
+      sections={seed ? ['overview', 'prices', 'payroll', 'edit', 'photos'] : ['create', 'prices', 'payroll']} />
+    <header class="order-detail-head"><h2>{savedOrder?.vehicle || 'Новый кастомный заказ'}</h2>
+      {savedOrder && <span class={'owner-board-phase phase-' + (savedOrder.status === 'closed' ? 'closed' : 'active')}>
+        {savedOrder.status === 'closed' ? 'Закрыт' : 'Открыт'}
+      </span>}
+    </header>
+    {seed && <div class="order-section-body" hidden={section !== 'overview'}>
+      <dl class="order-facts"><div><dt>Дата заказа</dt><dd>{formatOrderDay(savedOrder!.visit_date)}</dd></div></dl>
+      <section class="order-scope"><h3>Состав работ</h3>
+        <p class="order-detail-instructions">{savedOrder?.services || 'Работы пока не указаны.'}</p>
+      </section>
+      <footer class="order-sheet-footer">
+        {savedOrder?.status === 'open' && <div class="order-accept-row">
+          <button class="button button-primary" type="button" disabled={saving || conflict || dirty} onClick={() => void save('closed')}>
+            Принять и закрыть заказ
+          </button>
+          {dirty && <span class="field-hint">Сохраните изменения перед закрытием заказа.</span>}
+        </div>}
+        <OwnerOrderNote client={client} orderId={seed.id} custom />
+        <div class="order-footer-actions"><PhotoShortcut open={() => {
+          choose('photos');
+          requestAnimationFrame(() => photoPanel.current?.focus());
+        }} /></div>
+      </footer>
+    </div>}
+    {savedOrder && photosVisited && <div class="order-section-body" hidden={section !== 'photos'} ref={photoPanel} tabIndex={-1}>
+      <OrderPhotos client={client} orderId={savedOrder.id} upload={savedOrder.status === 'open'} initialLoad custom />
+    </div>}
+    <form class="custom-order-editor" noValidate onSubmit={e => { e.preventDefault(); void save(); }}>
+      <fieldset class="order-section-body" disabled={saving} hidden={section !== editSection}>
+        <legend>Данные заказа</legend>
+        <div class="form-grid">
+          <label>Автомобиль<input required maxLength={240} value={vehicle} onInput={e => setVehicle(e.currentTarget.value)} /></label>
+          <label>Дата заказа<input type="date" required value={visitDate} onInput={e => setDate(e.currentTarget.value)} /></label>
+          <label>Состояние<select value={status} onChange={e => setStatus(e.currentTarget.value as Summary['status'])}>
+            <option value="open">Открыт</option><option value="closed">Закрыт</option>
+          </select></label>
+        </div>
+        <label class="order-field">Работы<textarea rows={3} maxLength={12000} value={services} onInput={e => setServices(e.currentTarget.value)} /></label>
+      </fieldset>
+      <fieldset disabled={saving} class="order-section-body custom-distribution" hidden={section !== 'prices'}>
+        <legend>Цены и расходы</legend>
+        <label class="order-field">Сумма для клиента, BYN<input inputMode="decimal" value={customer} onInput={e => setCustomer(e.currentTarget.value)} /></label>
+        <AmountLines title="Расходы и прочее распределение" nameLabel="Назначение (например, плёнка)" addLabel="Добавить расход или распределение" rows={allocations} change={setAllocations} />
+        {balance !== null && <p>Свободный остаток <strong>{money(balance)}</strong></p>}
+      </fieldset>
+      <fieldset disabled={saving} class="order-section-body custom-distribution" hidden={section !== 'payroll'}>
+        <legend>Оплата механиков</legend>
+        <AmountLines title="Выплаты исполнителям" nameLabel="Имя исполнителя" addLabel="Добавить исполнителя" rows={payments} change={setPayments} />
+      </fieldset>
+      {message && <p role={failed ? 'alert' : 'status'}>{message}</p>}
+      {conflict && <button class="button" type="button" onClick={() => window.location.reload()}>Загрузить сохранённую версию</button>}
+      {(section !== 'overview' && section !== 'photos' || dirty) && <button type="submit" class="button button-primary" disabled={saving || conflict}>
+        {saving ? 'Сохранение…' : 'Сохранить заказ'}
+      </button>}
+    </form>
+  </article>;
 }

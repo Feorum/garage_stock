@@ -69,6 +69,7 @@ def exercise(browser, base):
     try:
         page.expose_function('__garageRpcFixture', fixture.rpc)
         page.goto(base + '/index.html#orders/film-order')
+        page.get_by_role('button', name='Цены', exact=True).click()
         film = page.locator('details').filter(has=page.locator('summary', has_text='Расход на плёнку'))
         summary = film.locator('summary', has_text='Расход на плёнку')
         expect(summary).to_be_visible()
@@ -112,6 +113,7 @@ def exercise(browser, base):
         assert fixture.saves[-1]['p_price_token'] == 'revised-price'
         assert not fixture.file_reads
         page.reload()
+        page.get_by_role('button', name='Цены', exact=True).click()
         summary.click()
         expect(mode).to_have_value('works')
         expect(hood).to_have_value('30,75')

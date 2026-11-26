@@ -32,6 +32,7 @@ def exercise_order_pay(db, directory, chromium, owner, first, second):
                 try:
                     page.expose_function('__garageRpcFixture', lambda method, params: db.transport(owner, method, params))
                     page.goto(url)
+                    page.get_by_role('button', name='Цены', exact=True).click()
                     expect(page.get_by_role('list', name='Работы и цены').get_by_role('listitem')).to_have_count(3)
                     expect(page.get_by_role('button', name='Распределить', exact=True)).to_have_count(0)
                     page.get_by_role('button', name='Изменить заказ', exact=True).click()

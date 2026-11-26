@@ -11,16 +11,6 @@
 .order-detail-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .125rem var(--gap-control); }
 .order-detail-head h2 { grid-area: 1 / 1; align-self: center; margin: 0; }
 .order-detail-head .owner-board-phase { grid-area: 1 / 2; align-self: center; }
-.order-detail-head > p, .order-detail-head .order-manager-comment { grid-column: 1 / -1; }
-.order-detail-head p { color: var(--muted); margin: 0; font-size: .875rem; }
-.order-detail-head p:empty { display: none; }
-.order-detail-head .order-manager-comment {
-  display: grid; gap: .125rem; padding: var(--gap-tight) var(--gap-control); margin-block-start: var(--gap-tight);
-  background: var(--surface-raised); border-radius: .25rem;
-}
-.order-detail-head .order-manager-comment h3 { margin: 0; font-size: .8rem; color: var(--muted); }
-.order-detail-head .order-manager-comment p, .order-detail-instructions { white-space: pre-wrap; overflow-wrap: anywhere; }
-.order-detail-head .order-manager-comment p { color: var(--ink); }
 .owner-price-section { display: grid; min-width: 0; gap: var(--gap-tight); }
 .owner-price-section h3 { margin: 0; }
 .owner-order-detail .owner-price-rows { display: grid; gap: .125rem; padding: 0; margin: 0; list-style: none; }
@@ -34,7 +24,6 @@
 .owner-price-rows li.is-cancelled { color: var(--muted); }
 .owner-price-rows li.is-cancelled strong { text-decoration: line-through; }
 .owner-price-actions > .button { font-size: .875rem; }
-.owner-order-detail > .order-actions > .button { padding-inline: var(--gap-control); font-size: .875rem; }
 .order-price-list {
   table-layout: fixed;
   border-collapse: collapse;
@@ -124,4 +113,45 @@
 @media (max-width: 360px) {
   .order-price-list .order-job { grid-template-columns: minmax(0, .94fr) minmax(0, 1fr) minmax(0, 1.06fr); }
   .order-job .job-link { font-size: .78rem; }
+}
+
+/* Order controls are shared by standard orders and the custom order editor. */
+.owner-order-detail.order-sheet { display: grid; gap: 1rem; padding: 0; border: 0; border-radius: 0; background: var(--surface); }
+.order-sheet > *, .order-section-body { min-width: 0; }
+.order-sheet .order-back { justify-self: start; align-content: center; text-decoration: none; }
+.order-sheet-title { color: var(--muted); font-size: .86rem; font-weight: 600; }
+.order-section-bar { display: flex; flex-wrap: wrap; gap: .35rem; padding-bottom: .85rem; border-bottom: 1px solid var(--line); }
+.order-section-bar button, .order-photo-shortcut {
+  display: inline-flex; justify-content: center; align-items: center; gap: .4rem; min-height: 36px;
+  padding: .4rem .65rem; border: 1px solid var(--line); border-radius: .45rem; background: var(--surface);
+  color: var(--ink); font: inherit; font-size: .84rem; font-weight: 550; line-height: 1.2;
+}
+.order-section-bar button:hover, .order-photo-shortcut:hover { border-color: var(--control-line); background: var(--surface-raised); }
+.order-section-bar button[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: white; }
+.order-sheet .order-detail-head { align-items: center; gap: .5rem; }
+.order-sheet .order-detail-head h2 { color: var(--ink); font-size: clamp(1.35rem, 3vw, 1.8rem); font-weight: 700; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.order-sheet .order-section-body, .order-sheet-footer, .custom-order-editor { display: grid; gap: 1rem; }
+.order-sheet [hidden] { display: none !important; }
+.order-sheet h3 { font-size: 1rem; margin: 0; }
+.order-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr)); gap: .7rem 1.2rem; margin: 0; }
+.order-facts > div { min-width: 0; }
+.order-facts dt { font-size: .8rem; color: var(--muted); }
+.order-facts dd { margin: .12rem 0 0; font-size: .93rem; overflow-wrap: anywhere; }
+.order-sheet .order-manager-comment, .order-detail-instructions { white-space: pre-wrap; overflow-wrap: anywhere; }
+.order-sheet .order-manager-comment p, .order-detail-instructions { margin: .35rem 0 0; }
+.owner-order-detail .order-scope ul { list-style: none; padding: 0; }
+.order-scope li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.order-scope small { color: var(--muted); }
+.order-sheet-footer { border-top: 1px solid var(--line); padding-top: 1rem; }
+.order-footer-actions, .order-accept-row { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.order-footer-actions { justify-content: space-between; }
+.order-cancel-link { min-height: 36px; padding: .25rem .1rem; background: none; border: 0; color: var(--muted); font: inherit; font-size: .85rem; }
+.order-cancel-link:hover { color: var(--danger); text-decoration: underline; }
+.order-legacy-decision { display: grid; gap: .5rem; }
+.order-legacy-decision button, .order-price-edit, .custom-order-editor > button { justify-self: start; }
+.custom-order-editor > fieldset { margin: 0; min-width: 0; }
+.order-sheet .owner-price-section { gap: .75rem; }
+@media (max-width: 600px) {
+  .order-section-bar button, .order-photo-shortcut, .order-cancel-link { min-height: 44px; }
+  .order-section-bar { gap: .3rem; }
 }

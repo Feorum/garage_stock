@@ -104,6 +104,7 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
         act_date = page.get_by_label('Дата акта', exact=True)
         def open_panel(row):
             page.goto(f'{base}/index.html#orders/{row["id"]}')
+            page.get_by_role('button', name='Документы', exact=True).click()
             button.click()
         def exported_text():
             with page.expect_download() as info:
@@ -157,6 +158,7 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
         assert '49/12' in exported_text()
         prices[1] = None
         page.reload()
+        page.get_by_role('button', name='Документы', exact=True).click()
         button.click()
         expect(page.get_by_role('alert')).to_contain_text(tasks[1]['work_name'])
         expect(submit).to_be_disabled()
@@ -167,11 +169,13 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
         prices[:] = listed
         page.set_viewport_size({'width': 360, 'height': 900})
         page.reload()
+        page.get_by_role('button', name='Цены', exact=True).click()
         page.get_by_role('button', name='Изменить договорную сумму заказа').click()
         page.get_by_label('Договорная сумма за заказ, BYN').fill('750')
         page.get_by_label('От какой суммы считать 80%').select_option('agreed')
         page.get_by_role('button', name='Сохранить условия').click()
         expect(page.get_by_role('button', name='Изменить договорную сумму заказа')).to_contain_text('750,00')
+        page.get_by_role('button', name='Документы', exact=True).click()
         button.click()
         for mode, expected in [('weighted', ['450,00 BYN', '300,00 BYN']),
                                ('discount', ['480,00 BYN', '320,00 BYN', 'Скидка', '−50,00 BYN']),

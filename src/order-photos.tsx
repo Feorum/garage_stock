@@ -9,9 +9,10 @@ const maxBytes = 20 * 1024 * 1024;
 const pageSize = 50;
 type Photo = { name: string; created_at: string };
 
-export function OrderPhotos({ client, orderId, upload = false, offline = false }: {
-  client: Client; orderId: string; upload?: boolean; offline?: boolean;
+export function OrderPhotos({ client, orderId, custom = false, upload = false, offline = false, initialLoad = false }: {
+  client: Client; orderId: string; custom?: boolean; upload?: boolean; offline?: boolean; initialLoad?: boolean;
 }) {
+  const folder = custom ? 'custom/' + orderId : orderId;
   const [files, setFiles] = useState<Photo[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [more, setMore] = useState(false);
@@ -45,7 +46,7 @@ export function OrderPhotos({ client, orderId, upload = false, offline = false }
   }
   async function list(append = false) {
     const start = append ? offset.current : 0;
-    const { data, error } = await client.storage.from(bucket).list(orderId, {
+    const { data, error } = await client.storage.from(bucket).list(folder, {
       limit: pageSize, offset: start, sortBy: { column: 'created_at', order: 'desc' },
     });
     if (error) throw error;
@@ -59,16 +60,19 @@ export function OrderPhotos({ client, orderId, upload = false, offline = false }
     setPreview('');
     void run(() => list(append), 'Не удалось загрузить список фотографий. Проверьте подключение и доступ к заказу.');
   }
+  useEffect(() => {
+    if (initialLoad && !offline) load();
+  }, [initialLoad, offline, client, folder]);
   async function save() {
     const pending = draft.current;
     if (!pending || !upload) return;
     const store = client.storage.from(bucket);
-    const { error } = await store.upload(orderId + '/' + pending.name, pending.file, {
+    const { error } = await store.upload(folder + '/' + pending.name, pending.file, {
       contentType: pending.file.type, cacheControl: '0', upsert: false,
     });
     if (error) {
       // A retry following a lost reply may find the original immutable upload.
-      const existing = await store.list(orderId, { search: pending.name, limit: 1 });
+      const existing = await store.list(folder, { search: pending.name, limit: 1 });
       if (existing.error || !existing.data?.some(photo => photo.name === pending.name)) throw error;
     }
     draft.current = null;
@@ -100,7 +104,7 @@ export function OrderPhotos({ client, orderId, upload = false, offline = false }
     setPreview('');
     void run(async () => {
       // Authenticated download applies current order visibility on every opening.
-      const { data, error } = await client.storage.from(bucket).download(orderId + '/' + photo.name);
+      const { data, error } = await client.storage.from(bucket).download(folder + '/' + photo.name);
       if (error) throw error;
       if (active.current) setPreview(URL.createObjectURL(data));
     }, 'Не удалось открыть фото. Проверьте подключение и доступ к заказу.');

@@ -66,7 +66,7 @@ def serve(directory):
     return server, f'http://127.0.0.1:{server.server_port}/garage_stock'
 
 
-def check_no_private_data(page):
+def check_no_private_data(page, *, owner_home=False):
     calls = page.evaluate('globalThis.__garageCalls || []')
     reads = [entry['table'] for entry in calls if entry['method'] == 'from']
     assert set(reads) <= {'profiles'}, reads
@@ -78,7 +78,9 @@ def check_no_private_data(page):
     }
     assert rpc_names <= allowed, rpc_names
     body = page.locator('body').inner_text()
-    assert not re.search(r'€|\bBYN\b|\bEUR\b|\bVAT\b', body), body
+    assert not re.search(r'€|\bEUR\b|\bVAT\b', body), body
+    if not owner_home:
+        assert not re.search(r'\bBYN\b', body), body
 
 
 def new_page(browser, fixture, viewport=None, service_workers='block'):
@@ -149,30 +151,34 @@ def run(args):
         try:
             # Both roles load only their own workspace navigation.
             for role, name, expected_links, forbidden in [
-                ('admin', 'Test Owner', ['На проверке', 'Все заказы', 'Отчёты и история'], 'История'),
+                ('admin', 'Test Owner', ['Главная', 'На проверке', 'Все заказы', 'Отчёты и история'], 'История'),
                 ('mechanic', 'Test Mechanic', ['Заказы владельца', 'Заказы менеджеров', 'История'], 'Отчёты'),
             ]:
                 viewport = {'width': 320, 'height': 844} if role == 'mechanic' else None
                 context, page, errors, live = new_page(browser, {'profile': {'name': name, 'role': role}}, viewport)
                 page.goto(base + '/index.html')
                 ready(page, name)
-                for label in expected_links:
-                    expect(page.get_by_role('link', name=label, exact=True)).to_be_visible()
+                nav = page.get_by_role('navigation', name='Кабинет владельца' if role == 'admin' else 'Кабинет механика')
+                links = nav.get_by_role('link')
+                expect(links).to_have_count(len(expected_links))
+                for index, label in enumerate(expected_links):
+                    expect(links.nth(index)).to_have_accessible_name(label)
+                    expect(links.nth(index)).to_be_visible()
                 expect(page.get_by_role('link', name=forbidden, exact=True)).to_have_count(0)
                 page.evaluate("location.hash = '#reports'" if role == 'mechanic' else "location.hash = '#assigned'")
-                expect(page.get_by_role('link', name=expected_links[0], exact=True)).to_have_attribute('aria-current', 'page')
-                check_no_private_data(page)
+                expect(nav.get_by_role('link', name=expected_links[0], exact=True)).to_have_attribute('aria-current', 'page')
+                check_no_private_data(page, owner_home=(role == 'admin'))
                 assert not errors, errors
                 assert not live, live
                 if role == 'admin':
                     page.screenshot(path=str(args.output / 'owner-workspace.png'), full_page=True)
                     expect(page.get_by_role('link', name='Approved works', exact=True)).to_have_count(0)
                     page.evaluate("location.hash = '#catalogue'")
-                    expect(page.get_by_role('heading', name='На проверке', exact=True)).to_be_visible()
+                    expect(page.get_by_role('heading', name='Главная', exact=True)).to_be_visible()
                     page.get_by_role('link', name='Перейти к содержимому', exact=True).evaluate('link => link.click()')
-                    expect(page.get_by_role('link', name='На проверке', exact=True)).to_have_attribute('aria-current', 'page')
+                    expect(nav.get_by_role('link', name='Главная', exact=True)).to_have_attribute('aria-current', 'page')
                     assert page.evaluate("document.activeElement.id === 'main-content'")
-                    check_no_private_data(page)
+                    check_no_private_data(page, owner_home=True)
                 else:
                     page.screenshot(path=str(args.output / 'mechanic-workspace.png'), full_page=True)
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')

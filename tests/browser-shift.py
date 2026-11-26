@@ -348,13 +348,15 @@ def check_owner_photos(browser, base):
     context, page, errors, live = photo_session(browser, data)
     try:
         page.goto(base + '/index.html#orders/' + review['id'])
+        page.get_by_role('button', name='Фото к заказу', exact=True).click()
         photos = page.get_by_role('region', name='Фотопротокол')
         with page.expect_file_chooser() as chosen:
             photos.get_by_role('button',name='Прикрепить фото').click()
         chosen.value.set_files({'name':'review.jpg','mimeType':'image/jpeg','buffer':b'photo fixture'})
         expect(photos.get_by_text('Фото прикреплено.', exact=True)).to_be_visible()
         page.goto(base + '/index.html#orders/' + closed['id'])
-        expect(photos.get_by_role('button',name='Показать фотографии')).to_be_visible()
+        page.get_by_role('button', name='Фото', exact=True).click()
+        expect(photos.get_by_text('Фотографий пока нет.')).to_be_visible()
         expect(photos.get_by_role('button',name='Прикрепить фото')).to_have_count(0)
         assert not errors and not live, (errors, live)
     finally:

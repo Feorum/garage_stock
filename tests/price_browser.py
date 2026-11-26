@@ -43,6 +43,7 @@ def exercise_gift_offer(page, db, base, owner, mechanic):
     page.get_by_role('button', name='Отправить заказ', exact=True).click()
     expect(panel.get_by_role('heading', name=vehicle, exact=True)).to_be_visible()
     assert {t['work_code'] for t in lookup(vehicle)['tasks']} == {'W01', 'W08'}
+    panel.get_by_role('button', name='Цены', exact=True).click()
     panel.get_by_role('button', name='Выбрать подарок для клиента', exact=True).click()
     accept()
     page.get_by_role('button', name='Сохранить изменения', exact=True).click()
@@ -101,6 +102,7 @@ def exercise_owner_pricing(db, directory, chromium, owner, first, second):
             with pw.chromium.launch(executable_path=chromium, args=['--no-sandbox']) as browser:
                 context, page, errors, requests = new_page(browser, owner, 'admin')
                 page.goto(f'{base}/index.html#orders/{order_id}')
+                page.get_by_role('button', name='Цены', exact=True).click()
                 expect(page.get_by_role('list', name='Работы и цены')).to_contain_text(re.compile(r'20,01\s*BYN'))
                 expect(page.get_by_role('button', name='Изменить стоимость', exact=True)).to_have_count(0)
                 page.get_by_role('button', name='Изменить заказ', exact=True).click()
@@ -139,6 +141,7 @@ def exercise_owner_pricing(db, directory, chromium, owner, first, second):
                 expect(row.locator('td[data-column="customer"] .job-amount')).to_have_text(re.compile(r'20,01\s*BYN'))
                 page.get_by_role('button', name='К заказу', exact=True).click()
                 expect(page).to_have_url(f'{base}/index.html#orders/{order_id}')
+                page.get_by_role('button', name='Цены', exact=True).click()
                 expect(page.get_by_role('list', name='Работы и цены')).to_contain_text(re.compile(r'20,01\s*BYN'))
                 exercise_gift_offer(page, db, base, owner, first)
                 assert not errors and not requests, (errors, requests)

@@ -23,6 +23,8 @@ interface Props {
   profile: Profile;
   section: string;
   recordId?: string;
+  standalone?: boolean;
+  closeDetail?: () => void;
   navigate(section: string, recordId?: string): void;
 }
 interface Snapshot {
@@ -52,7 +54,7 @@ const intakeIssues: Record<string, string> = {
   UNKNOWN_VEHICLE_GROUP: 'Выберите подходящую группу автомобилей.',
   DUPLICATE_SOURCE_KEY: 'Проверьте повторяющиеся строки таблицы перед публикацией.',
 };
-export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
+export function OwnerOrders({ client, profile, recordId, standalone, closeDetail, navigate }: Props) {
   const [data, setData] = useState<Snapshot>(empty),
     [loaded, setLoaded] = useState(false),
     [loading, setLoading] = useState(false);
@@ -126,7 +128,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
       if (document.visibilityState === 'visible') void refresh().catch(() => {});
     };
     void refresh(true).catch(() => {});
-    const unsubscribe = subscribeBoardUpdates(client, profile.id, silent);
+    const unsubscribe = subscribeBoardUpdates(client, profile.id, silent, undefined, standalone ? 'order-detail' : 'board');
     const interval = setInterval(silent, 30000);
     window.addEventListener('focus', silent);
     window.addEventListener('online', silent);
@@ -142,7 +144,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
       window.removeEventListener('online', silent);
       document.removeEventListener('visibilitychange', silent);
     };
-  }, [client, profile.id, profile.role]);
+  }, [client, profile.id, profile.role, standalone]);
   useEffect(() => {
     setEditor(recordId === 'new' ? { mode: 'new' } : null);
     setOmission(null);
@@ -206,7 +208,8 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
   const back = () => {
     setEditor(null);
     setOmission(null);
-    navigate('orders');
+    if (closeDetail) closeDetail();
+    else navigate('orders');
   };
   const refreshOrder = async () => { await refresh(); };
   const detail = Boolean(id || editor || omission);
@@ -237,7 +240,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
         </p>
       )}
       <div class="owner-order-layout">
-        {!orderDetail && <section class="owner-order-index" aria-label="Список заказов">
+        {!standalone && !orderDetail && <section class="owner-order-index" aria-label="Список заказов">
           <div class="order-toolbar">
             <div class="order-search-controls">
               <input
@@ -301,6 +304,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
         </section>}
         {detail && (
           <section class="owner-order-pane" aria-label="Подробности заказа">
+            {standalone && !loaded && !loadError && <p role="status">Загружаем заказ…</p>}
             {editor ? (<>
               {editor.mode === 'new' && <OrderType custom={false} change={() => navigate('orders', 'custom-new')} />}
               {(editor.mode !== 'new' || data.staffReady) && <OrderEditor

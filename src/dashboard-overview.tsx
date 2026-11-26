@@ -8,6 +8,7 @@ interface Props {
   weekStart: string | null;
   onWeekChange: (week: string | null) => void;
   role?: 'admin' | 'mechanic';
+  layout?: 'compact' | 'home';
 }
 
 const days = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -158,7 +159,20 @@ function Metric({ title, name, current, previous, hint, price = false }: {
   </div>;
 }
 
-export function DashboardOverview({ orders, weekStart, onWeekChange, role = 'admin' }: Props) {
+function Completion({ completed, total }: { completed: number; total: number }) {
+  const percent = total ? Math.round(100 * completed / total) : null;
+  return <section class="home-completion" aria-label="Выполнение стандартных работ">
+    <h3>Выполнение работ</h3>
+    <div class="home-progress-ring" style={{ '--completion': (total ? 100 * completed / total : 0) + '%' }}
+      role="img" aria-label={total ? 'Выполнено ' + completed + ' из ' + total : 'Нет стандартных работ'}>
+      <strong>{percent === null ? '—' : percent + '%'}</strong>
+    </div>
+    <p>{total ? <>Выполнено <b>{completed} из {total}</b></> : 'Работ пока нет'}</p>
+  </section>;
+}
+
+export function DashboardOverview({ orders, weekStart, onWeekChange, role = 'admin', layout = 'compact' }: Props) {
+  const home = layout === 'home';
   const today = workshopDay();
   const thisWeek = mondayOf(today);
   const counts = useMemo(() => {
@@ -185,12 +199,14 @@ export function DashboardOverview({ orders, weekStart, onWeekChange, role = 'adm
   const currentRows = ordersInWeek(orders, week);
   const current = summarize(currentRows, role === 'admin');
   const previous = summarize(ordersInWeek(orders, shiftDate(week, -7)), role === 'admin');
-  return <section class="dash-overview" aria-label="Недельная сводка заказов">
+  return <section class={'dash-overview' + (home ? ' dash-home-overview' : '')} aria-label="Недельная сводка заказов">
     <WeekStrip week={week} selected={weekStart} counts={counts} onChange={onWeekChange} />
     <div class="dash-period-heading">
       <h2>Сводка за неделю <span>{rangeLabel(week, shiftDate(week, 6))}</span></h2>
       <div class="dash-period-controls">
-        <button type="button" aria-pressed={!weekStart} onClick={() => onWeekChange(null)}>Все даты</button>
+        {home
+          ? <button type="button" aria-pressed={week === thisWeek} onClick={() => onWeekChange(thisWeek)}>Текущая неделя</button>
+          : <button type="button" aria-pressed={!weekStart} onClick={() => onWeekChange(null)}>Все даты</button>}
         <label class="dash-pick" title="Выбрать неделю по дате"><Icon name="calendar" />
           <input type="date" value={weekStart ?? ''} aria-label="Выбрать неделю по дате"
             onChange={e => { if (e.currentTarget.value) onWeekChange(mondayOf(e.currentTarget.value)); }} /></label>
@@ -199,6 +215,7 @@ export function DashboardOverview({ orders, weekStart, onWeekChange, role = 'adm
     <div class={'dash-summary' + (role === 'mechanic' ? ' dash-personal' : '')}>
       <Chart orders={currentRows} week={week} today={today} />
       <div class="dash-metrics" aria-label="Показатели недели и изменение к предыдущей">
+        {home && <Completion completed={current.completedWorks} total={current.works} />}
         {role === 'admin' && <Metric title="По прайсу" name="amount" current={current.amount} previous={previous.amount} price
           hint="Каталожная стоимость стандартных заказов в BYN, без отменённых работ и заказов." />}
         <Metric title="Заказы" name="orders" current={current.orders} previous={previous.orders} />

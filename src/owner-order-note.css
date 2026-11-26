@@ -1,0 +1,23 @@
+.owner-order-note {
+  padding: .9rem 1rem;
+  border: 1px solid #e3c86f;
+  border-radius: .65rem;
+  color: #584713;
+  background: #fff4c9;
+}
+.owner-order-note label { display: grid; gap: .45rem; font-weight: 650; color: #594816; }
+.owner-order-note textarea {
+  min-height: 3.75rem;
+  border-color: #d8c47e;
+  background: #fffbed;
+  color: #382f19;
+  font-size: .95rem;
+  font-weight: 400;
+}
+.owner-order-note textarea::placeholder { color: #7a6b41; }
+.owner-order-note-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .5rem; }
+.owner-order-note-actions [role=status] { flex: 1; min-width: 0; font-size: .82rem; }
+.owner-order-note-actions .button { border-color: #c6a544; color: #49390c; background: #ffeb9e; }
+.owner-order-note-actions .button:enabled:hover { border-color: #ab8a30; background: #ffdf77; }
+.owner-order-note-conflict { margin-block: .5rem; font-size: .875rem; }
+.owner-order-note-conflict blockquote { margin: .25rem 0; padding-left: .7rem; border-left: 2px solid #b49230; white-space: pre-wrap; overflow-wrap: anywhere; }
