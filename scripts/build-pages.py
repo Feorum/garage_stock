@@ -10,7 +10,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ICONS = {'icons/icon-192.png', 'icons/icon-512.png'}
-STATIC = {'index.html', 'account.html', 'manifest.webmanifest', 'sdk.js', 'sw.js'} | ICONS
+FONT_LICENSE = 'fonts/OFL.txt'
+STATIC = {'index.html', 'account.html', 'manifest.webmanifest', 'sdk.js', 'sw.js', FONT_LICENSE} | ICONS
 BUNDLE_NAME = re.compile(r'assets/[A-Za-z0-9_-]+-[A-Za-z0-9_-]{8}\.(?:css|js|woff2)')
 
 
@@ -62,6 +63,8 @@ def bundle(staging, release):
     for icon in ICONS:
         (staging / icon).parent.mkdir(exist_ok=True)
         (staging / icon).write_bytes((ROOT / icon).read_bytes())
+    (staging / FONT_LICENSE).parent.mkdir(exist_ok=True)
+    (staging / FONT_LICENSE).write_bytes((ROOT / 'src' / FONT_LICENSE).read_bytes())
     assets = {name: (staging / name).read_bytes() for name in sorted(public - {'sw.js'})}
     # Local rebuilds also get a new cache when a bundled module or public setting changes.
     worker = (ROOT / 'sw.js').read_text()

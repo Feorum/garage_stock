@@ -18,7 +18,7 @@ type State =
   | { status: 'ready'; profile: Profile };
 const brand = (
   <span class="wordmark" aria-label="Garage">
-    Garage<span aria-hidden="true">/</span>
+    <span class="brand-mark" aria-hidden="true"><i /><i /><i /></span>Garage
   </span>
 );
 
@@ -99,7 +99,7 @@ function TabIcon({ icon }: { icon: string }) {
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
       {icon === 'review' && <><rect x="3.5" y="3.5" width="17" height="17" rx="3" /><path d="m7.5 12 3 3 6-6" /></>}
-      {icon === 'orders' && <path d="M4 6h16M4 12h16M4 18h16" />}
+      {icon === 'orders' && <><path d="M8 5H5v16h14V5h-3" /><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M8 11h8m-8 4h5" /></>}
       {icon === 'book' && <path d="M12 5.5C9 3.8 5.5 3.7 2.5 4.5v15c3-.8 6.5-.7 9.5 1 3-1.7 6.5-1.8 9.5-1v-15c-3-.8-6.5-.7-9.5 1Zm0 0v15" />}
       {icon === 'history' && <path d="M3 12a9 9 0 1 0 2.7-6.4L3 8.3m0-4.5v4.6h4.6M12 7v5l3.4 2" />}
     </svg>
@@ -160,33 +160,61 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
     }
   } else screen = <MechanicBoard {...props} section={route.id as ShiftSection} />;
   const roleName = profile.role === 'admin' ? 'Владелец' : 'Механик';
+  const cabinet = profile.role === 'admin' ? 'Кабинет владельца' : 'Кабинет механика';
+  const name = profile.name || roleName;
+  const initials = name.trim().split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join('').toLocaleUpperCase('ru');
+  const today = new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Minsk',
+  }).format(new Date());
   return (
     <div class="workspace">
-      <div class="workspace-body">
-        <header class="workspace-header">
-          <div class="account-identity">
-            {profile.role === 'mechanic' && <span>Механик</span>}
+      <header class="workspace-header">
+        {brand}
+        <div class="nav-group">
+          <span class="nav-caption">{cabinet}</span>
+          <nav class="workspace-nav" aria-label={cabinet} data-workspace-role={profile.role}>
+            {getSections(profile.role).map(item => (
+              <a key={item.id} class="nav-link" href={'#' + item.id} aria-label={item.label} title={item.label}
+                aria-current={route.section.id === item.id ? 'page' : undefined}>
+                <TabIcon icon={item.icon} /><span class="nav-label">{item.label}</span>
+              </a>
+            ))}
+          </nav>
+        </div>
+        <div class="account-identity">
+          <span class="profile-avatar" aria-hidden="true">{initials}</span>
+          <div class="account-controls">
             <details class="account-menu">
               <summary>
                 {profile.role === 'mechanic'
-                  ? <ExecutorMarker name={profile.name || roleName} color={profile.color} id={profile.id} />
-                  : profile.name || roleName}
+                  ? <ExecutorMarker name={name} color={profile.color} id={profile.id} />
+                  : name}
               </summary>
               <div>
-                <span>{roleName}</span>
-                <a class="account-link" href="account.html">
-                  Учётная запись
-                </a>
-                <button class="button button-small" type="button" onClick={() => auth.signOut()}>
-                  Выйти
-                </button>
+                <a class="account-link" href="account.html">Учётная запись</a>
+                <button class="button button-small" type="button" onClick={() => auth.signOut()}>Выйти</button>
               </div>
             </details>
+            <span class="profile-role">{roleName}</span>
           </div>
-          <span class={'connection' + (online ? '' : ' is-offline')} role="status">
-            {online ? 'В сети' : 'Нет сети'}
+        </div>
+      </header>
+      <div class="workspace-body">
+        <div class="workspace-topbar">
+          <span class="workspace-path">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 20V7l9-4 9 4v13h-3V10H6v10z M6 14h12 M6 17h12" />
+            </svg>
+            Мастерская <span class="path-divider" aria-hidden="true">/</span> <b>{route.label}</b>
           </span>
-        </header>
+          <div class="workspace-status">
+            <span class="workshop-date">{today}</span>
+            <span class={'connection' + (online ? '' : ' is-offline')} role="status">
+              {online ? 'В сети' : 'Нет сети'}
+            </span>
+          </div>
+        </div>
         <main ref={main} tabIndex={-1} id="main-content" class="workspace-main">
           {profile.role === 'admin' && ['pay', 'ledger', 'sheets'].includes(route.id) && (
             <div class="page-heading"><h1>{route.label}</h1></div>
@@ -194,14 +222,6 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
           {screen}
         </main>
       </div>
-      <nav class="workspace-nav" aria-label={profile.role === 'admin' ? 'Кабинет владельца' : 'Кабинет механика'} data-workspace-role={profile.role}>
-        {getSections(profile.role).map(item => (
-          <a key={item.id} class="nav-link" href={'#' + item.id} aria-label={item.label} title={item.label}
-            aria-current={route.section.id === item.id ? 'page' : undefined}>
-            <TabIcon icon={item.icon} />
-          </a>
-        ))}
-      </nav>
     </div>
   );
 }

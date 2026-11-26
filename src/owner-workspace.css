@@ -1,5 +1,7 @@
 .owner-board, .owner-board-detail { min-width: 0; }
-.owner-board > h1, .owner-board-detail > h1 { margin: 0 0 var(--gap-card); }
+.owner-board-heading { display:flex; align-items:center; justify-content:space-between; gap:var(--gap-card); margin:0 0 var(--gap-card); }
+.owner-board-heading h1 { margin:0; }
+.owner-board-detail > h1 { margin:0 0 var(--gap-card); }
 .owner-board-list { display: grid; gap: var(--gap-row); }
 .owner-board-card { overflow: hidden; min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .owner-board-open { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: .125rem var(--gap-card); padding: var(--gap-control) var(--gap-card); color: var(--ink); text-decoration: none; }

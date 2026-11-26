@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import { OwnerOrders } from './owner-orders';
 import { ReviewCard, type ReviewRate } from './owner-review';
-import { isArchived, orderAuthor, orderPhase, type OwnerOrder } from './owner-model';
+import { orderAuthor, orderPhase, type OwnerOrder } from './owner-model';
 import { Reports } from './reports';
 import { ShiftView } from './shift';
 import { participants, taskName, type Task } from './shift-model';
@@ -11,7 +11,10 @@ import { readRpc } from './workspace-rpc';
 import { workshopDay, type Client, type Navigate, type Profile } from './workspace-types';
 import { compareOrderDays, formatOrderDay, newestFirst, orderDay, weekdayClass, workshopOrderDay } from './order-calendar';
 import './owner-workspace.css';
-import { CustomOrderList, CustomOrderPage } from './owner-custom-orders';
+import { CustomOrderError, CustomOrderPage, useCustomOrders } from './owner-custom-orders';
+import { dashboardOrders, ordersInWeek } from './dashboard-model';
+import { DashboardOverview } from './dashboard-overview';
+import { DashboardOrderList } from './dashboard-order-list';
 
 interface Props {
   client: Client;
@@ -73,23 +76,34 @@ function ServiceCredits({ tasks }: { tasks: Task[] }) {
   })}</ul>;
 }
 
-function OrderCard({ order, day, history = false }: {
-  order: OwnerOrder; day: string; history?: boolean;
-}) {
+function HistoryCard({ order, day }: { order: OwnerOrder; day: string }) {
   const state = orderPhase(order);
   return <article class={'owner-board-card ' + weekdayClass(day)} data-order-id={order.id}>
     <a class="owner-board-open" href={'#orders/' + encodeURIComponent(order.id)}>
       <h2>{order.vehicle}</h2>
       <span class="owner-board-meta">
         {order.colour && <>{order.colour} · </>}
-        {day && (history ? 'Закрыт ' : order.planned_date === day ? '' : 'Срок ')}
-        {day ? <time dateTime={day}>{formatOrderDay(day)}</time> : history ? 'Дата закрытия не указана' : 'Дата не назначена'}
+        {day && 'Закрыт '}
+        {day ? <time dateTime={day}>{formatOrderDay(day)}</time> : 'Дата закрытия не указана'}
         {' · '}{orderAuthor(order)} · Стандарт
       </span>
       <span class={'owner-board-phase phase-' + state.tone}>{state.label}</span>
     </a>
-    {history && <ServiceCredits tasks={order.tasks} />}
+    <ServiceCredits tasks={order.tasks} />
   </article>;
+}
+
+function OrdersDashboard({ client, orders, prices }: { client: Client; orders: OwnerOrder[] | null; prices: Prices | null }) {
+  const [week, setWeek] = useState<string | null>(null);
+  const custom = useCustomOrders(client, orders);
+  const rows = useMemo(() => dashboardOrders(orders || [], custom.orders || [], prices), [orders, custom.orders, prices]);
+
+  return <>
+    {custom.error && <CustomOrderError retry={custom.retry} />}
+    {!custom.orders && !custom.error && <p role="status">Загружаем кастомные заказы…</p>}
+    {(orders || custom.orders?.length) ? <><DashboardOverview orders={rows} weekStart={week} onWeekChange={setWeek} />
+    <DashboardOrderList orders={ordersInWeek(rows, week)} weekStart={week} /></> : null}
+  </>;
 }
 
 function Board({ client, profile, section }: Props) {
@@ -166,13 +180,12 @@ function Board({ client, profile, section }: Props) {
     const label = monthFormat.format(new Date(value + '-15T12:00:00Z')).replace(/\s*г\.$/u, '');
     return label.charAt(0).toLocaleUpperCase('ru') + label.slice(1);
   };
-  const queue = section === 'shift' ? scheduled.filter(o => o.status === 'published' && o.vehicle_workflow?.state === 'review') :
-    section === 'reports' ? closed : scheduled.filter(o => !isArchived(o));
-  const archived = section === 'orders' ? scheduled.filter(isArchived) : [];
-  // Customer price changes do not advance the public order version. Refresh
-  // them with each review read; history uses the frozen catalogue snapshots.
+  const queue = section === 'shift' ? scheduled.filter(o => o.status === 'published' && o.vehicle_workflow?.state === 'review') : closed;
+  // Review uses the current customer overrides. The journal and monthly report
+  // use the catalogue amounts captured on the individual work items.
   const reviewSnapshot = section === 'shift' ? orders : null;
-  const pricedOrders = section === 'shift' ? queue : section === 'reports' ? monthly : [];
+  const pricedOrders = section === 'orders' ? all.filter(order => order.status !== 'cancelled')
+    : section === 'reports' ? monthly : queue;
   const pricingKey = JSON.stringify(pricedOrders.map(o => [o.id, o.version,
     o.tasks.filter(t => t.status !== 'cancelled').map(t => t.id).sort()]).sort(([a], [b]) => String(a).localeCompare(String(b))));
   useEffect(() => {
@@ -200,15 +213,19 @@ function Board({ client, profile, section }: Props) {
   const priceError = pricing?.key === pricingKey && !pricing.rates;
   const prices = pricing?.key === pricingKey ? pricing.rates : null;
   const totalFor = (list: OwnerOrder[]): Total => priceError ? 'unavailable' : catalogueTotal(list, prices);
-  const mode = section === 'shift' ? 'review' : section === 'reports' ? 'history' : 'orders';
+  const review = section === 'shift';
 
   return <div class="owner-board">
-    <h1 data-route-heading tabIndex={-1}>{section === 'shift' ? 'На проверке' : section === 'orders' ? 'Все заказы' : 'Отчёты и история'}</h1>
+    <div class="owner-board-heading">
+      <h1 data-route-heading tabIndex={-1}>{review ? 'На проверке' : section === 'orders' ? 'Все заказы' : 'Отчёты и история'}</h1>
+      {section === 'orders' && <a class="button button-primary" href="#orders/new">Новый заказ</a>}
+    </div>
     {feedback && <p role="status" class="owner-review-feedback">{feedback}</p>}
     {(error || priceError) && <p role="alert" class="notice">{error || 'Не удалось загрузить цены работ.'}{' '}
       <button class="button" type="button" onClick={() => setRevision(n => n + 1)}>Повторить</button></p>}
     {!orders && !error && <p role="status">Загружаем заказы…</p>}
-    {orders && <>
+    {section === 'orders' && <OrdersDashboard client={client} orders={orders} prices={prices} />}
+    {orders && section !== 'orders' && <>
       {section === 'reports' && <>
         <section class="owner-board-card owner-month" aria-label="Итог за месяц">
           {months.length > 1 ? <select aria-label="Месяц отчёта" value={selected} onChange={e => setMonth(e.currentTarget.value)}>
@@ -218,22 +235,14 @@ function Board({ client, profile, section }: Props) {
         </section>
         <h2 class="owner-history-title">История заказов</h2>
       </>}
-      {queue.length ? <div class="owner-board-list">{queue.map(order => mode === 'review'
-        ? <ReviewCard key={order.id} order={order} rates={prices?.get(order.id)?.tasks} loadingPrices={!priceError && !prices}
-            client={client} current={!error && online} refresh={refreshReview} />
-        : <OrderCard key={order.id} order={order} history={mode === 'history'}
-            day={mode === 'history' ? closedDay(order) : orderDay(order)} />)}</div> :
-        <p class="owner-board-empty">{mode === 'review' ? 'Нет заказов на проверке.' :
-          mode === 'history' ? 'Закрытых заказов пока нет.' : 'Активных стандартных заказов пока нет.'}</p>}
-      {archived.length > 0 && <details class="owner-archive">
-        <summary>Архив <span>{archived.length}</span></summary>
-        <div class="owner-board-list">{archived.map(order =>
-          <OrderCard key={order.id} order={order} day={orderDay(order)} />)}</div>
-      </details>}
+      {queue.length ? <div class="owner-board-list">{queue.map(order => review
+          ? <ReviewCard key={order.id} order={order} rates={prices?.get(order.id)?.tasks} loadingPrices={!priceError && !prices}
+              client={client} current={!error && online} refresh={refreshReview} />
+          : <HistoryCard key={order.id} order={order} day={closedDay(order)} />)}</div>
+        : <p class="owner-board-empty">{review ? 'Нет заказов на проверке.' : 'Закрытых заказов пока нет.'}</p>}
     </>}
-    {section === 'orders' && <CustomOrderList client={client} refreshWith={orders} />}
     {section === 'orders' && <nav class="owner-board-tools" aria-label="Инструменты заказов">
-      <a href="#orders/new">Новый заказ</a><a href="#orders/tools">Управление заказами</a><a href="#shift/attention">Смена и заявки</a>
+      <a href="#orders/tools">Управление заказами</a><a href="#shift/attention">Смена и заявки</a>
     </nav>}
     {section === 'reports' && <nav class="owner-board-tools" aria-label="Инструменты отчётов">
       <a href="#reports/activity">Отчёт по работам</a><a href="#pay">Распределение оплаты</a>

@@ -64,8 +64,8 @@ function Account() {
   }
   return (
     <section class="login-panel account-card">
-      <span class="wordmark">
-        Garage<span>/</span>
+      <span class="wordmark" aria-label="Garage">
+        <span class="brand-mark" aria-hidden="true"><i /><i /><i /></span>Garage
       </span>
       <h1 id="title">{state === 'saved' ? 'Пароль сохранён' : 'Учётная запись'}</h1>
       {state === 'checking' && <p role="status">Проверяем ссылку на учётную запись…</p>}

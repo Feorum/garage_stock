@@ -3,9 +3,10 @@ import { decimal, hundredths, money } from './pay-model';
 import { errorText, isConflict, read } from './owner-model';
 import { workshopDay, type Client, type Navigate } from './workspace-types';
 import { formatOrderDay } from './order-calendar';
+import { readRpc } from './workspace-rpc';
+import type { CustomOrderSummary as Summary } from './dashboard-model';
 
 type Item = { name: string; kopeks: number };
-type Summary = { id: string; vehicle: string; visit_date: string; status: 'open' | 'closed' };
 type CustomOrder = Summary & {
   services: string;
   customer_kopeks: number | null;
@@ -23,22 +24,34 @@ export function OrderType({ custom, change }: { custom: boolean; change: (custom
   </label>;
 }
 
-export function CustomOrderList({ client, refreshWith, search = '', filter = 'all' }: {
-  client: Client; refreshWith: object | null; search?: string; filter?: string;
-}) {
-  const [orders, setOrders] = useState<Summary[]>([]);
+export function useCustomOrders(client: Client, refreshWith: object | null) {
+  const [orders, setOrders] = useState<Summary[] | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    let live = true;
-    read<Summary[]>(client, 'garage_custom_orders').then(rows => {
+    const scope = new AbortController();
+    readRpc<Summary[]>(client, 'garage_custom_orders', {}, scope.signal).then(rows => {
       if (!Array.isArray(rows)) throw new Error('Invalid custom order list');
-      if (live) { setOrders(rows); setError(false); }
-    }).catch(() => { if (live) { setOrders([]); setError(true); } });
-    return () => { live = false; };
+      if (!scope.signal.aborted) { setOrders(rows); setError(false); }
+    }).catch(() => {
+      if (!scope.signal.aborted) { setOrders(null); setError(true); }
+    });
+    return () => scope.abort();
   }, [client, attempt, refreshWith]);
-  if (error) return <p role="alert">Не удалось загрузить кастомные заказы.{' '}
-    <button type="button" class="button" onClick={() => setAttempt(n => n + 1)}>Повторить</button></p>;
+  return { orders, error, retry: () => setAttempt(n => n + 1) };
+}
+
+export function CustomOrderError({ retry }: { retry: () => void }) {
+  return <p role="alert" class="notice">Не удалось загрузить кастомные заказы.{' '}
+    <button type="button" class="button" onClick={retry}>Повторить</button></p>;
+}
+
+export function CustomOrderList({ client, refreshWith, search = '', filter = 'all' }: {
+  client: Client; refreshWith: object | null; search?: string; filter?: string;
+}) {
+  const { orders, error, retry } = useCustomOrders(client, refreshWith);
+  if (error) return <CustomOrderError retry={retry} />;
+  if (!orders) return null;
   const matches = orders.filter(o => (filter === 'all' || filter === o.status)
     && o.vehicle.toLocaleLowerCase('ru').includes(search.trim().toLocaleLowerCase('ru')));
   if (!matches.length) return null;

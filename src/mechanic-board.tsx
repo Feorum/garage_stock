@@ -2,10 +2,19 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { OrderPhotos } from './order-photos';
 import { WorkRow, Instructions, HandoffForm, type Draft } from './mechanic-vehicle';
 import { useBoardChanges, useBoardOrders, type BoardOrder, type ChangeState } from './mechanic-board-data';
-import { finishedAt, hasMechanicHistory, historyOrderDate, instantLabel, sortHistoryVisits, sortVisits, taskName, visibleProgress, type ShiftProps } from './shift-model';
+import { finishedAt, hasMechanicHistory, historyOrderDate, instantLabel, matchesVisit, sortHistoryVisits, sortVisits, taskName, visibleProgress, type ShiftProps } from './shift-model';
 import { formatOrderDay, newestFirst, orderDay, weekdayClass } from './order-calendar';
 import type { Client } from './workspace-types';
+import { DashboardOverview } from './dashboard-overview';
+import { mechanicDashboardOrder, ordersInWeek } from './dashboard-model';
 import './mechanic-board.css';
+
+interface BoardFilters {
+  week: string | null;
+  day: string;
+  query: string;
+}
+const allDates: BoardFilters = { week: null, day: '', query: '' };
 
 type BoardProps = Omit<ShiftProps, 'client'> & { client: Client };
 function dateLabel(order: BoardOrder, day: string, actual?: string) {
@@ -42,6 +51,24 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
     () => listOrders(board.orders || [], source, profile.id, history),
     [board.orders, source, profile.id, history],
   );
+  const [filterState, setFilterState] = useState({ section, filters: allDates });
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const filters = filterState.section === section ? filterState.filters : allDates;
+  const dashboardRows = useMemo(() => rows.map(order => mechanicDashboardOrder(order, section, profile.id)), [rows, section, profile.id]);
+  const weeklyRows = useMemo(() => ordersInWeek(dashboardRows, filters.week), [dashboardRows, filters.week]);
+  const days = [...new Set(weeklyRows.map(order => order.date).filter(Boolean))].sort();
+  if (history) days.reverse();
+  const hasUndated = weeklyRows.some(order => !order.date);
+  const datedIds = new Set(weeklyRows.filter(order =>
+    !filters.day || (order.date || 'undated') === filters.day,
+  ).map(order => order.id));
+  const visibleRows = rows.filter(order => datedIds.has(order.id) && matchesVisit(order, filters.query));
+  const filtered = Boolean(filters.week || filters.day || filters.query.trim());
+
+  function changeFilters(next: BoardFilters) {
+    setFilterState({ section, filters: next });
+    if (recordId) navigate(section);
+  }
   const selected = recordId
     ? board.orders?.find((order) => order.id === recordId || order.tasks.some((task) => task.id === recordId))
     : undefined;
@@ -55,6 +82,9 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
     }
     const key = section + '/' + recordId;
     if (selected && rows.includes(selected)) {
+      // A direct order/task link can arrive while a different date or search is selected.
+      if (expandedRoute.current !== key && !visibleRows.includes(selected))
+        setFilterState({ section, filters: allDates });
       expandedRoute.current = key;
       return;
     }
@@ -97,7 +127,7 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
   }
   function feedback(inPanel: boolean) {
     return Object.entries(actions.changes).map(([id, state]) => {
-      const onSelectedOrder = !!selected && rows.includes(selected) && selected.id === state.change.orderId;
+      const onSelectedOrder = !!selected && visibleRows.includes(selected) && selected.id === state.change.orderId;
       if (state.status === 'pending' || inPanel !== onSelectedOrder) return null;
       const order = board.orders?.find((item) => item.id === state.change.orderId);
       const task = order?.tasks.find((item) => item.id === state.change.taskId);
@@ -133,6 +163,17 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
       <h1 tabIndex={-1} data-route-heading>
         {title}
       </h1>
+      {board.orders && <>
+        <button type="button" class="mb-overview-toggle" aria-expanded={summaryOpen} aria-controls="mb-overview"
+          onClick={() => setSummaryOpen(!summaryOpen)}>
+          Сводка и календарь
+          <span aria-hidden="true" class="mb-chevron" />
+        </button>
+        <div class={'mb-overview' + (summaryOpen ? ' mb-overview-open' : '')} id="mb-overview">
+          <DashboardOverview orders={dashboardRows} weekStart={filters.week} role="mechanic"
+            onWeekChange={week => changeFilters({ ...filters, week, day: '' })} />
+        </div>
+      </>}
       {board.error && (
         <p class="mb-feedback" role="alert">
           {board.error}{' '}
@@ -153,10 +194,30 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
             {board.online ? 'Загружаем заказы…' : 'Для загрузки заказов требуется подключение.'}
           </p>
         )
-      ) : !rows.length ? (
-        <p class="shift-hint">{history ? 'История пока пуста.' : 'Заказов пока нет.'}</p>
       ) : (
-        rows.map((order) => {
+        <section class="mb-order-list" aria-label={history ? 'Журнал заказов' : 'Очередь заказов'}>
+          <div class="mb-list-header">
+            <h2>{history ? 'Журнал заказов' : 'Очередь заказов'} <span class="mb-list-count">{visibleRows.length}</span></h2>
+            <div class="mb-filters">
+              <label class="mb-search">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                  <circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" />
+                </svg>
+                <input type="search" value={filters.query} placeholder="Поиск заказов" aria-label="Поиск по автомобилю, номеру заказа или работе"
+                  onInput={event => changeFilters({ ...filters, query: event.currentTarget.value })} />
+              </label>
+              <select aria-label="Дата заказа" value={filters.day} onChange={event => changeFilters({ ...filters, day: event.currentTarget.value })}>
+                <option value="">Все дни</option>
+                {days.map(day => <option value={day} key={day}>{formatOrderDay(day)}</option>)}
+                {(hasUndated || filters.day === 'undated') && <option value="undated">Без даты</option>}
+                {filters.day && filters.day !== 'undated' && !days.includes(filters.day) &&
+                  <option value={filters.day}>{formatOrderDay(filters.day)}</option>}
+              </select>
+              {filtered && <button type="button" class="mb-clear" onClick={() => changeFilters(allDates)}>Сбросить</button>}
+            </div>
+          </div>
+          {!visibleRows.length && <p class="shift-hint mb-empty">{filtered ? 'Подходящих заказов нет.' : history ? 'История пока пуста.' : 'Заказов пока нет.'}</p>}
+          {visibleRows.map((order) => {
           const expanded = !!selected && selected.id === order.id;
           const historyDate = history ? historyOrderDate(order, profile.id) : null;
           const day = historyDate?.day ?? orderDay(order);
@@ -187,6 +248,7 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
                 }}
               >
                 <strong>{order.vehicle}</strong>
+                {order.order_number && <span class="mb-reference">{order.order_number}</span>}
                 {day ? <time class="mb-date" dateTime={day}>{dateLabel(order, day, historyDate?.timestamp)}</time>
                   : <span class="mb-date">Дата не указана</span>}
                 {history && order.vehicle_workflow?.state === 'review' && <small>На проверке у владельца</small>}
@@ -269,7 +331,8 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
               </div>
             </article>
           );
-        })
+        })}
+        </section>
       )}
     </div>
   );
