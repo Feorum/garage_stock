@@ -11,6 +11,7 @@ import { readRpc } from './workspace-rpc';
 import { workshopDay, type Client, type Navigate, type Profile } from './workspace-types';
 import { compareOrderDays, formatOrderDay, newestFirst, orderDay, weekdayClass, workshopOrderDay } from './order-calendar';
 import './owner-workspace.css';
+import { CustomOrderList, CustomOrderPage } from './owner-custom-orders';
 
 interface Props {
   client: Client;
@@ -83,7 +84,7 @@ function OrderCard({ order, day, history = false }: {
         {order.colour && <>{order.colour} · </>}
         {day && (history ? 'Закрыт ' : order.planned_date === day ? '' : 'Срок ')}
         {day ? <time dateTime={day}>{formatOrderDay(day)}</time> : history ? 'Дата закрытия не указана' : 'Дата не назначена'}
-        {' · '}{orderAuthor(order)}
+        {' · '}{orderAuthor(order)} · Стандарт
       </span>
       <span class={'owner-board-phase phase-' + state.tone}>{state.label}</span>
     </a>
@@ -223,15 +224,16 @@ function Board({ client, profile, section }: Props) {
         : <OrderCard key={order.id} order={order} history={mode === 'history'}
             day={mode === 'history' ? closedDay(order) : orderDay(order)} />)}</div> :
         <p class="owner-board-empty">{mode === 'review' ? 'Нет заказов на проверке.' :
-          mode === 'history' ? 'Закрытых заказов пока нет.' : 'Активных заказов пока нет.'}</p>}
+          mode === 'history' ? 'Закрытых заказов пока нет.' : 'Активных стандартных заказов пока нет.'}</p>}
       {archived.length > 0 && <details class="owner-archive">
         <summary>Архив <span>{archived.length}</span></summary>
         <div class="owner-board-list">{archived.map(order =>
           <OrderCard key={order.id} order={order} day={orderDay(order)} />)}</div>
       </details>}
     </>}
+    {section === 'orders' && <CustomOrderList client={client} refreshWith={orders} />}
     {section === 'orders' && <nav class="owner-board-tools" aria-label="Инструменты заказов">
-      <a href="#orders/tools">Управление заказами</a><a href="#shift/attention">Смена и заявки</a>
+      <a href="#orders/new">Новый заказ</a><a href="#orders/tools">Управление заказами</a><a href="#shift/attention">Смена и заявки</a>
     </nav>}
     {section === 'reports' && <nav class="owner-board-tools" aria-label="Инструменты отчётов">
       <a href="#reports/activity">Отчёт по работам</a><a href="#pay">Распределение оплаты</a>
@@ -248,7 +250,9 @@ export function OwnerWorkspace(props: Props) {
   let view;
   if (section === 'orders') {
     title = recordId === 'tools' ? 'Управление заказами' : 'Заказ';
-    view = <OwnerOrders {...props} recordId={recordId === 'tools' ? undefined : recordId} />;
+    view = recordId.startsWith('custom-')
+      ? <CustomOrderPage key={recordId} client={props.client} record={recordId.slice(7)} navigate={props.navigate} />
+      : <OwnerOrders {...props} recordId={recordId === 'tools' ? undefined : recordId} />;
   } else if (section === 'reports') {
     title = 'Отчёт по работам';
     view = <Reports client={props.client} navigate={props.navigate} />;

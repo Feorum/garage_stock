@@ -46,6 +46,8 @@ export default defineConfig(({ isPreview }) => {
         const relative = normalizePath(path.relative(process.cwd(), file));
         if (normalizePath(file).startsWith(dependencyRoot)
             || /^src\/[\w./-]+\.(?:js|ts|tsx|css|woff2)$/.test(relative)
+            || relative === 'supabase/functions/_shared/vehicle-models.ts'
+            || relative === 'supabase/functions/_shared/vehicle-models.json'
             || /^(?:index|account)\.html$/.test(relative)
             || /^(?:styles|ledger)\.css$/.test(relative)
             || relative === 'manifest.webmanifest'

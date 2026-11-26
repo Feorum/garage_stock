@@ -74,7 +74,7 @@ def check_no_private_data(page):
     role = page.evaluate("globalThis.__garageTest?.profile?.role || 'admin'")
     rpc_names = {entry['name'] for entry in calls if entry['method'] == 'rpc'}
     allowed = {'garage_list_orders'} if role == 'mechanic' else {
-        'garage_list_orders', 'garage_staff', 'garage_manager_intakes', 'garage_owner_review_prices',
+        'garage_list_orders', 'garage_staff', 'garage_manager_intakes', 'garage_owner_review_prices', 'garage_custom_orders',
     }
     assert rpc_names <= allowed, rpc_names
     body = page.locator('body').inner_text()

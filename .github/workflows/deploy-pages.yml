@@ -49,6 +49,7 @@ jobs:
       - name: Check private ledger import and database rules
         run: |
           python -m pip install -r requirements-workbooks.txt
+          python tests/test-workbook-preview.py
           python tests/test-ledger-import.py
           python tests/test-ledger-sql.py
           npm ci --prefix tests/ledger-runtime --ignore-scripts --no-audit --no-fund
@@ -86,12 +87,15 @@ jobs:
           python tests/browser-ledger.py --directory dist --output /tmp/garage-browser-ledger --chromium "$CHROMIUM"
           python tests/browser-shift.py --directory dist --chromium "$CHROMIUM"
           python tests/browser-pay.py --directory dist --output /tmp/garage-browser-pay --chromium "$CHROMIUM"
+          python tests/browser-order-payroll.py --directory dist --chromium "$CHROMIUM"
+          python tests/browser-order-film.py --directory dist --chromium "$CHROMIUM"
       - name: Check team workflow against isolated PostgreSQL
         env:
           CHROMIUM: ${{ steps.browser.outputs.chromium }}
         run: |
           docker pull postgres:17-bookworm@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994
           bash tests/run-feedback-tests.sh
+          python tests/test-order-photos.py
           python tests/test-team-workflow.py --directory dist --chromium "$CHROMIUM"
       - name: Identify the verified build manifest
         id: manifest

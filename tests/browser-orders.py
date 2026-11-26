@@ -68,6 +68,7 @@ def finish_context(context, errors, live):
 
 def fill_order(page, vehicle='Synthetic new vehicle', source='owner'):
     page.get_by_role('button', name='Новый заказ', exact=True).click()
+    page.get_by_role('combobox', name='Модель автомобиля', exact=True).select_option('manual')
     page.get_by_label('Автомобиль', exact=True).fill(vehicle)
     page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
     page.get_by_role('combobox', name='Источник заказа', exact=True).select_option(source)
@@ -85,11 +86,29 @@ def run(args):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=args.chromium, headless=True, args=['--no-sandbox'])
         try:
+            context, page, errors, live = smoke.new_page(browser, {})
+            page.goto(base + '/index.html#orders/tools')
+            smoke.ready(page, 'Test Owner')
+            page.get_by_role('button', name='Новый заказ', exact=True).click()
+            model = page.get_by_role('combobox', name='Модель автомобиля', exact=True)
+            model.select_option('BELGEE X50+')
+            model.select_option('GEELY MONJARO (матовый)')
+            expect(page.get_by_label('Группа автомобилей', exact=True)).to_have_count(0)
+            page.get_by_role('combobox', name='Назначить механика', exact=True).select_option(ME)
+            page.get_by_role('checkbox', name='капот полностью', exact=True).check()
+            page.get_by_role('button', name='Отправить заказ', exact=True).click()
+            expect(page.get_by_role('heading', name='GEELY MONJARO (матовый)', exact=True)).to_be_visible()
+            payload = rpc_calls(page, 'garage_save_team_order')[0]['args']['p_order']
+            assert (payload['vehicle'], payload['vehicle_group_code']) == ('GEELY MONJARO (матовый)', 'VG12')
+            finish_context(context, errors, live)
+            passed.append('model picker preserves make and finish and resolves the price group automatically')
+
             # The form offers the approved matrix and requires assignment for direct orders.
             context, page, errors, live = smoke.new_page(browser, {})
             page.goto(base + '/index.html#orders/tools')
             smoke.ready(page, 'Test Owner')
             page.get_by_role('button', name='Новый заказ', exact=True).click()
+            page.get_by_role('combobox', name='Модель автомобиля', exact=True).select_option('manual')
             page.get_by_label('Автомобиль', exact=True).fill('Synthetic assigned vehicle')
             page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG01')
             unavailable = page.get_by_role('checkbox', name='крылья целиком (2шт)', exact=True)

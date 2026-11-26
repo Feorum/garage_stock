@@ -29,6 +29,7 @@ def exercise_owner_order(db, directory, chromium, owner, first, second):
                 page.goto(base + '/index.html#orders')
                 page.get_by_role('link', name='Управление заказами', exact=True).click()
                 page.get_by_role('button', name='Новый заказ').click()
+                page.get_by_role('combobox', name='Модель автомобиля', exact=True).select_option('manual')
                 page.get_by_label('Автомобиль', exact=True).fill(vehicle)
                 page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
                 page.locator('#new-work-W01').check()

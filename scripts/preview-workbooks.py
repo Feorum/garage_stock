@@ -52,11 +52,7 @@ WORK_ALIAS_SUGGESTIONS = {
     'канты дверей': 'W16', 'канты': 'W16', 'пороги внутри': 'W17',
     'арки 4 шт': 'W18',
 }
-MODEL_ALIAS_SUGGESTIONS = {
-    'x50+': 'VG08', 'х50+': 'VG08', 'x50': 'VG08', 'х50': 'VG08',
-    'x70': 'VG05', 'х70': 'VG05', 'x80': 'VG09', 'х80': 'VG09',
-    'cityray': 'VG07', 'сityray': 'VG07', 'monjaro': 'VG12',
-}
+MODELS = json.loads((ROOT / 'supabase/functions/_shared/vehicle-models.json').read_text())
 
 
 def normalize(value):
@@ -120,11 +116,31 @@ def resolve_model(value, groups):
     text = normalize(value)
     if not text:
         return None, [], ['missing_vehicle_group']
-    if 'матов' in text or 'matte' in text:
-        return None, ['VG12'] if 'monjaro' in text or 'mongaro' in text else [], ['unapproved_finish_variant']
     if text in {'atlas', 'атлас'}:
         # The source has three Atlas groups; the generic label is insufficient.
         return None, ['VG04', 'VG05', 'VG06'], ['ambiguous_atlas_group']
+    def model_key(label):
+        return re.sub(r'[()\s–—_-]', '', normalize(label).replace('х', 'x'))
+    known = {group['code'] for group in groups}
+    for model in MODELS:
+        for label in [model['model'], *model['aliases']]:
+            if model['group'] in known and model_key(text) in (model_key(label), model_key(model['brand'] + ' ' + label)):
+                return model['group'], [model['group']], []
+    if 'матов' in text or 'matte' in text:
+        return None, [], ['unapproved_finish_variant']
+    year_model = re.fullmatch(r'(?:geely\s*)?(?:ok[ao]vango|окаванго)\s*(\d{4})', text)
+    if year_model:
+        year = int(year_model[1])
+        matching = []
+        for group in groups:
+            years = re.fullmatch(r'(?:ok[ao]vango|окаванго)\s+(\d{2}|\d{4})(?:\s*[-–—]\s*(\d{2}|\d{4}))?', normalize(group['name']))
+            if years:
+                start, end = (int(value) + (2000 if len(value) == 2 else 0) for value in (years[1], years[2] or years[1]))
+                if start <= year <= end:
+                    matching.append(group['code'])
+        if len(matching) == 1:
+            return matching[0], matching, []
+        return None, matching, ['unknown_vehicle_group']
     for group in groups:
         if text == normalize(group['code']) or text == normalize(group['name']):
             return group['code'], [group['code']], []
@@ -132,8 +148,7 @@ def resolve_model(value, groups):
         members = [normalize(part) for part in re.split(r'[/\\]+', group['name'])]
         if text in members:
             return group['code'], [group['code']], []
-    hint = MODEL_ALIAS_SUGGESTIONS.get(text)
-    return None, [hint] if hint else [], ['model_alias_requires_confirmation' if hint else 'unknown_vehicle_group']
+    return None, [], ['unknown_vehicle_group']
 
 
 def resolve_work(token, works):

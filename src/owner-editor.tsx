@@ -1,6 +1,7 @@
 import { GiftDialog, qualifies, type GiftOffer } from './owner-gift';
 import { useCallback, useEffect, useState, useRef } from 'preact/hooks';
 import { WORKS, VEHICLE_GROUPS } from './catalogue.js';
+import { findVehicleChoice, orderVehicleChoices, requiresOkavangoYear } from './vehicle-models';
 import type { GarageClient } from './shift-model';
 import {
   availableWorks,
@@ -116,6 +117,10 @@ export function OrderEditor({
   const resolving = base.mode === 'intake',
     editing = base.mode === 'edit';
   const fixed = (base.order?.tasks || []).filter(protectedTask);
+  const selectedModel = orderVehicleChoices.find(model => model.label === draft.fields.vehicle
+    && model.group === draft.fields.vehicle_group_code);
+  const [manualVehicle, setManualVehicle] = useState(false);
+  const showManualVehicle = !selectedModel && (manualVehicle || Boolean(draft.fields.vehicle));
   const mandatory = draft.fields.source === 'owner';
   const ambiguous = resolving && (base.intake?.row_numbers?.length || 0) > 1;
   const options = availableWorks(draft.fields.vehicle_group_code);
@@ -177,6 +182,16 @@ export function OrderEditor({
       return { fields, choices };
     });
   }
+  function chooseModel(label: string) {
+    const model = orderVehicleChoices.find(choice => choice.label === label);
+    setManualVehicle(!model);
+    setMessage('');
+    setDraft(d => {
+      const group = model?.group || d.fields.vehicle_group_code;
+      return { fields: { ...d.fields, vehicle: model?.label || '', vehicle_group_code: group },
+        choices: d.choices.filter(choice => availableWorks(group).includes(choice.work_code)) };
+    });
+  }
   function changeChoice(code: string, update: Partial<Choice>) {
     setDraft((d) => ({
       ...d,
@@ -224,6 +239,17 @@ export function OrderEditor({
   async function submit(e: SubmitEvent) {
     e.preventDefault();
     if (busy.current || stale || ambiguous) return;
+    const recognized = findVehicleChoice(draft.fields.vehicle, orderVehicleChoices);
+    const originalVehicle = editing && base.order?.vehicle === draft.fields.vehicle
+      && base.order?.vehicle_group_code === draft.fields.vehicle_group_code;
+    if (!originalVehicle && !recognized && requiresOkavangoYear(draft.fields.vehicle)) {
+      setMessage('Укажите год OKAVANGO из актуального прайса. Для этого года ценовая группа ещё не выбрана.');
+      return;
+    }
+    if (!originalVehicle && recognized && recognized.group !== draft.fields.vehicle_group_code) {
+      setMessage('Для выбранной модели укажите соответствующую группу прайса или выберите модель из списка.');
+      return;
+    }
     const missing = draft.choices.find((c) => mandatory && !c.mechanic_ids.length);
     if (!draft.fields.vehicle.trim() || !draft.choices.length || missing) {
       setMessage(
@@ -270,6 +296,7 @@ export function OrderEditor({
           p_expected_version: base.order?.version || base.intake?.version || null,
           p_order: {
             ...draft.fields,
+            vehicle: !originalVehicle && recognized ? recognized.label : draft.fields.vehicle,
             planned_date: draft.fields.planned_date || null,
             due_date: draft.fields.due_date || null,
             manager_label: mandatory ? '' : draft.fields.manager_label,
@@ -336,8 +363,18 @@ export function OrderEditor({
         <fieldset>
           <legend>Автомобиль и сроки</legend>
           <div class="form-grid">
-            {textInput('vehicle', 'Автомобиль', 200, true)}
             <label>
+              Модель автомобиля
+              <select id="order-vehicle-model" value={selectedModel?.label || (manualVehicle || draft.fields.vehicle ? 'manual' : '')}
+                required onChange={e => chooseModel(e.currentTarget.value)}>
+                <option value="" disabled>Выберите модель</option>
+                {orderVehicleChoices.filter(model => !fixed.length || model.group === base.order?.vehicle_group_code)
+                  .map(model => <option key={model.label} value={model.label}>{model.label}</option>)}
+                <option value="manual">Другой автомобиль — указать вручную</option>
+              </select>
+            </label>
+            {showManualVehicle && textInput('vehicle', 'Автомобиль', 200, true)}
+            {showManualVehicle && <label>
               Группа автомобилей
               <select
                 id="new-group"
@@ -354,7 +391,7 @@ export function OrderEditor({
                   </option>
                 ))}
               </select>
-            </label>
+            </label>}
             {textInput('vin', resolving ? 'VIN' : 'VIN (необязательно)', 40, resolving)}
             {textInput('colour', 'Цвет (необязательно)', 80)}
             <label>

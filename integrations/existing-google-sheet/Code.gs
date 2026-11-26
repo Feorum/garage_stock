@@ -30,11 +30,32 @@ function syncManagerOrders() {
     var result = JSON.parse(response.getContentText());
     if (['checked', 'busy'].indexOf(result.status) < 0) throw new Error('READ_NOT_CONFIRMED');
     var feedback = result.status === 'checked' ? feedbackApply_(config, result) : { updated: 0, deferred: 0 };
+    if (result.status === 'checked' && result.vehicle_choices) {
+      updateVehicleDropdown_(config, result.vehicle_choices);
+    }
     return { status: result.status, updated: feedback.updated, deferred: feedback.deferred };
   } catch (_) {
     // No source content, credentials or raw server errors enter execution logs.
     throw new Error('The spreadsheet sync could not be confirmed. Check the Owner connection and Google authorization; the next trigger retries.');
   } finally { lock.releaseLock(); }
+}
+
+function updateVehicleDropdown_(config, choices) {
+  if (!Array.isArray(choices) || !choices.length || choices.length > 200
+      || !choices.every(function(label) { return typeof label === 'string' && /^(GEELY|BELGEE) [^\r\n]{1,70}$/.test(label); })) {
+    throw new Error('INVALID_VEHICLE_CATALOGUE');
+  }
+  var properties = PropertiesService.getScriptProperties();
+  var signature = JSON.stringify([config.spreadsheetId, config.sheetGid, choices]);
+  if (properties.getProperty('APPLIED_VEHICLE_CHOICES') === signature) return;
+  // Only the validation rule changes. Existing D values, including older labels, remain available.
+  feedbackGoogle_(config, ':batchUpdate', { requests: [{ setDataValidation: {
+    range: { sheetId: Number(config.sheetGid), startRowIndex: 1, startColumnIndex: 3, endColumnIndex: 4 },
+    rule: { condition: { type: 'ONE_OF_LIST', values: choices.map(function(label) {
+      return { userEnteredValue: label };
+    }) }, strict: false, showCustomUi: true }
+  } }] });
+  properties.setProperty('APPLIED_VEHICLE_CHOICES', signature);
 }
 
 function readerConfig_() {

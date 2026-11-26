@@ -80,3 +80,19 @@ test('incomplete template and unknown prices cannot produce an act', async () =>
   assert.throws(() => actDateLabel('2026-2-3', 'г.'));
   await assert.rejects(generateActDocument(bytes, { ...data, number: 'x\u000b' + 'y' }));
 });
+
+test('negotiated 750 BYN can be issued in each layout using the same Word master', async () => {
+  async function rendered(mode, prices) {
+    const bytes = await generateActDocument(await fixture(), { ...data, mode, agreedTotal: 75000,
+      jobs: prices.map((kopeks, i) => ({ name: i ? 'Зеркала' : 'Капот', kopeks })) });
+    const zip = await JSZip.loadAsync(bytes);
+    return (await zip.file('word/document.xml').async('string')).replace(/<[^>]*>/g, '');
+  }
+  assert.match(await rendered('weighted', [45000, 30000]), /Капот – 450,00 BYN.*Зеркала – 300,00 BYN/s);
+  assert.match(await rendered('discount', [48000, 32000]), /Капот – 480,00 BYN.*Зеркала – 320,00 BYN.*Скидка – −50,00 BYN/s);
+  const names = await rendered('names', [null, null]);
+  assert.match(names, /Капот\s*Зеркала\s*Итого 750 \(семьсот пятьдесят\)/);
+  assert.doesNotMatch(names, /BYN| – |Скидка/);
+  await assert.rejects(rendered('weighted', [48000, 32000]));
+  await assert.rejects(rendered('discount', [20000, 30000]));
+});

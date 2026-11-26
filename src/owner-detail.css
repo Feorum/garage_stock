@@ -89,6 +89,17 @@
 .owner-order-detail .financial-summary dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
 .order-handoff-history > summary { min-height: 44px; align-content: center; cursor: pointer; font-weight: 600; }
 .order-handoff-history[open] > summary { margin-bottom: var(--gap-tight); }
+.owner-film > summary { min-height: 44px; align-content: center; cursor: pointer; font-weight: 600; }
+.owner-film[open] > summary { margin-bottom: var(--gap-tight); }
+.owner-film fieldset { display: grid; min-width: 0; gap: var(--gap-tight); }
+.owner-film > button { margin-top: var(--gap-tight); }
+.owner-film-amount { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--gap-tight); align-items: end; }
+.owner-film-amount span, .owner-film-amount output { padding: .65rem 0; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  .owner-film-amount { grid-template-columns: 1fr auto; }
+  .owner-film-amount label { grid-column: 1 / -1; }
+  .owner-film-amount span, .owner-film-amount output { padding: 0; }
+}
 @media (max-width: 650px) {
   .owner-order-pane > .owner-order-detail { padding: .75rem; }
   .order-price-list, .order-price-list tbody { display: block; }

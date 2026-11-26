@@ -2,6 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseCsv, parseExistingSheetCsv, parseExistingSheetRows } from '../supabase/functions/pull-manager-sheets/parser.ts';
+import { actVehicleName, vehicleChoices } from '../supabase/functions/_shared/vehicle-models.ts';
 
 const HEADERS = ['Столбец 1', 'День ', 'Менеджер', 'Автомобиль', 'VIN', 'Цвет', 'Оклейка', 'Тонировка', 'Готовность', 'Примечание'];
 const VIN = 'TEST0000000000001';
@@ -66,9 +67,29 @@ test('normalizes canonical labels/codes and exact vehicle-group literal members 
   assert.equal(result.rows[0].state, 'ready');
   assert.equal(result.rows[0].order.vehicle_group_code, 'VG05');
   assert.deepEqual(result.rows[0].tasks.map(task => task.work_code), ['W01', 'W10', 'W09']);
-  assertReview(parse(row({ 3: 'MONJARO' })).rows[0], 'UNKNOWN_VEHICLE_GROUP');
+  assert.equal(parse(row({ 3: 'MONJARO' })).rows[0].order.vehicle_group_code, 'VG12');
   assertReview(parse(row({ 6: 'W01 — different unapproved scope' })).rows[0], 'UNKNOWN_WRAPPING_WORK');
   assertReview(parse(row({ 6: 'капот 35' })).rows[0], 'UNKNOWN_WRAPPING_WORK');
+});
+
+test('model selection preserves brand, finish and year with the price group of that visit', () => {
+  for (const [vehicle, group] of [['BELGEE X50+', 'VG08'], ['GEELY COOLRAY', 'VG08'],
+    ['GEELY ATLAS (ФХ11)', 'VG04'], ['BELGEE X70', 'VG05'], ['GEELY ATLAS PRO', 'VG05'],
+    ['GEELY MONJARO (матовый)', 'VG12'], ['GEELY OKAVANGO 2024', 'VG13']]) {
+    const item = parse(row({ 3: vehicle })).rows[0];
+    assert.equal(item.order.vehicle, vehicle);
+    assert.equal(item.raw.vehicle, vehicle);
+    assert.equal(item.order.vehicle_group_code, group);
+  }
+  assert.equal(parse(row({ 3: 'ФХ11' })).rows[0].order.vehicle, 'GEELY ATLAS (ФХ11)');
+  assert.equal(parse(row({ 3: 'ФХ11 (Atlas)' })).rows[0].order.vehicle_group_code, 'VG04');
+  assert.equal(actVehicleName('GEELY MONJARO (матовый)'), 'MONJARO');
+  assert.equal(actVehicleName('GEELY MONJARO'), 'MONJARO');
+  assert.equal(actVehicleName('Старая запись'), 'Старая запись');
+  assertReview(parse(row({ 3: 'GEELY OKAVANGO 2025' })).rows[0], 'UNKNOWN_VEHICLE_GROUP');
+  assertReview(parse(row({ 3: 'OKAVANGO' })).rows[0], 'UNKNOWN_VEHICLE_GROUP');
+  const rows = [{ name: 'Okovango 20-24', code: 'old' }, { name: 'OKAVANGO 2026', code: 'new' }];
+  assert.equal(vehicleChoices(rows).find(model => model.label === 'GEELY OKAVANGO 2026')?.group, 'new');
 });
 
 test('recognized Manager shorthand publishes the same closed catalogue work', () => {

@@ -12,12 +12,13 @@ import {
   quoteTasks,
 } from './owner-model';
 
-export function Price({ value, preview = false }: { value: Money; preview?: boolean }) {
-  const total = value.effective_total_kopeks !== undefined
+export function Price({ value, preview = false, edit }: { value: Money; preview?: boolean; edit?: () => void }) {
+  const total = value.agreed_total_kopeks ?? (value.effective_total_kopeks !== undefined
     ? value.effective_total_kopeks
-    : value.status === 'priced' && value.net_amount != null ? Math.round(value.net_amount * 100) : null;
+    : value.status === 'priced' && value.net_amount != null ? Math.round(value.net_amount * 100) : null);
   return (
     <section class="financial-summary" aria-label="Стоимость · только владельцу">
+      {preview && value.agreed_total_kopeks != null && <p>Цены работ до пересчёта по договорной сумме</p>}
       {preview && value.items && value.items.length > 0 && (
         <ul class="quote-items">
           {value.items.map((item, index) => {
@@ -34,7 +35,9 @@ export function Price({ value, preview = false }: { value: Money; preview?: bool
       <dl data-price-kind="effective">
         <div>
           <dt>Итого для клиента</dt>
-          <dd>{total == null ? 'Уточните цену работ' : money(total)}</dd>
+          <dd>{edit ? <button class="job-link" type="button" onClick={edit} aria-label="Изменить договорную сумму заказа">
+            {total == null ? 'Уточните цену работ' : money(total)}
+          </button> : total == null ? 'Уточните цену работ' : money(total)}</dd>
         </div>
       </dl>
     </section>

@@ -1,5 +1,6 @@
 import type { ComponentProps } from 'preact';
 import { useState } from 'preact/hooks';
+import { OwnerCommercial } from './owner-commercial';
 import { OrderEditor } from './owner-editor';
 import { OrderJobPrices } from './owner-job-prices';
 import type { OwnerIntake, OwnerOrder } from './owner-model';
@@ -40,6 +41,8 @@ export function OwnerOrderEdit({ order, intake, promptGift, refreshOrder, notify
         Не удалось загрузить стоимость работ.{' '}
         <button type="button" class="button" onClick={() => void financials().catch(() => {})}>Повторить расчёт</button>
       </p> : !price && <p role="status">Загружаем стоимость работ…</p>}
+      {price?.commercial && order.status !== 'cancelled' && <OwnerCommercial client={editor.client} orderId={order.id}
+        terms={price.commercial} refresh={async () => { await refreshOrder(); await financials(); }} />}
       <OrderJobPrices order={order} staff={editor.staff} client={editor.client}
         price={price} refreshPrice={financials} mutate={editor.mutate}
         reload={() => refreshOrder().catch(() => {})} notify={notify} />

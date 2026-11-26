@@ -15,6 +15,7 @@ def exercise_gift_offer(page, db, base, owner, mechanic):
         page.goto(f'{base}/index.html#orders')
         page.get_by_role('link', name='Управление заказами', exact=True).click()
         page.get_by_role('button', name='Новый заказ', exact=True).click()
+        page.get_by_role('combobox', name='Модель автомобиля', exact=True).select_option('manual')
         page.get_by_label('Автомобиль', exact=True).fill(name)
         page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
         page.get_by_role('combobox', name='Назначить механика', exact=True).select_option(mechanic)

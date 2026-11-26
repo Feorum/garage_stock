@@ -1,4 +1,4 @@
-import { parseExistingSheetCsv } from './parser.ts';
+import { managerVehicleChoices, parseExistingSheetCsv } from './parser.ts';
 import { runFeed } from './engine.ts';
 import { intakeRows, ownerBindings } from './intake.ts';
 import { feedbackRows, feedbackSummary, managerComments, normalizeFeedbackCsv, publicFeedback, unchangedScopeKeys } from './feedback.ts';
@@ -236,6 +236,7 @@ export function createPullHandler({ supabaseUrl, serviceRoleKey, schedulerSecret
       }
     }
     return reply({ status: failed ? 'attention' : 'checked', checked, failed,
-      ...(feedbackEnabled && !failed ? { protocol: 'feedback_v1', feedback } : {}) }, failed && !checked ? 503 : 200);
+      ...(feedbackEnabled && !failed ? { protocol: 'feedback_v1', feedback,
+        vehicle_choices: managerVehicleChoices.map(model => model.label) } : {}) }, failed && !checked ? 503 : 200);
   };
 }

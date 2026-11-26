@@ -3,7 +3,15 @@ import { customerPrice } from './pay-model';
 import { taskName } from './shift-model';
 import type { ActDocumentData } from './act-document';
 
+export type ActFormat = 'weighted' | 'discount' | 'names';
+export type ActQuote = {
+  agreed_total_kopeks: number | null;
+  listed: Record<string, number | null>;
+  allocated: Record<string, number | null>;
+};
 export interface ActRecord {
+  act_format?: ActFormat;
+  pricing_snapshot?: ActQuote | null;
   number: string | null;
   suggested_number: string | null;
   contract_number: string;
@@ -25,10 +33,23 @@ export function fieldsFrom(record: ActRecord): ActFields {
   };
 }
 
-export function actJobs(order: OwnerOrder, financials: Money) {
-  const amounts = new Map((financials.tasks ?? financials.items ?? []).map(row => [row.task_id, customerPrice(row)]));
-  return order.tasks.filter(task => task.status === 'completed').map(task => ({
-    id: task.id, name: taskName(task), kopeks: amounts.get(task.id) ?? null,
+export function actQuote(order: OwnerOrder, financials: Money): ActQuote {
+  const amounts = new Map((financials.tasks ?? financials.items ?? []).map(row => [row.task_id, row]));
+  const allocated: ActQuote['allocated'] = {}, listed: ActQuote['listed'] = {};
+  for (const task of order.tasks.filter(task => task.status === 'completed')) {
+    const row = amounts.get(task.id);
+    const amount = row ? customerPrice(row) : null;
+    allocated[task.id] = amount;
+    listed[task.id] = row?.listed_kopeks === undefined ? amount : row.listed_kopeks;
+  }
+  return { agreed_total_kopeks: financials.commercial?.agreed_total_kopeks ?? null, allocated, listed };
+}
+
+export function actJobs(order: OwnerOrder, quote: ActQuote, mode: ActFormat) {
+  const prices = mode === 'discount' ? quote.listed : quote.allocated;
+  // Later omitted completions belong to the order. An issued act retains its original work list.
+  return order.tasks.filter(task => task.status === 'completed' && Object.hasOwn(prices, task.id)).map(task => ({
+    id: task.id, name: taskName(task), kopeks: prices[task.id] ?? null,
   }));
 }
 

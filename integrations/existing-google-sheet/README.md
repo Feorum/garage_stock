@@ -4,8 +4,8 @@ Use the complete approved copy of the existing Manager workbook. Never edit or
 connect the original when the Owner has requested copy-only development. No
 new Orders/Tasks template or Manager application account is required.
 
-The standalone Google Apps Script reads the configured copy and writes verified
-execution results only to I/J. It protects J as application output; put new
+The standalone Google Apps Script reads the configured copy, installs the
+vehicle model dropdown in D, and writes verified execution results to I/J. It protects J as application output; put new
 Manager comments in G. Existing J text is retained before the automatic block.
 The original workbook, Manager input values, sharing and financial data stay
 unchanged. Durable identity and issued output history stay in the private database.
@@ -44,6 +44,11 @@ private operational copy public as a shortcut.
 The existing A:J layout is retained: A date, B derived weekday (ignored), C
 Manager, D vehicle group/model, E VIN, F colour, G selected wrapping works,
 H rear-hemisphere tint choice, I completed checkbox, J additional instructions.
+Managers select the make and exact model together in D. Select the year for
+OKAVANGO. Its choices follow year ranges in the catalogue. Both MONJARO finishes
+use the same price group. The worker updates the validation rule when the model
+list changes and preserves existing cell values. To enable it on an existing
+reader, update the private project's Code.gs and deploy the matching reader Edge Function.
 Approved catalogue work names/codes and recognized service abbreviations create
 tasks. Multiple G selections may be separated by commas, semicolons or newlines.
 H must explicitly select rear-hemisphere 5% or 15% to create a tint task; there is

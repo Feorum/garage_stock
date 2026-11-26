@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { OrderPhotos } from './order-photos';
 import { WorkRow, Instructions, HandoffForm, type Draft } from './mechanic-vehicle';
 import { useBoardChanges, useBoardOrders, type BoardOrder, type ChangeState } from './mechanic-board-data';
 import { finishedAt, hasMechanicHistory, historyOrderDate, instantLabel, sortHistoryVisits, sortVisits, taskName, visibleProgress, type ShiftProps } from './shift-model';
@@ -17,9 +18,14 @@ function editable(order: BoardOrder) {
   return order.status === 'published' && (!state || state === 'available' || state === 'active');
 }
 
+function canOpenHistory(order: BoardOrder, mechanic: string) {
+  return hasMechanicHistory(order, mechanic) || order.vehicle_workflow?.state === 'review' ||
+    order.status === 'closed' || order.status === 'cancelled';
+}
+
 function listOrders(orders: BoardOrder[], source: string, profileId: string, history: boolean) {
   return history
-    ? sortHistoryVisits(orders, profileId)
+    ? sortHistoryVisits(orders, profileId, canOpenHistory)
     : sortVisits(orders.filter(order => order.source === source && editable(order)));
 }
 
@@ -62,7 +68,7 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
       ? selected.source === 'manager'
         ? 'manager-orders'
         : 'shift'
-      : hasMechanicHistory(selected, profile.id)
+      : canOpenHistory(selected, profile.id)
         ? 'history'
         : undefined;
     if (destination && destination !== section) navigate(destination, selected.id);
@@ -183,6 +189,7 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
                 <strong>{order.vehicle}</strong>
                 {day ? <time class="mb-date" dateTime={day}>{dateLabel(order, day, historyDate?.timestamp)}</time>
                   : <span class="mb-date">Дата не указана</span>}
+                {history && order.vehicle_workflow?.state === 'review' && <small>На проверке у владельца</small>}
                 <span aria-hidden="true" class="mb-chevron" />
               </button>
               {!expanded && tasks.length > 0 && (
@@ -221,6 +228,7 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
                         <Instructions order={order} />
                       </>
                     )}
+                    <OrderPhotos key={order.id} client={client} orderId={order.id} upload={order.status === 'published'} offline={locked} />
                     {history && flow?.handed_at && (
                       <p class="mb-history-note">Передан владельцу · {instantLabel(flow.handed_at)}</p>
                     )}

@@ -19,12 +19,14 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
     second = {**make_order(169, 2, tasks=tasks), 'status': 'closed'}
     opened = make_order(170, 3)
     prices = [1251, 0]
+    commercial = None
+    listed = [48000, 32000]
     records, writes = {}, []
     seq = 0
     fail = 'template'
 
     def rpc(name, args):
-        nonlocal fail, seq
+        nonlocal fail, seq, commercial
         order_id = args.get('p_order_id')
         if name == 'garage_list_orders':
             value = [order, second, opened]
@@ -33,6 +35,18 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
                 {'task_id': t['id'], 'effective_kopeks': p, 'private_version': 0}
                 for t, p in zip(tasks, prices)
             ]}
+            if commercial is not None:
+                value['commercial'] = commercial
+                value['effective_total_kopeks'] = sum(prices)
+                for row, amount in zip(value['tasks'], listed):
+                    row['listed_kopeks'] = amount
+        elif name == 'garage_save_commercial':
+            assert args == {'p_order_id': second['id'], 'p_expected_version': 0,
+                            'p_agreed_total_kopeks': 75000, 'p_basis': 'agreed'}
+            commercial.update(agreed_total_kopeks=75000, basis='agreed', version=1,
+                              basis_total_kopeks=75000, internal_total_kopeks=60000)
+            prices[:] = [45000, 30000]
+            value = 1
         elif name == 'garage_act_get':
             value = records.get(order_id, {
                 'number': None, 'suggested_number': f'{seq + 1}/11' if seq else None,
@@ -54,6 +68,10 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
                 prices[0] = 1252
                 fail = ''
             expected = {t['id']: p for t, p in zip(tasks, prices)}
+            if commercial is not None:
+                mode = args['p_expected_amounts']['mode']
+                expected = {'mode': mode, 'quote': {'agreed_total_kopeks': 75000, 'allocated': expected,
+                    'listed': {t['id']: p for t, p in zip(tasks, listed)}}}
             if (args['p_expected_amounts'] != expected or args['p_expected_order_version'] != current_order['version']):
                 return {'error': {'code': '40001', 'message': 'Synthetic changed order or prices'}, 'data': None}
             if fail == 'number':
@@ -67,6 +85,8 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
                 value = {key[2:]: v for key, v in args.items() if key not in ('p_order_id', 'p_expected_version')}
                 records[order_id] = {**value, 'suggested_number': None, 'version': 1,
                     'customer_name': 'Тестовый заказчик', 'contractor_name': 'Тестовая мастерская'}
+            if commercial is not None:
+                records[order_id].update(pricing_snapshot=expected['quote'], act_format=mode)
             value = records[order_id]
             if fail == 'receipt':
                 fail = ''
@@ -141,6 +161,28 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
         expect(page.get_by_role('alert')).to_contain_text(tasks[1]['work_name'])
         expect(submit).to_be_disabled()
         assert [w['p_number'] for w in writes] == ['47/11', '47/11', '47/11', '47/11', '48/12', '49/12']
+        del records[second['id']]
+        commercial = dict(agreed_total_kopeks=None, basis='catalogue', version=0, catalogue_total_kopeks=80000,
+                          basis_total_kopeks=80000, internal_total_kopeks=64000)
+        prices[:] = listed
+        page.set_viewport_size({'width': 360, 'height': 900})
+        page.reload()
+        page.get_by_role('button', name='Изменить договорную сумму заказа').click()
+        page.get_by_label('Договорная сумма за заказ, BYN').fill('750')
+        page.get_by_label('От какой суммы считать 80%').select_option('agreed')
+        page.get_by_role('button', name='Сохранить условия').click()
+        expect(page.get_by_role('button', name='Изменить договорную сумму заказа')).to_contain_text('750,00')
+        button.click()
+        for mode, expected in [('weighted', ['450,00 BYN', '300,00 BYN']),
+                               ('discount', ['480,00 BYN', '320,00 BYN', 'Скидка', '−50,00 BYN']),
+                               ('names', [tasks[0]['work_name'], tasks[1]['work_name']])]:
+            page.get_by_label('Отображение договорной суммы').select_option(mode)
+            text = exported_text()
+            assert all(item in text for item in expected) and '750 (семьсот пятьдесят)' in text
+            if mode == 'names':
+                assert 'BYN' not in text
+            button.click()
+        expect(page.get_by_label('Отображение договорной суммы')).to_have_value('names')
         assert not errors and not requests, (errors, requests)
     finally:
         ctx.close()

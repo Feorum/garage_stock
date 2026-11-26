@@ -17,7 +17,7 @@ type JobProps = TaskManagementProps & {
 type Panel = 'price' | 'payout' | 'history' | 'team';
 
 function payItem(taskId: string, payout?: Payout | null): PayEditorItem | null {
-  if (!payout || payout.version == null || !payout.candidates) return null;
+  if (!payout || payout.order_payroll || payout.version == null || !payout.candidates) return null;
   return { ...payout, task_id: taskId, version: payout.version, candidates: payout.candidates };
 }
 
@@ -94,10 +94,11 @@ function OrderJob(props: JobProps) {
       </td>
       <td data-column="payout">
         <span class="job-column-label" aria-hidden="true">Механикам</span>
-        <span class="job-amount">{payAmount == null ? payout ? 'Нет ставки' : '—' : money(payAmount)}</span>
+        <span class="job-amount">{payAmount == null ? payout?.order_payroll ? 'По заказу' : payout ? 'Нет ставки' : '—' : money(payAmount)}</span>
         {payout && !allocated && payAmount != null && <small>По ставке</small>}
         {!payout && !cancelled && <small>{task.status === 'completed' ? (loaded ? 'Нет расчёта' : '') : 'После выполнения'}</small>}
         {shares?.map(s => <small key={s.mechanic_id}>{s.name} · {money(s.kopeks)}</small>)}
+        {payout?.order_payroll && <a class="job-link" href={'#orders/' + encodeURIComponent(order.id) + '/payroll'}>К выплатам заказа</a>}
         {editablePay && control('payout', allocated ? 'Изменить распределение' : 'Распределить', allocated ? 'Изменить' : 'Распределить')}
         {allocated && payout?.version != null && control('history', 'История изменений', 'История')}
       </td>

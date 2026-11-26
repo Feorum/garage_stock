@@ -1,0 +1,169 @@
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { decimal, hundredths, money } from './pay-model';
+import { errorText, isConflict, read } from './owner-model';
+import { workshopDay, type Client, type Navigate } from './workspace-types';
+import { formatOrderDay } from './order-calendar';
+
+type Item = { name: string; kopeks: number };
+type Summary = { id: string; vehicle: string; visit_date: string; status: 'open' | 'closed' };
+type CustomOrder = Summary & {
+  services: string;
+  customer_kopeks: number | null;
+  payments: Item[];
+  allocations: Item[];
+  version: number;
+};
+type Line = { key: string; name: string; amount: string };
+
+export function OrderType({ custom, change }: { custom: boolean; change: (custom: boolean) => void }) {
+  return <label class="order-field">Тип заказа
+    <select value={custom ? 'custom' : 'standard'} onChange={e => change(e.currentTarget.value === 'custom')}>
+      <option value="standard">Стандарт</option><option value="custom">Кастомный</option>
+    </select>
+  </label>;
+}
+
+export function CustomOrderList({ client, refreshWith, search = '', filter = 'all' }: {
+  client: Client; refreshWith: object | null; search?: string; filter?: string;
+}) {
+  const [orders, setOrders] = useState<Summary[]>([]);
+  const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let live = true;
+    read<Summary[]>(client, 'garage_custom_orders').then(rows => {
+      if (!Array.isArray(rows)) throw new Error('Invalid custom order list');
+      if (live) { setOrders(rows); setError(false); }
+    }).catch(() => { if (live) { setOrders([]); setError(true); } });
+    return () => { live = false; };
+  }, [client, attempt, refreshWith]);
+  if (error) return <p role="alert">Не удалось загрузить кастомные заказы.{' '}
+    <button type="button" class="button" onClick={() => setAttempt(n => n + 1)}>Повторить</button></p>;
+  const matches = orders.filter(o => (filter === 'all' || filter === o.status)
+    && o.vehicle.toLocaleLowerCase('ru').includes(search.trim().toLocaleLowerCase('ru')));
+  if (!matches.length) return null;
+  return <section aria-label="Кастомные заказы">
+    <h2 class="owner-history-title">Кастомные заказы</h2>
+    <div class="owner-board-list">{matches.map(o => <article class="owner-board-card" key={o.id}>
+      <a class="owner-board-open" href={'#orders/custom-' + o.id}>
+        <h3>{o.vehicle}</h3><span class="owner-board-meta">{formatOrderDay(o.visit_date)} · {o.status === 'open' ? 'Открыт' : 'Закрыт'}</span>
+      </a>
+    </article>)}</div>
+  </section>;
+}
+
+function lines(items: Item[]): Line[] {
+  return items.map(i => ({ key: crypto.randomUUID(), name: i.name, amount: decimal(i.kopeks) }));
+}
+function items(rows: Line[]): Item[] | null {
+  const result: Item[] = [];
+  for (const row of rows) {
+    const kopeks = hundredths(row.amount), name = row.name.trim();
+    if (!name || kopeks === null) return null;
+    result.push({ name, kopeks });
+  }
+  return result;
+}
+function AmountLines({ title, nameLabel, rows, change, addLabel }: {
+  title: string; nameLabel: string; rows: Line[]; change: (rows: Line[]) => void; addLabel: string;
+}) {
+  const edit = (key: string, values: Partial<Line>) => change(rows.map(r => r.key === key ? { ...r, ...values } : r));
+  return <fieldset><legend>{title}</legend>
+    {rows.map((r, i) => <div class="form-grid" key={r.key}>
+      <label>{nameLabel} {i + 1}<input value={r.name} required maxLength={240}
+        onInput={e => edit(r.key, { name: e.currentTarget.value })} /></label>
+      <label>Сумма, BYN<input inputMode="decimal" value={r.amount} required
+        onInput={e => edit(r.key, { amount: e.currentTarget.value })} /></label>
+      <button class="button" type="button" aria-label={'Убрать строку ' + (i + 1) + ' · ' + title}
+        onClick={() => change(rows.filter(row => row.key !== r.key))}>Убрать</button>
+    </div>)}
+    <button class="button" type="button" onClick={() => change([...rows, { key: crypto.randomUUID(), name: '', amount: '' }])}>{addLabel}</button>
+  </fieldset>;
+}
+
+export function CustomOrderPage({ client, record, navigate }: { client: Client; record: string; navigate: Navigate }) {
+  const creating = record === 'new';
+  const [loaded, setLoaded] = useState<CustomOrder | null>(null);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (creating) return;
+    let live = true;
+    read<CustomOrder>(client, 'garage_custom_orders', { p_order_id: record })
+      .then(row => { if (live) { setLoaded(row); setError(''); } })
+      .catch(e => { if (live) setError(errorText(e)); });
+    return () => { live = false; };
+  }, [client, record, creating, attempt]);
+  if (!creating && !loaded) return <div><a href="#orders">К списку заказов</a>
+    {error ? <p role="alert">{error} <button type="button" class="button" onClick={() => setAttempt(n => n + 1)}>Повторить</button></p>
+      : <p role="status">Загрузка заказа…</p>}</div>;
+  return <CustomOrderEditor client={client} seed={loaded} navigate={navigate} />;
+}
+
+function CustomOrderEditor({ client, seed, navigate }: { client: Client; seed: CustomOrder | null; navigate: Navigate }) {
+  const [vehicle, setVehicle] = useState(seed?.vehicle ?? '');
+  const [visitDate, setDate] = useState(seed?.visit_date ?? workshopDay());
+  const [services, setServices] = useState(seed?.services ?? '');
+  const [status, setStatus] = useState<Summary['status']>(seed?.status ?? 'open');
+  const [customer, setCustomer] = useState(seed?.customer_kopeks == null ? '' : decimal(seed.customer_kopeks));
+  const [payments, setPayments] = useState<Line[]>(() => lines(seed?.payments ?? []));
+  const [allocations, setAllocations] = useState<Line[]>(() => lines(seed?.allocations ?? []));
+  const [version, setVersion] = useState(seed?.version ?? 0);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [conflict, setConflict] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const live = useRef(true), lock = useRef(false);
+  const request = useRef<{ payload: string; id: string } | null>(null);
+  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
+  const price = customer.trim() ? hundredths(customer) : null;
+  const pay = items(payments), expenses = items(allocations);
+  const balance = price !== null && pay && expenses
+    ? price - [...pay, ...expenses].reduce((sum, row) => sum + row.kopeks, 0) : null;
+  async function save() {
+    if (lock.current || conflict) return;
+    setFailed(true);
+    if (!vehicle.trim() || !visitDate || (customer.trim() && price === null) || !pay || !expenses) {
+      setMessage('Укажите автомобиль и дату. Для каждой строки введите название и сумму в BYN с точностью до копейки.');
+      return;
+    }
+    lock.current = true; setSaving(true); setMessage('');
+    const draft = { vehicle: vehicle.trim(), visit_date: visitDate, services, status, customer_kopeks: price, payments: pay, allocations: expenses };
+    const args = { p_order_id: seed?.id ?? null, p_expected_version: version, p_order: draft };
+    const payload = JSON.stringify(args);
+    if (request.current?.payload !== payload) request.current = { payload, id: crypto.randomUUID() };
+    try {
+      const result = await read<CustomOrder>(client, 'garage_save_custom_order', { ...args, p_request_id: request.current.id });
+      if (!live.current) return;
+      request.current = null;
+      setFailed(false); setMessage('Кастомный заказ сохранён.'); setVersion(result.version);
+      if (!seed) navigate('orders', 'custom-' + result.id);
+    } catch (e) {
+      if (live.current) { setConflict(isConflict(e)); setMessage(errorText(e)); }
+    } finally {
+      lock.current = false;
+      if (live.current) setSaving(false);
+    }
+  }
+  return <form class="new-order-form custom-order-form" onSubmit={e => { e.preventDefault(); void save(); }}>
+    <a href="#orders">К списку заказов</a>
+    {seed ? <h2>Кастомный заказ</h2> : <OrderType custom change={() => navigate('orders', 'new')} />}
+    <fieldset disabled={saving}><legend>Заказ</legend>
+      <div class="form-grid"><label>Автомобиль<input required maxLength={240} value={vehicle} onInput={e => setVehicle(e.currentTarget.value)} /></label>
+        <label>Дата заказа<input type="date" required value={visitDate} onInput={e => setDate(e.currentTarget.value)} /></label>
+        <label>Состояние<select value={status} onChange={e => setStatus(e.currentTarget.value as Summary['status'])}>
+          <option value="open">Открыт</option><option value="closed">Закрыт</option>
+        </select></label></div>
+      <label class="order-field">Работы<textarea rows={3} maxLength={12000} value={services} onInput={e => setServices(e.currentTarget.value)} /></label>
+      <label class="order-field">Сумма для клиента, BYN<input inputMode="decimal" value={customer} onInput={e => setCustomer(e.currentTarget.value)} /></label>
+    </fieldset>
+    <fieldset disabled={saving} class="custom-distribution"><legend>Распределение средств</legend>
+      <AmountLines title="Выплаты исполнителям" nameLabel="Имя исполнителя" addLabel="Добавить исполнителя" rows={payments} change={setPayments} />
+      <AmountLines title="Расходы и прочее распределение" nameLabel="Назначение (например, плёнка)" addLabel="Добавить расход или распределение" rows={allocations} change={setAllocations} />
+      {balance !== null && <p>Свободный остаток <strong>{money(balance)}</strong></p>}
+    </fieldset>
+    {message && <p role={failed ? 'alert' : 'status'}>{message}</p>}
+    {conflict && <button class="button" type="button" onClick={() => window.location.reload()}>Загрузить сохранённую версию</button>}
+    <button type="submit" class="button button-primary" disabled={saving || conflict}>{saving ? 'Сохранение…' : 'Сохранить заказ'}</button>
+  </form>;
+}

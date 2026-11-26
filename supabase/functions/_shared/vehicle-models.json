@@ -1,0 +1,16 @@
+[
+  {"brand": "BELGEE", "model": "X50", "group": "VG08", "aliases": []},
+  {"brand": "BELGEE", "model": "X50+", "group": "VG08", "aliases": []},
+  {"brand": "BELGEE", "model": "S50", "group": "VG02", "aliases": []},
+  {"brand": "BELGEE", "model": "X70", "group": "VG05", "aliases": []},
+  {"brand": "BELGEE", "model": "X80", "group": "VG09", "aliases": []},
+  {"brand": "GEELY", "model": "EX2", "group": "VG14", "aliases": []},
+  {"brand": "GEELY", "model": "EX5", "group": "VG15", "aliases": []},
+  {"brand": "GEELY", "model": "ATLAS (ФХ11)", "group": "VG04", "aliases": ["ФХ11", "FX11", "Atlas FX11", "Атлас ФХ11", "ФХ11 (Atlas)", "ФХ11 (Атлас)", "FX11 (Atlas)"]},
+  {"brand": "GEELY", "model": "ATLAS PRO", "group": "VG05", "aliases": ["Атлас PRO"]},
+  {"brand": "GEELY", "model": "ATLAS", "group": "VG06", "aliases": ["Атлас"]},
+  {"brand": "GEELY", "model": "CITYRAY", "group": "VG07", "aliases": ["Сityray"]},
+  {"brand": "GEELY", "model": "MONJARO", "group": "VG12", "aliases": ["Mongaro", "Монжаро"]},
+  {"brand": "GEELY", "model": "MONJARO (матовый)", "group": "VG12", "aliases": ["Монжаро матовый", "Mongaro матовый", "MONJARO matte", "Mongaro matte"]},
+  {"brand": "GEELY", "model": "COOLRAY", "group": "VG08", "aliases": []}
+]

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { GarageClient, Profile } from './shift-model';
 import { date, money, payRead, title, type PayItem, type Revision } from './pay-model';
 import { PayoutSummary, TaskPricing } from './owner-pricing';
+import { MechanicRates } from './mechanic-rates';
+import './order-payroll.css';
 import { PayEditor } from './pay-editor';
 import './pay.css';
 
@@ -63,10 +65,10 @@ function Worklist({ client, recordId }: { client: GarageClient; recordId?: strin
     if (recordId) return item.task_id === recordId;
     if (editing === item.task_id) return true;
     const names = [item.order_number, item.work_name, item.vehicle, ...item.candidates.map(person => person.name)];
-    return (filter === 'all' || (filter === 'pending') === (item.pool_kopeks === null))
+    return (filter === 'all' || (filter === 'pending') === (!item.order_payroll && item.pool_kopeks === null))
       && names.some(name => name.toLocaleLowerCase('ru').includes(search.trim().toLocaleLowerCase('ru')));
   });
-  const pending = items.filter(item => item.pool_kopeks === null).length;
+  const pending = items.filter(item => !item.order_payroll && item.pool_kopeks === null).length;
   return <section class="pay-workspace" aria-label="Распределение оплаты">
     {recordId ? <div class="button-row">
       <a class="button" href="#pay">Все работы</a>
@@ -76,7 +78,7 @@ function Worklist({ client, recordId }: { client: GarageClient; recordId?: strin
       <label>Показать
         <select ref={filterField} value={filter} disabled={Boolean(editing)} onChange={event => setFilter(event.currentTarget.value as Filter)}>
           <option value="pending">Ожидают распределения ({pending})</option>
-          <option value="allocated">Распределены ({items.length - pending})</option><option value="all">Все работы</option>
+          <option value="allocated">Рассчитаны или распределены ({items.length - pending})</option><option value="all">Все работы</option>
         </select>
       </label>
       <label>Поиск<input type="search" value={search} disabled={Boolean(editing)} placeholder="Автомобиль, заказ, механик"
@@ -86,20 +88,20 @@ function Worklist({ client, recordId }: { client: GarageClient; recordId?: strin
     <div role="status">{status === 'loading' ? 'Загружаем работы…' : status === 'failed'
       ? 'Не удалось обновить список. Проверьте подключение и нажмите «Обновить».' : notice}</div>
     {status === 'ready' && !visible.length && <p class="pay-empty">{recordId ? 'Работа недоступна для распределения.' : search ? 'По вашему запросу ничего не найдено.' :
-      filter === 'pending' ? 'Все завершённые работы распределены. Новые появятся здесь после завершения.' : 'Подходящих завершённых работ пока нет.'}</p>}
+      filter === 'pending' ? 'Нет работ, которые нужно распределить вручную.' : 'Подходящих завершённых работ пока нет.'}</p>}
     <ul class="pay-list">{visible.map(item => <li key={item.task_id} class="pay-card" data-task-id={item.task_id}>
       <div class="pay-summary">
         <div><p class="muted">{date(item.completed_at)} (Минск)</p><h2>{title(item)} · <span>{item.vehicle}</span></h2>
           <p>{item.candidates.filter(person => !person.former).map(person => person.name).join(', ')}</p></div>
-        <strong>{item.pool_kopeks === null ? 'Ожидает распределения' : money(item.pool_kopeks)}</strong>
+        <strong>{item.order_payroll ? 'Расчёт по заказу' : item.pool_kopeks === null ? 'Ожидает распределения' : money(item.pool_kopeks)}</strong>
       </div>
       {item.private_version != null && <TaskPricing client={client} taskId={item.task_id} value={item} reload={refresh} />}
-      {item.pool_kopeks === null && <PayoutSummary payout={item} />}
+      {!item.order_payroll && item.pool_kopeks === null && <PayoutSummary payout={item} />}
       {item.shares.length > 0 && <ul class="pay-lines">{item.shares.map(share => <li key={share.mechanic_id}>
         <span>{share.name} {share.former && <small>(прежний участник)</small>}</span>
         <span>{money(share.kopeks)}</span>
       </li>)}</ul>}
-      {editing === item.task_id ? <PayEditor item={item} client={client} unavailable={item.task_id === removed?.task_id} reloadItem={async () => {
+      {item.order_payroll ? <a class="button" href={'#orders/' + encodeURIComponent(item.order_id!) + '/payroll'}>Открыть выплаты по заказу</a> : editing === item.task_id ? <PayEditor item={item} client={client} unavailable={item.task_id === removed?.task_id} reloadItem={async () => {
         const next = await payRead<PayItem[]>(client, 'garage_pay_worklist');
         const current = next.find(row => row.task_id === item.task_id);
         if (active.current) setItems(next);
@@ -124,5 +126,8 @@ function Worklist({ client, recordId }: { client: GarageClient; recordId?: strin
 }
 
 export function PayView({ client, profile, recordId }: Props) {
-  return profile.role === 'admin' ? <Worklist key={profile.id + '/' + (recordId || '')} client={client} recordId={recordId} /> : null;
+  return profile.role === 'admin' ? <>
+    {!recordId && <MechanicRates client={client} />}
+    <Worklist key={profile.id + '/' + (recordId || '')} client={client} recordId={recordId} />
+  </> : null;
 }

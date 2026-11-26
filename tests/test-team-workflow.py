@@ -45,7 +45,9 @@ RPC = {
     'garage_pay_worklist', 'garage_pay_history', 'garage_pay_save', 'garage_pay_save_amounts', 'garage_save_task_pricing',
     'garage_owner_gift_offer', 'garage_save_order_with_gift', 'garage_owner_review_prices',
     'garage_check_work', 'garage_uncheck_work', 'garage_submit_work',
-    'garage_act_get', 'garage_act_save', 'garage_act_template',
+    'garage_act_get', 'garage_act_save', 'garage_act_template', 'garage_save_commercial',
+    'garage_custom_orders', 'garage_save_custom_order',
+    'garage_order_payroll', 'garage_save_order_payroll', 'garage_mechanic_rates', 'garage_save_mechanic_rate',
 }
 PARAM_TYPES = {
     'p_order_id': 'uuid', 'p_order_ids': 'uuid[]', 'p_id': 'uuid', 'p_task_id': 'uuid', 'p_request_id': 'uuid',
@@ -61,6 +63,10 @@ PARAM_TYPES = {
     'p_gift_expected_version': 'integer',
     'p_number': 'text', 'p_contract_number': 'text', 'p_contract_date': 'date', 'p_act_date': 'date',
     'p_expected_order_version': 'integer', 'p_expected_amounts': 'jsonb',
+    'p_agreed_total_kopeks': 'bigint', 'p_basis': 'text',
+    'p_prep_ids': 'uuid[]', 'p_heat_ids': 'uuid[]', 'p_expected_token': 'text',
+    'p_reserve_kopeks': 'bigint', 'p_additional_kopeks': 'bigint', 'p_effective_date': 'date',
+    'p_rate_bp': 'integer', 'p_expected_rate_bp': 'integer',
 }
 
 
@@ -426,6 +432,31 @@ def exercise_database(db):
     print('Passed PostgreSQL team concurrency, privacy, roster, retry and historical migration checks.')
 
 
+def check_order_payroll_race(db):
+    name = create(db, 'Конкурентный расчёт выплат')
+    order_id = order(db, OWNER, name)['id']
+    params = {'subject': OWNER, 'order_id': order_id}
+    prefix = 'begin;\n' + ROLE + '\n'
+    token = db.sql(prefix + "select garage_order_payroll(:'order_id')->>'token'; commit;", params)
+    start = Barrier(2)
+
+    def set_reserve(kopeks):
+        start.wait()
+        try:
+            return db.sql(prefix + """
+              select garage_save_order_payroll(:'order_id', :'token', '{}', '{}', '[]',
+                  :'kopeks', null, :'request')->>'version'; commit;
+            """, {**params, 'token': token, 'kopeks': str(kopeks), 'request': str(uuid4())})
+        except subprocess.CalledProcessError as error:
+            if '40001' not in error.stderr:
+                raise
+            return 'conflict'
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(set_reserve, (100, 200))) == ['1', 'conflict']
+    assert db.sql(prefix + "select jsonb_array_length(garage_order_payroll(:'order_id')->'history'); commit;", params) == '1'
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sql-only', action='store_true')
@@ -435,7 +466,7 @@ if __name__ == '__main__':
     try:
         with Database() as database:
             database.setup()
-            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql', 'pay-amounts.sql', 'completion-acts.sql'):
+            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql', 'pay-amounts.sql', 'completion-acts.sql', 'commercial-terms.sql', 'custom-orders.sql', 'standard-payroll.sql', 'order-film.sql'):
                 database.sql((ROOT / 'tests' / suite).read_text())
             database.sql("""
                 insert into garage_price_lists (id,name,source_sha256,status)
@@ -448,13 +479,16 @@ if __name__ == '__main__':
             check_handoff_race(database)
             check_inline_work(database)
             check_undo_handoff_race(database)
+            check_order_payroll_race(database)
             if not args.sql_only:
                 from team_browser import exercise_browser
                 from owner_browser import exercise_owner_order
+                from custom_order_browser import exercise_custom_order
                 from price_browser import exercise_owner_pricing
                 from order_pay_browser import exercise_order_pay
                 exercise_browser(database, args.directory, args.chromium, OWNER, A, B, C)
                 exercise_owner_order(database, args.directory, args.chromium, OWNER, A, B)
+                exercise_custom_order(database, args.directory, args.chromium, OWNER)
                 database.sql("insert into garage_pay.gift_offer(gift_work_code, qualifying_count) values ('W09', 2);")
                 exercise_owner_pricing(database, args.directory, args.chromium, OWNER, A, B)
                 exercise_order_pay(database, args.directory, args.chromium, OWNER, A, B)

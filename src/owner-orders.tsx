@@ -16,6 +16,7 @@ import { OrderEditor } from './owner-editor';
 import { OwnerOrderEdit } from './owner-order-edit';
 import { Omission } from './owner-omission';
 import { OwnerOrderList } from './owner-order-list';
+import { CustomOrderList, OrderType } from './owner-custom-orders';
 
 interface Props {
   client: Client;
@@ -143,9 +144,9 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
     };
   }, [client, profile.id, profile.role]);
   useEffect(() => {
-    setEditor(null);
+    setEditor(recordId === 'new' ? { mode: 'new' } : null);
     setOmission(null);
-  }, [id]);
+  }, [recordId]);
   useEffect(() => {
     if (!editingOrder) giftPrompt.current = undefined;
   }, [editingOrder]);
@@ -281,12 +282,13 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
               >
                 Новый заказ
               </button>
+              {loaded && !data.staffReady && <a class="button" href="#orders/custom-new">Новый кастомный заказ</a>}
             </div>
           </div>
           {!loaded && !loadError && <p role="status">Загрузка заказов…</p>}
           {loaded && !rows.length && (
             <div class="empty-state">
-              <h2>Подходящие заказы не найдены</h2>
+              <h2>Подходящие стандартные заказы и заявки не найдены</h2>
               <p>
                 {query
                   ? 'Попробуйте другой автомобиль или VIN.'
@@ -295,11 +297,13 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
             </div>
           )}
           <OwnerOrderList rows={rows} filter={filter} search={query} selectedId={id} open={open} />
+          <CustomOrderList client={client} refreshWith={data} search={query} filter={filter} />
         </section>}
         {detail && (
           <section class="owner-order-pane" aria-label="Подробности заказа">
-            {editor ? (
-              <OrderEditor
+            {editor ? (<>
+              {editor.mode === 'new' && <OrderType custom={false} change={() => navigate('orders', 'custom-new')} />}
+              {(editor.mode !== 'new' || data.staffReady) && <OrderEditor
                 key={editor.mode + '-' + (editor.order?.id || editor.intake?.id || '')}
                 seed={editor}
                 offer={data.giftOffer}
@@ -307,11 +311,11 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
                 client={client}
                 mutate={mutate}
                 staff={data.staff}
-                close={() => setEditor(null)}
+                close={() => recordId === 'new' ? navigate('orders', 'tools') : setEditor(null)}
                 reload={freshSeed}
                 saved={afterSave}
-              />
-            ) : omission ? (
+              />}
+            </>) : omission ? (
               <Omission
                 key={omission.id}
                 order={omission}
@@ -337,6 +341,7 @@ export function OwnerOrders({ client, profile, recordId, navigate }: Props) {
               <OwnerDetail
                 key={activeOrder.id}
                 order={activeOrder}
+                staff={data.staff}
                 offer={data.giftOffer}
                 intake={activeIntake}
                 client={client}

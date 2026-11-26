@@ -220,6 +220,7 @@ export function createClient() {
       source.version += 1;
       return { data: clone(source), error: null };
     }
+    if (name === 'garage_custom_orders') return owner ? { data: clone(fixture.customOrders || []), error: null } : errorResult('Owner access required.', '42501');
     if (name === 'garage_list_orders') return { data: visibleOrders(), error: null };
     if (name === 'garage_owner_review_prices') return owner
       ? { data: clone((fixture.reviewPrices || []).filter(row => args.p_order_ids?.includes(row.order_id))), error: null }

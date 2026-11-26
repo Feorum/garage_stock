@@ -275,3 +275,37 @@ Ordinary order JSON contains only safe source name/ID/row metadata for table
 ordering. Private original text and quote amounts require Owner authorization;
 Mechanics receive neither. Run isolated synthetic checks with
 `bash tests/run-owner-edit-tests.sh` after preloading the pinned PostgreSQL image.
+
+## Order finance and photos
+
+The November 26 migrations add the private order photo bucket, custom orders,
+commercial terms, payroll and film expenses. Standard orders share the frozen
+catalogue and can use catalogue prices or the negotiated customer amounts as
+their calculation basis. The order shows the first 20% and uses the remaining
+80% for material ratios and standard payroll. New Word acts snapshot the prices
+and the chosen presentation when issued.
+
+Photo uploads accept JPEG, PNG, WebP and AVIF up to 20 MiB per image. Access
+follows the existing order permissions. Uploads are available until the order
+closes, including during review. The browser uses authenticated Storage
+downloads. An order ID distinguishes separate visits by the same vehicle.
+
+### Film expenses
+
+`garage_order_film` returns the latest Owner entries and the current internal
+prices. `garage_save_order_film` accepts either one whole-order amount or
+amounts keyed by work ID. Amounts are integer kopeks. A blank amount means a
+missing observation. Zero records a measured zero. Writes check both the film
+revision and the current quote.
+
+Each save adds one UTF-8 record to the private `film-patterns.jsonl` file in
+the same database transaction. `garage_film_file` reads byte ranges from it
+for the Owner download. Back up the private `garage_pay` data to retain the
+file. Each record includes the order ID, revision, vehicle, price group,
+pricing basis, status, and work and order amounts with their corresponding
+prices and percentages. The file also identifies completed works. Closing an
+order with recorded film expenses saves its final scope automatically.
+A percentage is null when the amount or price is missing or the price is
+zero. For a later analysis, keep the highest revision
+per order and use only its selected recording mode. This also applies when a
+revision clears an earlier amount.

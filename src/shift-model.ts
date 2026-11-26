@@ -207,8 +207,8 @@ export function historyOrderDate(order: Order, id: string) {
   return { day: actualDay || orderDay(order), timestamp: actualDay ? latest : undefined };
 }
 
-export function sortHistoryVisits<T extends Order>(orders: T[], mechanic: string) {
-  return orders.filter(order => hasMechanicHistory(order, mechanic))
+export function sortHistoryVisits<T extends Order>(orders: T[], mechanic: string, include: (order: T, id: string) => boolean = hasMechanicHistory) {
+  return orders.filter(order => include(order, mechanic))
     .map(order => ({ order, ...historyOrderDate(order, mechanic) }))
     .sort((a, b) => b.day.localeCompare(a.day) || newestFirst(a.timestamp, b.timestamp) || a.order.id.localeCompare(b.order.id))
     .map(({ order }) => order);

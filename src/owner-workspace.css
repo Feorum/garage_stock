@@ -50,3 +50,12 @@
 @media(min-width: 900px) {
   .owner-month { max-width: 34rem; }
 }
+
+.custom-order-form, .custom-distribution { display: grid; gap: var(--gap-card); }
+.custom-order-form { max-width: 56rem; margin-inline: auto; }
+.custom-order-form > a { justify-self: start; }
+.custom-order-form legend { margin-bottom: var(--gap-row); font-weight: 650; }
+.custom-order-form .form-grid { align-items: end; }
+.custom-order-form .form-grid button { justify-self: start; }
+.custom-distribution { border-top: 1px solid var(--line); }
+.custom-distribution > p { padding-top: var(--gap-row); font-variant-numeric: tabular-nums; }

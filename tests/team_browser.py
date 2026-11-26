@@ -14,6 +14,9 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
     spec = spec_from_file_location('garage_team_smoke', Path(__file__).with_name('browser-smoke.py'))
     smoke = module_from_spec(spec)
     spec.loader.exec_module(smoke)
+    for mechanic, rate in [(mechanic_a, 2500), (mechanic_b, 1500)]:
+        db.rpc(owner, 'garage_save_mechanic_rate', p_mechanic_id=mechanic, p_effective_date='2000-01-01',
+               p_rate_bp=rate, p_expected_rate_bp=None, p_request_id=str(uuid4()))
     label = 'Совместная работа на автомобиле'
     db.rpc(owner, 'garage_create_order', p_vehicle=label, p_vehicle_group_code='VG02', p_source='manager',
            p_tasks=[{'work_code': code} for code in ('W01', 'W09')], p_request_id=str(uuid4()))
@@ -118,7 +121,7 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
                             identity = page.locator(f'header [data-mechanic-id="{person}"]')
                             expect(identity).to_have_text(name)
                             assert identity.evaluate("el => getComputedStyle(el, '::before').backgroundColor") == color
-                    assert not page.evaluate("__garageCalls.some(c => ['garage_team_action','garage_vehicle_action','garage_pay_worklist','garage_order_financials','garage_owner_review_prices'].includes(c.name))")
+                    assert not page.evaluate("__garageCalls.some(c => ['garage_team_action','garage_vehicle_action','garage_pay_worklist','garage_order_financials','garage_owner_review_prices','garage_order_payroll','garage_mechanic_rates'].includes(c.name))")
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                 assert db.sql("select count(*) from garage_task_completions where task_id=:'id';", {'id':task_id}) == '1'
                 assert len([row for row in db.rpc(owner,'garage_pay_worklist') if row['task_id'] == task_id]) == 1
@@ -172,16 +175,22 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
                 pay.get_by_role('button', name='Изменить заказ', exact=True).click()
                 expect(pay.get_by_text('Данные и состав работ', exact=True)).to_have_count(0)
                 card = pay.locator(f'tbody[data-task-id="{task_id}"]')
-                card.get_by_role('button', name='Распределить', exact=True).click()
-                expect(card.get_by_label('Итого механикам')).to_have_text(re.compile(r'20,01\s*BYN'))
-                card.get_by_role('button', name='Сохранить распределение', exact=True).click()
-                expect(pay.get_by_text('Распределение сохранено.', exact=True)).to_be_visible()
-                expect(pay).to_have_url(f'{base}/index.html#orders/edit-{record["id"]}')
-                expect(card.get_by_role('button', name='Изменить распределение')).to_be_visible()
-                saved = next(item for item in db.rpc(owner, 'garage_pay_worklist') if item['task_id'] == task_id)
-                assert saved['pool_kopeks'] == 2001 and saved['version'] == 1
-                assert {share['kopeks'] for share in saved['shares']} == {1000, 1001}
-                assert len(db.rpc(owner, 'garage_pay_history', p_task_id=task_id)) == 1
+                card.get_by_role('link', name='К выплатам заказа').click()
+                expect(pay).to_have_url(f'{base}/index.html#orders/{record["id"]}/payroll')
+                payroll = pay.locator('.order-payroll')
+                initial = db.rpc(owner, 'garage_order_payroll', p_order_id=record['id'])
+                assert initial['closed'] and initial['applicable'] and not initial['missing_rates']
+                assert len(initial['lines']) == 2 and 0 < initial['total_kopeks'] <= initial['cap_kopeks']
+                for name, value in [('Андрей', '10,01'), ('Миша', '10,00')]:
+                    payroll.get_by_role('button', name='Изменить сумму · ' + name, exact=True).click()
+                    payroll.get_by_label(name + ', BYN', exact=True).fill(value)
+                    payroll.get_by_role('button', name='Сохранить расчёт').click()
+                    expect(payroll.get_by_role('button', name='Изменить сумму · ' + name, exact=True)).to_contain_text(value)
+                saved = db.rpc(owner, 'garage_order_payroll', p_order_id=record['id'])
+                assert saved['total_kopeks'] == 2001 and saved['excess_kopeks'] == 2001 - saved['cap_kopeks']
+                assert {p['mechanic_id']:p['kopeks'] for p in saved['people']} == {mechanic_a:1001, mechanic_b:1000}
+                assert [row['operation'] for row in saved['history']] == ['save', 'save', 'close']
+                assert db.rpc(owner, 'garage_pay_history', p_task_id=task_id) == []
             finally:
                 browser.close()
     finally:
@@ -189,4 +198,4 @@ def exercise_browser(db, directory, chromium, owner, mechanic_a, mechanic_b, col
         server.server_close()
     for _, errors, requests in sessions:
         assert not errors and not requests, (errors, requests)
-    print('Passed four independent browser sessions covering concurrent red/blue checkmarks, scoped live updates, partial/full handoff, return, closure and one Owner pay split.')
+    print('Passed four independent browser sessions covering concurrent red/blue checkmarks, scoped live updates, partial/full handoff, return, closure and one order-level Owner pay ledger.')

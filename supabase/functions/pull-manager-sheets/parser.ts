@@ -1,9 +1,11 @@
 // Read-only parser for the existing Managers' sheet. No source edits, prices,
 // guessed scope, row-number identities, or spreadsheet formula evaluation.
 import { WORKS, VEHICLE_GROUPS, AVAILABLE_WORKS } from './catalogue.ts';
+import { findVehicleChoice, vehicleChoices } from '../_shared/vehicle-models.ts';
 import { rawSource, type RawSource } from './intake.ts';
 
-export const PARSER_VERSION = 'alfort-manager-comments-v6';
+export const PARSER_VERSION = 'alfort-manager-models-v7';
+export const managerVehicleChoices = vehicleChoices(VEHICLE_GROUPS);
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_ROWS = 5000;
 const MAX_COLUMNS = 26;
@@ -321,7 +323,11 @@ export function parseExistingSheetRows(input: unknown[][]): ParsedSheet {
     if (source.colour.length > 80 || source.notes.length > 4000 || source.wrapping.length > 4000 || source.tint.length > 4000) issues.push('FIELD_TOO_LONG');
     if (values.slice(10).some(Boolean)) issues.push('UNEXPECTED_COLUMN_CONTENT');
     if ([0, 2, 3, 4, 5, 6, 7, 8, 9].some(column => /^(?:=|#REF!|#VALUE!|#ERROR!|#N\/A\b)/i.test(values[column]))) issues.push('FORMULA_OR_ERROR_IN_INPUT');
-    const group = vehicleGroup(source.vehicle);
+    const previousGroup = vehicleGroup(source.vehicle);
+    const model = findVehicleChoice(source.vehicle, managerVehicleChoices);
+    const group = model?.group || previousGroup;
+    // Preserve prior submission fingerprints for previously recognized sheet cells.
+    const vehicle = !previousGroup && model ? model.label : source.vehicle;
     if (!group) issues.push('UNKNOWN_VEHICLE_GROUP');
     const tasks: ParsedTask[] = [];
     const comments: string[] = [], unmatchedFields: string[] = [];
@@ -358,13 +364,13 @@ export function parseExistingSheetRows(input: unknown[][]): ParsedSheet {
     item.tasks = tasks;
     item.issues = unique(issues);
     item.manager_comment = item.issues.includes('CONFIDENTIAL_NOTE_REQUIRES_REVIEW') ? '' : instructions;
-    item.suggested_order = { vehicle: source.vehicle, vin: source.vin, colour: source.colour,
+    item.suggested_order = { vehicle, vin: source.vin, colour: source.colour,
       vehicle_group_code: group, planned_date: source.planned_date, due_date: null,
       priority: 'normal', manager_label: source.manager_label,
       instructions: item.issues.includes('CONFIDENTIAL_NOTE_REQUIRES_REVIEW') ? '' : instructions };
     if (!item.issues.length && group && source.planned_date) {
       item.state = 'ready';
-      item.order = { vehicle: source.vehicle, vin: source.vin, colour: source.colour,
+      item.order = { vehicle, vin: source.vin, colour: source.colour,
         vehicle_group_code: group, planned_date: source.planned_date, due_date: null,
         priority: 'normal', manager_label: source.manager_label, instructions };
     }

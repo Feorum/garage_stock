@@ -71,12 +71,23 @@ export interface EditorSeed {
   intake?: OwnerIntake;
 }
 export interface TaskPrice extends PrivatePricing {
+  listed_kopeks?: number | null;
   task_id?: string;
   work_code?: string;
   status?: string;
   payout?: Payout | null;
 }
+export interface CommercialTerms {
+  basis: 'catalogue' | 'agreed';
+  agreed_total_kopeks: number | null;
+  version: number;
+  catalogue_total_kopeks: number | null;
+  basis_total_kopeks: number | null;
+  internal_total_kopeks: number | null;
+}
 export interface Money {
+  agreed_total_kopeks?: number;
+  commercial?: CommercialTerms;
   effective_total_kopeks?: number | null;
   items?: TaskPrice[];
   tasks?: TaskPrice[];

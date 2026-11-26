@@ -1,18 +1,24 @@
 import './owner-detail.css';
 import { qualifies, type GiftOffer } from './owner-gift';
 import { useLayoutEffect, useState, useRef } from 'preact/hooks';
-import { dayLabel, taskName, type GarageClient } from './shift-model';
+import { dayLabel, taskName } from './shift-model';
+import type { Client } from './workspace-types';
+import { OrderPhotos } from './order-photos';
+import { OrderFilm } from './order-film';
 import { customerPrice, money } from './pay-model';
-import { orderAuthor, orderPhase, errorText, type Money, type OwnerOrder, type OwnerIntake, type Mutate } from './owner-model';
+import { orderAuthor, orderPhase, errorText, type Money, type OwnerOrder, type OwnerIntake, type Staff, type Mutate } from './owner-model';
 import { useOrderFinancials } from './owner-order-financials';
+import { OwnerCommercial } from './owner-commercial';
 import { Price } from './owner-summary';
+import { OrderPayroll } from './order-payroll';
 import { OwnerHandoff } from './owner-handoff';
 import { OwnerAct } from './owner-act';
 
 interface DetailProps {
   order: OwnerOrder;
   intake?: OwnerIntake;
-  client: GarageClient;
+  staff: Staff[];
+  client: Client;
   mutate: Mutate;
   reload: () => Promise<void>;
   edit: (promptGift?: boolean) => void;
@@ -41,6 +47,7 @@ export function OwnerDetail({
   order,
   offer,
   intake,
+  staff,
   client,
   mutate,
   reload: refreshOrder,
@@ -141,7 +148,10 @@ export function OwnerDetail({
       <section class="owner-price-section" aria-labelledby="owner-price-heading">
         <h3 id="owner-price-heading">Прайс</h3>
         <JobPriceList order={order} prices={price} />
-        {price && <Price value={price} />}
+        {price && (price.commercial && order.status !== 'cancelled'
+          ? <OwnerCommercial client={client} orderId={order.id} terms={price.commercial} summary={price}
+              refresh={async () => { await refreshOrder(); await financials(); }} />
+          : <Price value={price} />)}
         {priceError ? (
           <p role="alert">
             Не удалось загрузить стоимость работ.{' '}
@@ -155,6 +165,9 @@ export function OwnerDetail({
           {canOfferGift && <button type="button" class="button" onClick={() => edit(true)}>Выбрать подарок для клиента</button>}
         </div>}
       </section>
+      <OrderFilm key={'film-' + order.id} client={client} orderId={order.id} orderVersion={order.version}
+        mutate={mutate} notify={notify} />
+      <OrderPhotos key={order.id} client={client} orderId={order.id} upload={published} />
       {workflow && ((workflow.can_return || workflow.can_close) ? handoff :
         (workflow.taken_at || workflow.handed_at || workflow.handoff_note || workflow.returned_at || workflow.return_note) &&
           <details class="order-handoff-history">
@@ -199,6 +212,7 @@ export function OwnerDetail({
         </form>
       )}
       {error && <p role="alert">{error}</p>}
+      <OrderPayroll order={order} staff={staff} client={client} mutate={mutate} />
       {canEdit && <footer class="order-actions">
         <button type="button" class="button button-primary" onClick={() => edit()}>Изменить заказ</button>
         {published && !workflow && canClose && (

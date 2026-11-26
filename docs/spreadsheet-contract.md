@@ -20,7 +20,7 @@ The operational copy uses these columns on its existing order tab:
 | A | Requested date | Planned visit date; not the server completion date |
 | B | Weekday | Ignored; exported derived formulas are unreliable |
 | C | Manager | Attribution label, not a verified signed-in identity |
-| D | Vehicle | Approved vehicle group, with ambiguous variants held for review |
+| D | Vehicle | Exact model and make from the dropdown, matched to its price group. Earlier workbook group labels remain readable. |
 | E | VIN | Vehicle identity; repeated visits remain separate |
 | F | Colour | Operational description |
 | G | Wrapping | Catalogue selections and free-written Manager comments |

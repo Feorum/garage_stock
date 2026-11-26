@@ -97,14 +97,14 @@ class WorkbookPreviewTests(unittest.TestCase):
         self.assertIn('tint_scope_requires_confirmation', records[1]['issues'])
         self.assertEqual(records[2]['normalized_order_preview']['tasks'][0]['options'], {'tint_percent': 15})
 
-    def test_atlas_matte_and_unknown_model_do_not_borrow_rate(self):
+    def test_matte_uses_monjaro_group_while_ambiguous_and_unknown_models_need_review(self):
         rows = [fixture_row(1, model='Atlas'), fixture_row(2, model='MONJARO (матовый)'),
                 fixture_row(3, model='Synthetic unknown model')]
         records = preview.analyze_alfort(self.alfort(rows), self.catalogue)['records']
         self.assertIn('ambiguous_atlas_group', records[0]['issues'])
-        self.assertIn('unapproved_finish_variant', records[1]['issues'])
+        self.assertEqual(records[1]['vehicle_group_code'], 'VG12')
         self.assertIn('unknown_vehicle_group', records[2]['issues'])
-        self.assertTrue(all(record['normalized_order_preview'] is None for record in records))
+        self.assertTrue(all(records[i]['normalized_order_preview'] is None for i in (0, 2)))
 
     def test_repeated_vin_is_reviewed_as_visits_not_deduplicated(self):
         rows = [fixture_row(), fixture_row(date=datetime(2026, 1, 3))]

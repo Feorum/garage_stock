@@ -1,7 +1,6 @@
 """Verify exact payments within a multi-job Owner order at phone and desktop widths."""
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-import re
 from uuid import uuid4
 
 from playwright.sync_api import expect, sync_playwright
@@ -49,33 +48,33 @@ def exercise_order_pay(db, directory, chromium, owner, first, second):
                     assert all(b for b in bounds) and bounds[0]['x'] < bounds[1]['x'] < bounds[2]['x'], bounds
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                     expect(gift.get_by_role('button', name='Распределить', exact=True)).to_have_count(0)
-                    if width == 320:
-                        job.get_by_role('button', name='Распределить', exact=True).click()
-                        job.get_by_label('Андрей, BYN', exact=True).fill('12,51')
-                        job.get_by_label('Миша, BYN', exact=True).fill('4,03')
-                        expect(job.get_by_label('Итого механикам')).to_contain_text('16,54')
-                        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-                        job.get_by_role('button', name='Сохранить распределение', exact=True).click()
-                        expect(job.get_by_role('button', name='Изменить распределение', exact=True)).to_be_visible()
-                        expect(page).to_have_url(edit_url)
-                        page.reload()
-                    expect(job.locator('[data-column=payout]')).to_contain_text('16,54')
-                    job.get_by_role('button', name='Изменить распределение', exact=True).click()
-                    expect(job.get_by_label('Андрей, BYN', exact=True)).to_have_value('12,51')
-                    expect(job.get_by_label('Миша, BYN', exact=True)).to_have_value('4,03')
-                    assert not re.search(r'\d\s*%', job.inner_text())
-                    expect(page).to_have_url(edit_url)
+                    job.get_by_role('link', name='К выплатам заказа').click()
+                    expect(page).to_have_url(url + '/payroll')
+                    payroll = page.locator('.order-payroll')
+                    for name, value in [('Андрей', '12,51'), ('Миша', '4,03')]:
+                        edit = payroll.get_by_role('button', name='Изменить сумму · ' + name, exact=True)
+                        edit.click()
+                        field = payroll.get_by_label(name + ', BYN', exact=True)
+                        if width == 320:
+                            field.fill(value)
+                            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                            payroll.get_by_role('button', name='Сохранить расчёт', exact=True).click()
+                            expect(edit).to_contain_text(value)
+                        else:
+                            expect(field).to_have_value(value)
+                            payroll.get_by_role('button', name='Отмена', exact=True).click()
+                    expect(payroll.get_by_text('Всего исполнителям', exact=True).locator('..')).to_contain_text('16,54')
+                    page.reload()
+                    expect(payroll.get_by_text('Всего исполнителям', exact=True).locator('..')).to_contain_text('16,54')
                     assert not page.evaluate("__garageCalls.some(c => c.name === 'garage_pay_worklist')")
-                    page.get_by_role('button', name='К заказу', exact=True).click()
-                    expect(page).to_have_url(url)
-                    expect(page.get_by_role('button', name='Изменить распределение', exact=True)).to_have_count(0)
                     assert not errors and not live, (errors, live)
                 finally:
                     ctx.close()
     finally:
         server.shutdown()
         server.server_close()
-    saved = db.rpc(owner, 'garage_pay_history', p_task_id=jobs['W01'])
-    assert len(saved) == 1 and saved[0]['pool_kopeks'] == 1654
-    assert {s['mechanic_id']: s['kopeks'] for s in saved[0]['shares']} == {first: 1251, second: 403}
-    print('Passed single-screen BYN entry, aligned job prices, gifts and exact persisted amounts on phone and desktop.')
+    saved = db.rpc(owner, 'garage_order_payroll', p_order_id=visit)
+    assert len(saved['history']) == 2 and saved['total_kopeks'] == 1654
+    assert {p['mechanic_id']: p['kopeks'] for p in saved['people']} == {first: 1251, second: 403}
+    assert db.rpc(owner, 'garage_pay_history', p_task_id=jobs['W01']) == []
+    print('Passed order payroll, aligned job prices, gifts and exact persisted amounts on phone and desktop.')

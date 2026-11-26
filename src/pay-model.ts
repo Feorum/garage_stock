@@ -4,6 +4,7 @@ export interface Candidate { mechanic_id: string; name: string; former: boolean 
 export interface Share extends Candidate { basis_points: number; kopeks: number }
 export interface ProposedShare extends Candidate { basis_points: number; kopeks: number | null }
 export interface Payout {
+  order_payroll?: boolean;
   version?: number;
   candidates?: Candidate[];
   pool_kopeks: number | null;

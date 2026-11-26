@@ -1,5 +1,6 @@
 """Check the two mechanic feeds, inline work, scoped updates and handoff on a built release."""
 import argparse
+import base64
 import importlib.util
 from pathlib import Path
 import re
@@ -273,6 +274,93 @@ def check_handoff(browser, base, output=None):
         context.close()
 
 
+def photo_session(browser, data):
+    context, page, errors, live = smoke.new_page(browser, data)
+    context.route('**/garage_stock/sdk.js', lambda route: route.fulfill(content_type='text/javascript',
+        body=smoke.fake_browser_module() + """
+const photos = new Map();
+sb.storage = { from(bucket) {
+  if (bucket !== 'garage-order-photos') throw Error('Unexpected photo bucket');
+  return {
+    async upload(key, blob, opts) {
+      if (opts.upsert || photos.has(key)) throw Error('Photo overwrite');
+      photos.set(key, blob);
+      return {data:{path:key}, error:null};
+    },
+    async list(folder) {
+      return {data:[...photos.keys()].filter(key => key.startsWith(folder + '/')).map(key =>
+        ({name:key.split('/')[1], created_at:'2026-11-26T08:00:00Z'})), error:null};
+    },
+    async download(key) { return {data:photos.get(key), error:null}; }
+  };
+}};
+"""))
+    return context, page, errors, live
+
+
+def check_photo_protocol(browser, base):
+    data = fixture()
+    review = data['orders'][2]
+    review['vehicle_workflow'] = {'state': 'review', 'handed_by': PEER, 'holder_id': PEER}
+    # Opening a review visit is allowed even when this mechanic never checked a job.
+    context, page, errors, live = photo_session(browser, data)
+    try:
+        page.goto(base + '/index.html#history')
+        card = open_visit(page, review['id'])
+        expect(card.get_by_text('На проверке у владельца', exact=True)).to_be_visible()
+        expect(card.get_by_role('checkbox')).to_have_count(0)
+        with page.expect_file_chooser() as selection:
+            card.get_by_role('button', name='Прикрепить фото').click()
+        png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTQAAAABJRU5ErkJggg==')
+        selection.value.set_files({'name':'visit.png','mimeType':'image/png','buffer':png})
+        expect(card.get_by_text('Фото прикреплено.', exact=True)).to_be_visible()
+        card.get_by_role('button',name=re.compile(r'^Фото 1')).click()
+        expect(card.get_by_role('img',name='Фотография автомобиля по заказу')).to_be_visible()
+        card.get_by_role('button',name='Закрыть фото').click()
+        page.get_by_role('link', name='Заказы менеджеров', exact=True).click()
+        other = open_visit(page, '014')
+        other.get_by_role('button',name='Показать фотографии').click()
+        expect(other.get_by_text('Фотографий пока нет.', exact=True)).to_be_visible()
+
+        page.evaluate("""() => {
+          const visit = __garageOrderState.orders.find(o => o.id === '013');
+          visit.status = 'closed';
+          visit.tasks[0].participants = [{mechanic_id:__garageTest.userId,status:'assigned',name:'Иван'}];
+          visit.vehicle_workflow.state = 'closed';
+          document.dispatchEvent(new Event('visibilitychange'));
+        }""")
+        page.get_by_role('link',name='История',exact=True).click()
+        card = open_visit(page, '013')
+        expect(card.get_by_role('button',name='Прикрепить фото')).to_have_count(0)
+        card.get_by_role('button',name='Показать фотографии').click()
+        expect(card.get_by_role('button',name=re.compile(r'^Фото 1'))).to_be_visible()
+        assert not errors and not live, (errors, live)
+    finally:
+        context.close()
+
+
+def check_owner_photos(browser, base):
+    data = fixture()
+    data['profile']['role'] = 'admin'
+    review, closed = data['orders'][2:]
+    review['vehicle_workflow'] = {'state':'review', 'handed_by':PEER, 'holder_id':PEER}
+    closed['status'] = 'closed'
+    context, page, errors, live = photo_session(browser, data)
+    try:
+        page.goto(base + '/index.html#orders/' + review['id'])
+        photos = page.get_by_role('region', name='Фотопротокол')
+        with page.expect_file_chooser() as chosen:
+            photos.get_by_role('button',name='Прикрепить фото').click()
+        chosen.value.set_files({'name':'review.jpg','mimeType':'image/jpeg','buffer':b'photo fixture'})
+        expect(photos.get_by_text('Фото прикреплено.', exact=True)).to_be_visible()
+        page.goto(base + '/index.html#orders/' + closed['id'])
+        expect(photos.get_by_role('button',name='Показать фотографии')).to_be_visible()
+        expect(photos.get_by_role('button',name='Прикрепить фото')).to_have_count(0)
+        assert not errors and not live, (errors, live)
+    finally:
+        context.close()
+
+
 def run(directory, chromium, output=None):
     if output:
         output.mkdir(parents=True, exist_ok=True)
@@ -281,6 +369,8 @@ def run(directory, chromium, output=None):
         with sync_playwright() as playwright:
             with playwright.chromium.launch(executable_path=chromium, args=['--no-sandbox']) as browser:
                 check_card_layout(browser, base, output)
+                check_photo_protocol(browser, base)
+                check_owner_photos(browser, base)
                 check_history_order(browser, base)
                 check_updates(browser, base)
                 check_handoff(browser, base, output)

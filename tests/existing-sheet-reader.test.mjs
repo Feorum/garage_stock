@@ -22,7 +22,8 @@ function setup(overrides = {}) {
   ] };
   const snapshot = overrides.snapshot ?? { sheets: [{ properties: { sheetId: 12345 }, data: [{ rowData: overrides.rows ?? rows }] }] };
   const context = vm.createContext({
-    PropertiesService: { getScriptProperties: () => ({ getProperty: name => properties[name] }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: name => properties[name],
+      setProperty: (name, value) => { properties[name] = value; } }) },
     // No SpreadsheetApp mock: a regression to openById must fail.
     ScriptApp: { getOAuthToken: () => googleToken,
       getProjectTriggers: () => [{ getHandlerFunction: () => 'unrelated' }, { getHandlerFunction: () => 'syncManagerOrders' }],
@@ -44,6 +45,20 @@ function setup(overrides = {}) {
 }
 const requests = calls => calls.filter(call => call.name === 'fetch');
 const upload = calls => requests(calls).find(call => call.url.startsWith('https://example.supabase.co/'));
+
+test('installs the exact model selector in column D of the configured copy once', () => {
+  const choices = ['BELGEE X50+', 'GEELY MONJARO (матовый)'];
+  const { context, calls } = setup({ body: JSON.stringify({ status: 'checked', protocol: 'feedback_v1',
+    vehicle_choices: choices, feedback: [] }) });
+  context.syncManagerOrders();
+  context.syncManagerOrders();
+  const writes = requests(calls).filter(call => call.url.endsWith(':batchUpdate'));
+  assert.equal(writes.length, 1);
+  const [{ setDataValidation }] = JSON.parse(writes[0].options.payload).requests;
+  assert.deepEqual(setDataValidation.range, { sheetId: 12345, startRowIndex: 1, startColumnIndex: 3, endColumnIndex: 4 });
+  assert.equal(setDataValidation.rule.strict, false);
+  assert.deepEqual(setDataValidation.rule.condition.values.map(value => value.userEnteredValue), choices);
+});
 
 test('manifest requests Sheets editing for configured-copy feedback and enables its API', () => {
   assert.deepEqual(manifest.oauthScopes, ['https://www.googleapis.com/auth/spreadsheets',

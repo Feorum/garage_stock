@@ -108,6 +108,17 @@ Apply `20261120155825_reversible_mechanic_checks.sql` and
 Apply `20261120162315_exact_mechanic_pay_amounts.sql` before deploying the order detail editor for per-mechanic BYN amounts.
 For Word exports, apply `20261120172343_owner_completion_acts.sql` and install the private master as described under [Owner completion acts](docs/database-api.md#owner-completion-acts).
 
+For the standard and custom order release, apply the five migrations from
+`20261126145852_order_photos.sql` through `20261126150806_order_film.sql`
+in filename order. Update `pull-manager-sheets` and the bound Apps Script
+before the Manager uses the new model picker. See the
+[sheet integration instructions](integrations/existing-google-sheet/README.md).
+The Owner sets effective mechanic rates in **Распределение оплаты → Ставки механиков**.
+There is also a private setup script for a workshop with approved initial rates.
+Keep the rates and setup script outside the public bundle and version control.
+See [order finance and photos](docs/database-api.md#order-finance-and-photos)
+for photo access and the private film history file.
+
 ## Validate
 
 ```sh
