@@ -6,6 +6,7 @@ type Dependencies = {
 };
 
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+const internalEmailDomain = '@accounts.garage.invalid';
 const emailPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/u;
 const maxBody = 8192;
 const headers = {
@@ -20,7 +21,8 @@ const errors = {
   invalid_credentials: [401, 'Неверное имя, почта или пароль.'],
   sign_in_required: [401, 'Войдите в учётную запись.'],
   owner_required: [403, 'Управление аккаунтами доступно владельцу.'],
-  invalid_target: [403, 'Доступ можно изменить только для активного механика.'],
+  invalid_target: [403, 'Учётная запись механика недоступна.'],
+  outstanding_work: [409, 'Переназначьте незавершённые работы и верните активные заказы на доску перед удалением механика.'],
   name_taken: [409, 'Это имя уже используется.'],
   email_taken: [409, 'Эта почта уже используется.'],
   password_rejected: [400, 'Введите пароль не короче 12 символов, длиной до 72 байт.'],
@@ -102,7 +104,7 @@ export function createHandler({ supabaseUrl, publicKey, serviceRoleKey, fetchImp
     const name = identifier.normalize('NFC').replace(/\s+/gu, ' ');
     let email: string | null = null;
     if (identifier.includes('@')) {
-      if (validEmail(identifier)) email = identifier;
+      if (validEmail(identifier) && !identifier.toLowerCase().endsWith(internalEmailDomain)) email = identifier;
     } else if ([...name].length <= 120) {
       const found = await resolveName(name);
       if (!found.res.ok) return failure('unavailable');
@@ -137,6 +139,32 @@ export function createHandler({ supabaseUrl, publicKey, serviceRoleKey, fetchImp
     return failure(res.status >= 500 || res.ok ? 'unavailable' : 'invalid_request');
   }
 
+  async function createMechanic(body: Record<string, unknown>, pending: boolean) {
+    if (!only(body, pending ? ['name', 'password'] : ['name', 'email', 'password'])) return failure('invalid_request');
+    const name = typeof body.name === 'string' ? body.name.normalize('NFC').trim().replace(/\s+/gu, ' ') : '';
+    if (!name || [...name].length > 120 || /[@\p{Cc}]/u.test(name)) return failure('invalid_request');
+    if (!validPassword(body.password)) return failure('password_rejected');
+    const email = body.email === undefined ? '' : typeof body.email === 'string' ? body.email.trim() : null;
+    if (email === null || (email && (!validEmail(email) || email.toLowerCase().endsWith(internalEmailDomain)))) {
+      return failure('invalid_request');
+    }
+    if (pending) {
+      const limit = await call('/rest/v1/rpc/garage_allow_mechanic_registration', serviceRoleKey, serviceRoleKey, 'POST', {});
+      if (!limit.res.ok) return failure('unavailable');
+      if (limit.data !== true) return failure('rate_limited');
+    } else {
+      const existing = await resolveName(name);
+      if (!existing.res.ok) return failure('unavailable');
+      if (existing.data != null) return failure('name_taken');
+    }
+    const result = await adminWrite('/auth/v1/admin/users', 'POST', {
+      email: email || 'mechanic-' + crypto.randomUUID() + internalEmailDomain,
+      email_confirm: true, password: body.password, user_metadata: { name },
+      ...(pending ? { app_metadata: { garage_registration_pending: true } } : {}),
+    });
+    return pending && result.ok ? reply({ submitted: true }, 202) : result;
+  }
+
   return async (request: Request) => {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
     if (request.method !== 'POST') return reply({ code: 'invalid_method', error: 'Используйте POST.' }, 405);
@@ -147,7 +175,8 @@ export function createHandler({ supabaseUrl, publicKey, serviceRoleKey, fetchImp
     if (!object(body)) return failure('invalid_request');
     try {
       if (body.action === 'login') return await login(body);
-      if (typeof body.action !== 'string' || !['list', 'create', 'update'].includes(body.action)) return failure('invalid_request');
+      if (body.action === 'register') return await createMechanic(body, true);
+      if (typeof body.action !== 'string' || !['list', 'create', 'update', 'approve', 'reject', 'delete'].includes(body.action)) return failure('invalid_request');
 
       // GET /auth/v1/user is the Auth server verification performed by auth.getUser(token).
       // Use the caller's JWT for both permission checks and all directory/profile reads.
@@ -164,29 +193,36 @@ export function createHandler({ supabaseUrl, publicKey, serviceRoleKey, fetchImp
         if (!only(body, [])) return failure('invalid_request');
         const { res, data } = await call('/rest/v1/rpc/garage_mechanic_accounts', publicKey, token, 'POST', {});
         if (!res.ok || !Array.isArray(data)) return failure('unavailable');
-        const accounts = data.filter(row => row?.role === 'mechanic').map(({ id, name, email, role, active, color }) =>
-          ({ id, name, email, role, active, color }));
+        const accounts = data.filter(row => row?.role === 'mechanic').map(({ id, name, email, role, active, pending, color }) =>
+          ({ id, name, email, role, active, pending, color }));
         return reply({ accounts });
       }
-      const creating = body.action === 'create';
-      if (!only(body, creating ? ['name', 'email', 'password'] : ['id', 'email', 'password'])) return failure('invalid_request');
-      if ((creating || 'email' in body) && !validEmail(body.email)) return failure('invalid_request');
-      if ((creating || 'password' in body) && !validPassword(body.password)) return failure('password_rejected');
-      const fields: Record<string, unknown> = {};
-      if (typeof body.email === 'string') { fields.email = body.email.trim(); fields.email_confirm = true; }
-      if (typeof body.password === 'string') fields.password = body.password;
-      if (creating) {
-        const name = typeof body.name === 'string' ? body.name.normalize('NFC').trim().replace(/\s+/gu, ' ') : '';
-        if (!name || [...name].length > 120 || /[@\p{Cc}]/u.test(name)) return failure('invalid_request');
-        const existing = await resolveName(name);
-        if (!existing.res.ok) return failure('unavailable');
-        if (existing.data != null) return failure('name_taken');
-        // The profile trigger creates a mechanic and enforces name uniqueness within the Auth insert.
-        return await adminWrite('/auth/v1/admin/users', 'POST', { ...fields, user_metadata: { name } });
+      if (body.action === 'create') return await createMechanic(body, false);
+      if (typeof body.id !== 'string' || !uuid.test(body.id)) return failure('invalid_request');
+      const id = body.id.toLowerCase();
+      if (id === owner.id.toLowerCase()) return failure('invalid_target');
+      if (body.action !== 'update') {
+        if (!only(body, ['id'])) return failure('invalid_request');
+        const { res, data } = await call('/rest/v1/rpc/garage_manage_mechanic', publicKey, token, 'POST',
+          { p_id: id, p_action: body.action });
+        if (res.ok && data === id) return reply({ id });
+        if (object(data) && ['55000', 'P0001'].includes(String(data.code))) return failure('outstanding_work');
+        if (object(data) && data.code === '42501') return failure('invalid_target');
+        return failure('unavailable');
       }
-      if (typeof body.id !== 'string' || !uuid.test(body.id) || !Object.keys(fields).length) return failure('invalid_request');
-      if (body.id.toLowerCase() === owner.id.toLowerCase()) return failure('invalid_target');
-      const target = await profileFor(body.id.toLowerCase(), token);
+      if (!only(body, ['id', 'email', 'password'])) return failure('invalid_request');
+      const fields: Record<string, unknown> = {};
+      if ('email' in body) {
+        if (!validEmail(body.email) || body.email.trim().toLowerCase().endsWith(internalEmailDomain)) return failure('invalid_request');
+        fields.email = body.email.trim();
+        fields.email_confirm = true;
+      }
+      if ('password' in body) {
+        if (!validPassword(body.password)) return failure('password_rejected');
+        fields.password = body.password;
+      }
+      if (!Object.keys(fields).length) return failure('invalid_request');
+      const target = await profileFor(id, token);
       if (target?.active !== true || target.role !== 'mechanic') return failure('invalid_target');
       return await adminWrite('/auth/v1/admin/users/' + target.id, 'PUT', fields);
     } catch {

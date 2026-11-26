@@ -97,6 +97,10 @@ function EmailForm({ user }: { user: User }) {
     const address = email.trim();
     try {
       const { sb } = await import('./supabase.js');
+      if (address.toLowerCase().endsWith('@accounts.garage.invalid')) {
+        setFeedback('Укажите действующий адрес электронной почты.');
+        return;
+      }
       const { data, error } = await sb.auth.updateUser({ email: address }, {
         emailRedirectTo: new URL('account.html', location.href).href,
       });
@@ -121,6 +125,13 @@ function EmailForm({ user }: { user: User }) {
       setBusy(false);
     }
   }
+  if (current.toLowerCase().endsWith('@accounts.garage.invalid')) {
+    return <div class="profile-field-form">
+      <p>Почта не указана. Вход доступен по имени.</p>
+      <p class="field-hint">Чтобы добавить почту для входа и восстановления пароля, обратитесь к владельцу.</p>
+    </div>;
+  }
+
   return <form class="login-form profile-field-form" onSubmit={submit}>
     <label for="profile-email">Электронная почта</label>
     <input id="profile-email" type="email" autoComplete="email" required value={email} disabled={busy}
@@ -206,6 +217,8 @@ function Account() {
         unsubscribe = () => subscription.unsubscribe();
         const verified = await sb.auth.getUser();
         if (verified.error || !verified.data.user || verified.data.user.id !== expectedId) throw new Error();
+        const profile = await sb.from('profiles').select('id,active').eq('id', expectedId).single();
+        if (profile.error || !profile.data || profile.data.active === false) throw new Error();
         if (active) { setUser(verified.data.user); setState('form'); }
       } catch {
         if (active) setState('invalid');

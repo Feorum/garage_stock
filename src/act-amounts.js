@@ -50,25 +50,14 @@ export function actPrice(kopeks) {
 }
 
 /**
- * Keep the original order within each service group and the individual prices
- * behind a grouped subtotal. W19 is the catalogue code for window tinting.
- * @param {{ name: string, workCode?: string, kopeks: number | null }[]} jobs
- * @param {boolean} showPrices
+ * Keep the original order within each group. W19 is the catalogue code for window tinting.
+ * @param {{ name: string, workCode?: string }[]} jobs
  */
-export function actWorkLines(jobs, showPrices) {
+export function actWorkLines(jobs) {
   const other = jobs.filter(job => job.workCode !== 'W19');
   const tint = jobs.filter(job => job.workCode === 'W19');
-  return [other, tint].filter(group => group.length > 0).map((group, index) => {
-    const name = group.map(job => {
-      const detail = group.length > 1 && showPrices && job.kopeks !== null
-        ? ' (' + actPrice(job.kopeks) + ' BYN)' : '';
-      return job.name.trim() + detail;
-    }).join(', ');
-    const kopeks = showPrices && group.every(job => job.kopeks !== null)
-      ? group.reduce((sum, job) => validActAmount(sum + validActAmount(Number(job.kopeks))), 0)
-      : null;
-    return { label: (index + 1) + '. ' + name, kopeks };
-  });
+  return [other, tint].filter(group => group.length > 0).map((group, index) =>
+    (index + 1) + '. ' + group.map(job => job.name.trim()).join(', '));
 }
 
 /** @param {number} kopeks */

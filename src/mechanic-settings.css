@@ -32,3 +32,10 @@
   .ms-columns { grid-template-columns: minmax(0,1fr); }
   .ms-panel { padding: .95rem; }
 }
+
+.ms-applications { margin-bottom: 1rem; }
+.ms-applications ul { list-style: none; margin: 0; padding: 0; }
+.ms-applications li {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: .5rem; padding: .7rem 0; border-top: 1px solid var(--line);
+}

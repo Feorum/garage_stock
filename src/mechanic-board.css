@@ -34,8 +34,6 @@
 .mb-instructions > div { padding-bottom: var(--gap-row); }
 .mb-order:focus-visible,.mb-check:focus-visible { outline-offset: -3px; }
 
-.mb-overview-toggle { display: none; }
-.mb-overview { margin-bottom: 1rem; }
 .mb-order-list {
   padding: 1.15rem 1.25rem .5rem;
   border: 1px solid var(--line);
@@ -64,13 +62,6 @@
 .mb-open + .mb-card { border-top-color: transparent; }
 .mb-empty { padding: 1rem 0; margin: 0; border-top: 1px solid var(--line); }
 @media (max-width: 700px) {
-  .mb-overview-toggle {
-    display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 44px;
-    margin-bottom: .6rem; padding: .6rem .85rem; color: var(--ink); font: inherit; font-size: .9rem;
-    background: var(--surface); border: 1px solid var(--line); border-radius: .6rem;
-  }
-  .mb-overview-toggle[aria-expanded="true"] .mb-chevron { transform: rotate(225deg); }
-  .mb-overview:not(.mb-overview-open) { display: none; }
   .mb-order-list { padding: .85rem .55rem .4rem; border-radius: .65rem; }
   .mb-list-header { gap: .6rem; margin-bottom: .75rem; }
   .mb-filters { width: 100%; }

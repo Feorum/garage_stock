@@ -496,3 +496,5 @@ input[type='checkbox'], input[type='radio'] { width: 1.1rem; height: 1.1rem; mar
 .profile-field-form .form-feedback, .profile-pending { margin-top: .45rem; font-size: .875rem; }
 .profile-password summary { min-height: 44px; padding-block: .6rem; font-weight: 600; cursor: pointer; }
 .profile-password .login-form { margin-block: .5rem 1rem; }
+
+.login-links { margin-top: .8rem; }

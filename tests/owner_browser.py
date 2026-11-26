@@ -61,6 +61,12 @@ def exercise_owner_order(db, directory, chromium, owner, first, second):
                 omitted = next(t for t in result['tasks'] if t['work_code'] == 'W09')
                 assert omitted['completed_at'].startswith('2026-11-12T11:00')
                 assert all(p['confirmation_origin'] == 'owner_recorded' for p in omitted['participants'])
+                page.goto(base + '/index.html#orders/' + result['id'])
+                page.once('dialog', lambda dialog: dialog.accept())
+                page.get_by_role('button', name='Удалить заказ', exact=True).click()
+                expect(page).to_have_url(base + '/index.html#orders')
+                assert all(row['id'] != result['id'] for row in db.rpc(owner, 'garage_list_orders'))
+                assert all(row['id'] != result['id'] for row in db.rpc(first, 'garage_list_orders'))
                 assert not errors and not requests, (errors, requests)
                 context.close()
             finally:

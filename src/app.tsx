@@ -8,6 +8,7 @@ import { MechanicBoard } from './mechanic-board';
 import { OwnerWorkspace } from './owner-workspace';
 import { ExecutorMarker } from './executor-marker';
 import { MechanicSettings } from './mechanic-settings';
+import { accountRequest } from './mechanic-accounts';
 import { PayView } from './pay';
 import { LedgerView } from './ledger-view';
 import { SheetsView } from './sheets-view';
@@ -26,7 +27,9 @@ const brand = (
 function SignIn({ auth, client, message }: { auth: Auth; client: Client; message?: string }) {
   const [feedback, setFeedback] = useState(message || '');
   const [loading, setLoading] = useState(false);
-  const [recovery, setRecovery] = useState(false);
+  const [mode, setMode] = useState<'sign-in' | 'recover' | 'register'>('sign-in');
+  const recovery = mode === 'recover';
+  const registering = mode === 'register';
   const locked = useRef(false);
   async function submit(event: SubmitEvent) {
     event.preventDefault();
@@ -38,7 +41,14 @@ function SignIn({ auth, client, message }: { auth: Auth; client: Client; message
     setLoading(true);
     setFeedback('');
     try {
-      if (recovery) {
+      if (registering) {
+        const result = await accountRequest<{ submitted: boolean }>(client, {
+          action: 'register', name: identifier, password: String(data.get('password') || ''),
+        });
+        if (!result.submitted) throw new Error('Сервис не подтвердил отправку заявки.');
+        setMode('sign-in');
+        setFeedback('Заявка отправлена. После одобрения владельцем войдите по имени и паролю.');
+      } else if (recovery) {
         const { error } = await client.auth.resetPasswordForEmail(identifier, {
           redirectTo: new URL('account.html', location.href).href,
         });
@@ -50,8 +60,9 @@ function SignIn({ auth, client, message }: { auth: Auth; client: Client; message
         const password = form.elements.namedItem('password') as HTMLInputElement | null;
         if (password) password.value = '';
       }
-    } catch {
-      setFeedback('Не удалось связаться с сервисом. Проверьте подключение и повторите попытку.');
+    } catch (error) {
+      setFeedback(registering && error instanceof Error ? error.message :
+        'Не удалось связаться с сервисом. Проверьте подключение и повторите попытку.');
     } finally {
       locked.current = false;
       setLoading(false);
@@ -61,35 +72,31 @@ function SignIn({ auth, client, message }: { auth: Auth; client: Client; message
     <main id="main-content" tabIndex={-1} class="login-layout">
       <section class="login-panel">
         {brand}
-        <h1>{recovery ? 'Восстановление пароля' : 'Вход в мастерскую'}</h1>
-        <form class="login-form" onSubmit={submit}>
-          <label for="identifier">{recovery ? 'Электронная почта' : 'Имя или электронная почта'}</label>
+        <h1>{registering ? 'Заявка механика' : recovery ? 'Восстановление пароля' : 'Вход в мастерскую'}</h1>
+        <form class="login-form" onSubmit={submit} key={mode}>
+          <label for="identifier">{registering ? 'Имя механика' : recovery ? 'Электронная почта' : 'Имя или электронная почта'}</label>
           <input name="identifier" id="identifier" type={recovery ? 'email' : 'text'} autoComplete={recovery ? 'email' : 'username'}
-            autoCapitalize="none" spellcheck={false} required />
-          {!recovery && (
-            <>
-              <label for="password">Пароль</label>
-              <input name="password" id="password" type="password" autoComplete="current-password" required />
-            </>
-          )}
+            maxLength={registering ? 120 : 254} autoCapitalize="none" spellcheck={false} required />
+          {!recovery && <>
+            <label for="password">Пароль</label>
+            <input name="password" id="password" type="password" autoComplete={registering ? 'new-password' : 'current-password'}
+              minLength={registering ? 12 : undefined} required />
+          </>}
+          {registering && <p class="field-hint">Пароль от 12 символов. Вход откроется после одобрения владельцем.</p>}
           <button class="button button-primary" type="submit" disabled={loading}>
-            {loading ? 'Подождите…' : recovery ? 'Получить ссылку' : 'Войти'}
+            {loading ? 'Подождите…' : registering ? 'Отправить заявку' : recovery ? 'Получить ссылку' : 'Войти'}
           </button>
-          <p class="form-feedback" role="status">
-            {feedback}
-          </p>
+          <p class="form-feedback" role="status">{feedback}</p>
         </form>
-        <button
-          class="button button-small"
-          type="button"
-          disabled={loading}
-          onClick={() => {
-            setRecovery(!recovery);
-            setFeedback('');
-          }}
-        >
-          {recovery ? 'Вернуться ко входу' : 'Восстановить пароль'}
-        </button>
+        <div class="button-row login-links">
+          {mode === 'sign-in' ? <>
+            <button class="button button-small" type="button" disabled={loading}
+              onClick={() => { setMode('register'); setFeedback(''); }}>Создать аккаунт механика</button>
+            <button class="button button-small" type="button" disabled={loading}
+              onClick={() => { setMode('recover'); setFeedback(''); }}>Восстановить пароль</button>
+          </> : <button class="button button-small" type="button" disabled={loading}
+            onClick={() => { setMode('sign-in'); setFeedback(''); }}>Вернуться ко входу</button>}
+        </div>
       </section>
     </main>
   );

@@ -136,7 +136,7 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
         expect(page.get_by_role('alert')).to_contain_text('Сохранение реквизитов не подтверждено')
         first = exported_text()
         assert 'BELGEE S50' in first
-        assert '47/11' in first and '12,52 BYN' in first and '0,00 BYN' in first
+        assert '47/11' in first and '12 (двенадцать)' in first and 'BYN' not in first
         assert first.index('1. ' + tasks[1]['work_name']) < first.index('2. ' + tasks[0]['work_name'])
         assert '15%' in first and tasks[2]['work_name'] not in first
         button.click()
@@ -179,16 +179,12 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
         expect(page.get_by_role('button', name='Изменить договорную сумму заказа')).to_contain_text('750,00')
         page.get_by_role('button', name='Документы', exact=True).click()
         button.click()
-        for mode, expected in [('weighted', ['450,00 BYN', '300,00 BYN']),
-                               ('discount', ['480,00 BYN', '320,00 BYN', 'Скидка', '−50,00 BYN']),
-                               ('names', [tasks[0]['work_name'], tasks[1]['work_name']])]:
-            page.get_by_label('Отображение договорной суммы').select_option(mode)
-            text = exported_text()
-            assert all(item in text for item in expected) and '750 (семьсот пятьдесят)' in text
-            if mode == 'names':
-                assert 'BYN' not in text
-            button.click()
-        expect(page.get_by_label('Отображение договорной суммы')).to_have_value('names')
+        expect(page.get_by_role('list', name='Работы в акте')).not_to_contain_text('BYN')
+        text = exported_text()
+        assert all(task['work_name'] in text for task in tasks[:2]) and '750 (семьсот пятьдесят)' in text
+        assert not any(item in text for item in ('BYN', 'Скидка', '450,00', '300,00'))
+        button.click()
+        assert exported_text() == text
         assert not errors and not requests, (errors, requests)
     finally:
         ctx.close()

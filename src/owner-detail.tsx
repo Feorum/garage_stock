@@ -27,6 +27,7 @@ interface DetailProps {
   offer: GiftOffer | null;
   omit: () => void;
   back: () => void;
+  deleted: () => void;
   notify: (s: string) => void;
 }
 
@@ -56,6 +57,7 @@ export function OwnerDetail({
   edit,
   omit,
   back,
+  deleted,
   notify,
 }: DetailProps) {
   const { price, priceError, financials } = useOrderFinancials(client, order);
@@ -89,6 +91,22 @@ export function OwnerDetail({
       await reload();
     } catch (err) {
       setError(errorText(err));
+      await reload();
+    } finally {
+      sending.current = false;
+      setBusy(false);
+    }
+  }
+  async function remove() {
+    if (sending.current || !window.confirm('Удалить заказ «' + order.vehicle + '»? Записи о выполненных работах и выплатах сохранятся.')) return;
+    sending.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await mutate('garage_delete_order', { p_order_id: order.id, p_custom: false, p_expected_version: order.version });
+      deleted();
+    } catch (failure) {
+      setError(errorText(failure));
       await reload();
     } finally {
       sending.current = false;
@@ -196,6 +214,8 @@ export function OwnerDetail({
             <PhotoShortcut open={showPhotos} />
             {published && <button ref={cancelButton} type="button" class="order-cancel-link" disabled={busy || cancelling}
               onClick={() => { setCancel(order.version); setReason(''); }}>Отменить заказ</button>}
+            <button type="button" class="order-cancel-link" disabled={busy || cancelling}
+              onClick={() => void remove()}>Удалить заказ</button>
           </div>
         </footer>
       </div>

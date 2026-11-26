@@ -171,17 +171,27 @@ export function createClient() {
       }
       return { data: fixtureSession, error: null };
     }
+    if (body.action === 'register') return { data: { submitted: true }, error: null };
     if (!session || currentRole() !== 'admin') return denied(403, 'forbidden');
     if (body.action === 'list') return { data: { accounts: clone(accounts) }, error: null };
     if (body.action === 'create') {
       const id = crypto.randomUUID();
-      accounts.push({ id, name: body.name, email: body.email, role: 'mechanic', active: true });
+      accounts.push({ id, name: body.name, email: body.email ?? null, role: 'mechanic', active: true });
       staff.push({ id, name: body.name });
       return { data: { id }, error: null };
     }
     const account = accounts.find(person => person.id === body.id);
     if (account && body.action === 'update') {
       if (body.email !== undefined) account.email = body.email;
+      return { data: { id: account.id }, error: null };
+    }
+    if (account?.pending && body.action === 'approve') {
+      account.pending = false;
+      account.active = true;
+      return { data: { id: account.id }, error: null };
+    }
+    if (account && ['reject', 'delete'].includes(body.action)) {
+      accounts.splice(accounts.indexOf(account), 1);
       return { data: { id: account.id }, error: null };
     }
     throw new Error(`Unexpected fixture action: ${body.action}`);

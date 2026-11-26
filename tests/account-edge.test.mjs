@@ -20,6 +20,14 @@ function setup(options = {}) {
     // Store boundary failures to ensure the handler's safe error mapping does not swallow test assertions.
     try {
       assert.equal(address.origin,url); assert.equal(init.redirect,'error');
+      if (path.endsWith('garage_allow_mechanic_registration')) {
+        assert.equal(key,service); assert.equal(jwt,'Bearer ' + service);
+        return Response.json(!options.registrationLimited);
+      }
+      if (path.endsWith('garage_manage_mechanic')) {
+        assert.equal(key,anon); assert.equal(jwt,'Bearer ' + token);
+        return Response.json(body.p_id);
+      }
       if (path.endsWith('garage_resolve_login_name')) {
         assert.equal(key,service); assert.equal(jwt,'Bearer ' + service);
         return Response.json(options.missing ? null : email);
@@ -130,4 +138,39 @@ test('public CORS preflight and request size validation do not touch accounts', 
   assert.equal(preflight.status,204); assert.equal(preflight.headers.get('Access-Control-Allow-Origin'),'*');
   assert.equal((await send({...signin,password:'a'.repeat(9000)})).status,400);
   assert.equal(calls.length,0);
+});
+
+
+test('self-registration validates inputs, limits anonymous writes and creates a pending name-only mechanic', async () => {
+  const body = {action:'register', name:'Тестовая заявка', password};
+  const {send,calls} = setup();
+  const res = await send(body);
+  assert.equal(res.status,202);
+  assert.deepEqual(await res.json(),{submitted:true});
+  const {email: internalEmail, ...fields} = calls.at(-1).body;
+  assert.match(internalEmail,/^mechanic-[\da-f-]+@accounts\.garage\.invalid$/);
+  assert.deepEqual(fields,{email_confirm:true,password,user_metadata:{name:body.name},
+    app_metadata:{garage_registration_pending:true}});
+  const limited = setup({registrationLimited:true});
+  assert.equal((await limited.send(body)).status,429);
+  assert.equal(limited.calls.length,1);
+  for (const extra of [{email},{role:'admin'},{active:true}]) {
+    const invalid = setup();
+    assert.equal((await invalid.send({...body,...extra})).status,400);
+    assert.equal(invalid.calls.length,0);
+  }
+});
+
+test('an owner creates a name-only account and manages application decisions or profile removal', async () => {
+  const {send,calls} = setup({missing:true});
+  assert.equal((await send({action:'create',name:'Иван',password},token)).status,200);
+  assert.match(calls.at(-1).body.email,/@accounts\.garage\.invalid$/);
+  assert.ok(!calls.at(-1).body.app_metadata);
+  for (const action of ['approve','reject','delete']) {
+    assert.equal((await send({action,id:mechanic})).status,401);
+    assert.equal((await setup({ownerRole:'mechanic'}).send({action,id:mechanic},token)).status,403);
+    assert.equal((await send({action,id:admin},token)).status,403);
+    assert.equal((await send({action,id:mechanic},token)).status,200);
+    assert.deepEqual(calls.at(-1).body,{p_id:mechanic,p_action:action});
+  }
 });

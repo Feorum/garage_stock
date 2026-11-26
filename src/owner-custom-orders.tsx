@@ -98,7 +98,9 @@ function AmountLines({ title, nameLabel, rows, change, addLabel }: {
   </fieldset>;
 }
 
-export function CustomOrderPage({ client, record, navigate }: { client: Client; record: string; navigate: Navigate }) {
+export function CustomOrderPage({ client, record, navigate, close = () => navigate('orders') }: {
+  client: Client; record: string; navigate: Navigate; close?: () => void;
+}) {
   const creating = record === 'new';
   const [loaded, setLoaded] = useState<CustomOrder | null>(null);
   const [error, setError] = useState('');
@@ -114,10 +116,12 @@ export function CustomOrderPage({ client, record, navigate }: { client: Client; 
   if (!creating && !loaded) return <div><a href="#orders">К списку заказов</a>
     {error ? <p role="alert">{error} <button type="button" class="button" onClick={() => setAttempt(n => n + 1)}>Повторить</button></p>
       : <p role="status">Загрузка заказа…</p>}</div>;
-  return <CustomOrderEditor client={client} seed={loaded} navigate={navigate} />;
+  return <CustomOrderEditor client={client} seed={loaded} navigate={navigate} close={close} />;
 }
 
-function CustomOrderEditor({ client, seed, navigate }: { client: Client; seed: CustomOrder | null; navigate: Navigate }) {
+function CustomOrderEditor({ client, seed, navigate, close }: {
+  client: Client; seed: CustomOrder | null; navigate: Navigate; close: () => void;
+}) {
   const [vehicle, setVehicle] = useState(seed?.vehicle ?? '');
   const [visitDate, setDate] = useState(seed?.visit_date ?? workshopDay());
   const [services, setServices] = useState(seed?.services ?? '');
@@ -186,6 +190,24 @@ function CustomOrderEditor({ client, seed, navigate }: { client: Client; seed: C
       if (live.current) setSaving(false);
     }
   }
+  async function remove() {
+    if (!savedOrder || lock.current || conflict ||
+      !window.confirm('Удалить заказ «' + savedOrder.vehicle + '»? Записи о выплатах сохранятся.')) return;
+    lock.current = true;
+    setSaving(true); setFailed(true); setMessage('');
+    const args = { p_order_id: savedOrder.id, p_custom: true, p_expected_version: version };
+    const payload = JSON.stringify(args);
+    if (request.current?.payload !== payload) request.current = { payload, id: crypto.randomUUID() };
+    try {
+      await read(client, 'garage_delete_order', { ...args, p_request_id: request.current.id });
+      if (live.current) close();
+    } catch (failure) {
+      if (live.current) { setConflict(isConflict(failure)); setMessage(errorText(failure)); }
+    } finally {
+      lock.current = false;
+      if (live.current) setSaving(false);
+    }
+  }
   return <article class="owner-order-detail order-sheet custom-order-form">
     <a class="order-back" href="#orders">К списку заказов</a>
     {seed ? <div class="order-sheet-title"><span>Кастомный заказ</span></div> :
@@ -213,7 +235,9 @@ function CustomOrderEditor({ client, seed, navigate }: { client: Client; seed: C
         <div class="order-footer-actions"><PhotoShortcut open={() => {
           choose('photos');
           requestAnimationFrame(() => photoPanel.current?.focus());
-        }} /></div>
+        }} />
+          <button class="order-cancel-link" type="button" disabled={saving || conflict} onClick={() => void remove()}>Удалить заказ</button>
+        </div>
       </footer>
     </div>}
     {savedOrder && photosVisited && <div class="order-section-body" hidden={section !== 'photos'} ref={photoPanel} tabIndex={-1}>

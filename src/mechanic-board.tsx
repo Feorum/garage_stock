@@ -5,16 +5,13 @@ import { useBoardChanges, useBoardOrders, type BoardOrder, type ChangeState } fr
 import { finishedAt, hasMechanicHistory, historyOrderDate, instantLabel, matchesVisit, sortHistoryVisits, sortVisits, taskName, visibleProgress, type ShiftProps } from './shift-model';
 import { formatOrderDay, newestFirst, orderDay, weekdayClass } from './order-calendar';
 import type { Client } from './workspace-types';
-import { DashboardOverview } from './dashboard-overview';
-import { mechanicDashboardOrder, ordersInWeek } from './dashboard-model';
 import './mechanic-board.css';
 
 interface BoardFilters {
-  week: string | null;
   day: string;
   query: string;
 }
-const allDates: BoardFilters = { week: null, day: '', query: '' };
+const allDates: BoardFilters = { day: '', query: '' };
 
 type BoardProps = Omit<ShiftProps, 'client'> & { client: Client };
 function dateLabel(order: BoardOrder, day: string, actual?: string) {
@@ -52,18 +49,15 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
     [board.orders, source, profile.id, history],
   );
   const [filterState, setFilterState] = useState({ section, filters: allDates });
-  const [summaryOpen, setSummaryOpen] = useState(false);
   const filters = filterState.section === section ? filterState.filters : allDates;
-  const dashboardRows = useMemo(() => rows.map(order => mechanicDashboardOrder(order, section, profile.id)), [rows, section, profile.id]);
-  const weeklyRows = useMemo(() => ordersInWeek(dashboardRows, filters.week), [dashboardRows, filters.week]);
-  const days = [...new Set(weeklyRows.map(order => order.date).filter(Boolean))].sort();
+  const dateById = new Map(rows.map(order => [order.id,
+    (history ? historyOrderDate(order, profile.id)?.day : null) ?? orderDay(order) ?? '']));
+  const days = [...new Set([...dateById.values()].filter(Boolean))].sort();
   if (history) days.reverse();
-  const hasUndated = weeklyRows.some(order => !order.date);
-  const datedIds = new Set(weeklyRows.filter(order =>
-    !filters.day || (order.date || 'undated') === filters.day,
-  ).map(order => order.id));
-  const visibleRows = rows.filter(order => datedIds.has(order.id) && matchesVisit(order, filters.query));
-  const filtered = Boolean(filters.week || filters.day || filters.query.trim());
+  const hasUndated = [...dateById.values()].includes('');
+  const visibleRows = rows.filter(order =>
+    (!filters.day || (dateById.get(order.id) || 'undated') === filters.day) && matchesVisit(order, filters.query));
+  const filtered = Boolean(filters.day || filters.query.trim());
 
   function changeFilters(next: BoardFilters) {
     setFilterState({ section, filters: next });
@@ -163,17 +157,6 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
       <h1 tabIndex={-1} data-route-heading>
         {title}
       </h1>
-      {board.orders && <>
-        <button type="button" class="mb-overview-toggle" aria-expanded={summaryOpen} aria-controls="mb-overview"
-          onClick={() => setSummaryOpen(!summaryOpen)}>
-          Сводка и календарь
-          <span aria-hidden="true" class="mb-chevron" />
-        </button>
-        <div class={'mb-overview' + (summaryOpen ? ' mb-overview-open' : '')} id="mb-overview">
-          <DashboardOverview orders={dashboardRows} weekStart={filters.week} role="mechanic"
-            onWeekChange={week => changeFilters({ ...filters, week, day: '' })} />
-        </div>
-      </>}
       {board.error && (
         <p class="mb-feedback" role="alert">
           {board.error}{' '}

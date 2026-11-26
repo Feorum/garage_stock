@@ -36,7 +36,6 @@ export function OwnerAct(props: Props) {
 
 function ActForm({ order, client, price, refreshPrice, refreshOrder, close }: Props & { close(message?: string): void }) {
   const [record, setRecord] = useState<ActRecord | null>(null);
-  const [mode, setMode] = useState<ActFormat>('weighted');
   const [fields, setFields] = useState<ActFields | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -68,7 +67,6 @@ function ActForm({ order, client, price, refreshPrice, refreshOrder, close }: Pr
         return next;
       });
       setRecord(fresh);
-      if (!why || fresh.version !== record?.version) setMode(fresh.act_format ?? 'weighted');
       setRetryReason('');
       setMessage(why === '23505' ? 'Этот номер уже занят. Проверьте следующий номер и скачайте акт.'
         : why === '40001' ? 'Заказ или акт изменился. Проверьте обновлённые работы, сумму и реквизиты перед скачиванием.' : '');
@@ -92,11 +90,10 @@ function ActForm({ order, client, price, refreshPrice, refreshOrder, close }: Pr
 
   const quote = record?.pricing_snapshot ?? (price ? actQuote(order, price) : null);
   const agreed = quote?.agreed_total_kopeks ?? null;
-  const layout = agreed == null ? 'weighted' : mode;
+  const layout: ActFormat = agreed == null ? 'weighted' : record?.pricing_snapshot ? record.act_format ?? 'names' : 'names';
   const preview = quote ? actJobs(order, quote, layout) : [];
   const unpriced = layout === 'names' ? [] : preview.filter(job => job.kopeks == null);
   const lineTotal = preview.reduce((sum, job) => sum + (job.kopeks ?? 0), 0);
-  const wrongDiscount = layout === 'discount' && agreed != null && agreed > lineTotal;
   const total = agreed ?? lineTotal;
   const month = fields?.actDate.slice(5, 7) || '';
   const serial = fields?.number.split('/')[0] ?? '';
@@ -109,7 +106,7 @@ function ActForm({ order, client, price, refreshPrice, refreshOrder, close }: Pr
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
-    if (sending.current || !fields || !record || !price || !quote || unpriced.length || !preview.length || mismatch || wrongDiscount) return;
+    if (sending.current || !fields || !record || !price || !quote || unpriced.length || !preview.length || mismatch) return;
     sending.current = true;
     setBusy(true);
     setMessage('');
@@ -188,20 +185,9 @@ function ActForm({ order, client, price, refreshPrice, refreshOrder, close }: Pr
           <label>VIN для акта<input type="text" maxLength={40} required value={fields.vin}
             onInput={e => field('vin', e.currentTarget.value)} /></label>
         </div>
-        {agreed != null && <label>Отображение договорной суммы
-          <select value={layout} onChange={e => { setMode(e.currentTarget.value as ActFormat); setMessage(''); }}>
-            <option value="weighted">Пропорционально по работам</option>
-            <option value="discount">Исходные цены и скидка отдельной строкой</option>
-            <option value="names">Названия работ и общий итог</option>
-          </select>
-        </label>}
         {preview.length > 0 && <ul aria-label="Работы в акте">
-          {actWorkLines(preview, layout !== 'names').map(line => <li key={line.label}>
-            {line.label}{line.kopeks != null && ' · ' + money(line.kopeks)}
-          </li>)}
-          {layout === 'discount' && agreed != null && !unpriced.length && lineTotal > agreed && <li>Скидка · −{money(lineTotal - agreed)}</li>}
+          {actWorkLines(preview).map(line => <li key={line}>{line}</li>)}
         </ul>}
-        {wrongDiscount && <p role="alert">Договорная сумма превышает сумму работ. Выберите другой формат акта.</p>}
         {mismatch && <p role="alert">Месяц даты должен совпадать с месяцем сохранённого номера акта.</p>}
         {unpriced.length > 0 && <p role="alert">Укажите цену для клиента в строках работ: {unpriced.map(job => job.name).join(', ')}.</p>}
         {!preview.length && <p role="status">{price ? 'В заказе нет выполненных работ.' : 'Ожидаем цены работ.'}</p>}
@@ -214,7 +200,7 @@ function ActForm({ order, client, price, refreshPrice, refreshOrder, close }: Pr
       <button class="button" type="button" disabled={sending.current} onClick={() => close()}>Закрыть</button>
       {retryReason ? <button class="button" type="button" disabled={busy} onClick={() => void load(retryReason)}>Повторить загрузку</button>
         : record && <button type="submit" class="button button-primary"
-            disabled={busy || !price || !preview.length || Boolean(unpriced.length) || wrongDiscount || mismatch}>Скачать Word</button>}
+            disabled={busy || !price || !preview.length || Boolean(unpriced.length) || mismatch}>Скачать Word</button>}
     </div>
   </form>;
 }

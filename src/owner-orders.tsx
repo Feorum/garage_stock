@@ -352,6 +352,12 @@ export function OwnerOrders({ client, profile, recordId, standalone, closeDetail
                 mutate={mutate}
                 reload={refreshOrder}
                 notify={setNotice}
+                deleted={() => {
+                  setData(previous => ({ ...previous, orders: previous.orders.filter(order => order.id !== activeOrder.id),
+                    intakes: previous.intakes.filter(intake => intake.order_id !== activeOrder.id) }));
+                  setNotice('Заказ удалён.');
+                  back();
+                }}
                 edit={(promptGift = false) => {
                   setNotice('');
                   giftPrompt.current = promptGift ? activeOrder.id : undefined;

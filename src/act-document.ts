@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { actDateLabel, actPrice, actTotal, actWorkLines, validActAmount } from './act-amounts.js';
+import { actDateLabel, actTotal, actWorkLines, validActAmount } from './act-amounts.js';
 
 export interface ActDocumentData {
   number: string;
@@ -66,7 +66,7 @@ export async function generateActDocument(template: Uint8Array, data: ActDocumen
   if (sections.length !== 2) throw invalidTemplate();
   const [originalParagraph, after] = sections;
   // Numbers are part of the visible group label. A Word list in the private
-  // master must not add a second number or number the separate discount.
+  // master must not add a second number.
   const noList = '<w:numPr><w:numId w:val="0"/></w:numPr>';
   let prototype = originalParagraph.replace(/<w:numPr\b[^>]*?(?:\/>|>[\s\S]*?<\/w:numPr>)/, noList);
   if (prototype === originalParagraph && !prototype.includes(noList) && /<w:pStyle\b/.test(prototype)) {
@@ -78,20 +78,11 @@ export async function generateActDocument(template: Uint8Array, data: ActDocumen
   const staticParts = replaceSlots(before + start + after, fields).split(start);
   // Validate each source name before composing it with a number or other names.
   for (const job of data.jobs) xmlText(job.name);
-  const lines = actWorkLines(data.jobs, mode !== 'names');
-  let jobs: string[];
-  if (mode === 'names') {
-    // In existing private masters the dash, amount and BYN may occupy separate styled runs.
-    replaceSlots(prototype, { JOB_NAME: 'x', JOB_PRICE: '0' });
-    const namesOnly = prototype.replace(/(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g,
-      (_match, open, content, close) => open + (content.includes('{{GARAGE_JOB_NAME}}') ? '{{GARAGE_JOB_NAME}}' : '') + close);
-    jobs = lines.map(line => replaceSlots(namesOnly, { JOB_NAME: line.label }));
-  } else {
-    jobs = lines.map(line => replaceSlots(prototype, { JOB_NAME: line.label, JOB_PRICE: actPrice(line.kopeks!) }));
-    if (mode === 'discount' && listed! > total) {
-      jobs.push(replaceSlots(prototype, { JOB_NAME: 'Скидка', JOB_PRICE: '−' + actPrice(listed! - total) }));
-    }
-  }
+  // In existing private masters the dash, amount and BYN may occupy separate styled runs.
+  replaceSlots(prototype, { JOB_NAME: 'x', JOB_PRICE: '0' });
+  const namesOnly = prototype.replace(/(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g,
+    (_match, open, content, close) => open + (content.includes('{{GARAGE_JOB_NAME}}') ? '{{GARAGE_JOB_NAME}}' : '') + close);
+  const jobs = actWorkLines(data.jobs).map(line => replaceSlots(namesOnly, { JOB_NAME: line }));
   zip.file(documentPath, staticParts[0] + jobs.join('') + staticParts[1]);
   const buffer = await zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' });
   return new Uint8Array(buffer);

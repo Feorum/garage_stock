@@ -311,7 +311,7 @@ export function OwnerWorkspace(props: Props) {
       </div>
       {drawer && recordId && <OrderDrawer behind={behind} dismiss={() => navigate(boardSection)}>
         {recordId.startsWith('custom-')
-          ? <CustomOrderPage key={recordId} client={client} record={recordId.slice(7)} navigate={navigate} />
+          ? <CustomOrderPage key={recordId} client={client} record={recordId.slice(7)} navigate={navigate} close={() => navigate(boardSection)} />
           : <OwnerOrders {...props} standalone closeDetail={() => navigate(boardSection)} />}
       </OrderDrawer>}
     </>;

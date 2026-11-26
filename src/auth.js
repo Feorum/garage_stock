@@ -107,6 +107,7 @@ export function createAuthController(client, { onChange }) {
       if (signingIn || signingOut || destroyed) return;
       signingIn = true;
       try {
+        if (identifier.toLowerCase().endsWith('@accounts.garage.invalid')) return { error: 'Неверное имя, почта или пароль.' };
         if (identifier.includes('@')) {
           const result = await client.auth.signInWithPassword({ email: identifier, password });
           if (result.error) return { error: authErrorMessage(result.error) };

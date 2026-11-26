@@ -1,25 +1,12 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { RateForm, type Rate } from './mechanic-rates';
 import { readRpc } from './workspace-rpc';
+import { accountRequest } from './mechanic-accounts';
 import { workshopDay, type Client } from './workspace-types';
 import './mechanic-settings.css';
 
-interface Account { id: string; name: string; email: string | null; role: string; active: boolean }
-type Request = { action: 'list' } | { action: 'create'; name: string; email: string; password: string }
-  | { action: 'update'; id: string; email?: string; password?: string };
+interface Account { id: string; name: string; email: string | null; role: string; active: boolean; pending?: boolean }
 const percent = new Intl.NumberFormat('ru-RU', { style: 'percent', maximumFractionDigits: 2 });
-
-async function accountRequest<T>(client: Client, body: Request): Promise<T> {
-  const { data, error } = await client.functions.invoke<T>('garage-accounts', { body });
-  if (!error && data) return data;
-  let message = 'Не удалось связаться с сервисом учётных записей. Проверьте подключение и повторите попытку.';
-  if (error?.context instanceof Response) {
-    const response = await error.context.json().catch(() => null);
-    if (typeof response?.error === 'string' && typeof response?.code === 'string') message = response.error;
-    else if ([401, 403].includes(error.context.status)) message = 'Нужна действующая учётная запись владельца.';
-  }
-  throw new Error(message);
-}
 
 function AccountForm({ client, account, saved, pending, cancel }: {
   client: Client; account: Account | null; saved(account: Account, created: boolean): void;
@@ -49,9 +36,9 @@ function AccountForm({ client, account, saved, pending, cancel }: {
     lock.current = true;
     setBusy(true);
     pending(true);
-    const body: Request = account
-      ? { action: 'update', id: account.id, ...(changedEmail ? { email: normalizedEmail } : {}), ...(password ? { password } : {}) }
-      : { action: 'create', name: normalizedName, email: normalizedEmail, password };
+    const body = account
+      ? { action: 'update' as const, id: account.id, ...(changedEmail ? { email: normalizedEmail } : {}), ...(password ? { password } : {}) }
+      : { action: 'create' as const, name: normalizedName, ...(normalizedEmail ? { email: normalizedEmail } : {}), password };
     try {
       const { id } = await accountRequest<{ id: string }>(client, body);
       if (!id || (account && id !== account.id)) throw new Error('Сервис не подтвердил сохранение данных.');
@@ -59,7 +46,7 @@ function AccountForm({ client, account, saved, pending, cancel }: {
         setPassword('');
         setEmail(null);
         saved(account ? { ...account, email: changedEmail ? normalizedEmail : account.email }
-          : { id, name: normalizedName, email: normalizedEmail, role: 'mechanic', active: true }, !account);
+          : { id, name: normalizedName, email: normalizedEmail || null, role: 'mechanic', active: true }, !account);
       }
     } catch (failure) {
       if (live.current) setError(failure instanceof Error ? failure.message : 'Не удалось сохранить учётную запись.');
@@ -73,11 +60,11 @@ function AccountForm({ client, account, saved, pending, cancel }: {
     <fieldset disabled={busy}>
       {!account && <label>Имя механика<input value={name} required maxLength={120} autoComplete="off"
         onInput={e => setName(e.currentTarget.value)} /></label>}
-      <label>Электронная почта<input type="email" autoComplete="off" value={email} maxLength={254} required={!account || changedEmail}
+      <label>{account ? 'Электронная почта' : 'Электронная почта (необязательно)'}<input type="email" autoComplete="off" value={email} maxLength={254} required={Boolean(account?.email && changedEmail)}
         onInput={e => setEmail(e.currentTarget.value)} /></label>
       <label>{account ? 'Новый пароль' : 'Пароль'}<input type="password" autoComplete="new-password" minLength={12}
         required={!account} value={password} onInput={e => setPassword(e.currentTarget.value)} /></label>
-      <p class="field-hint">{account ? 'Заполните пароль, чтобы заменить действующий.' : 'Имя и почту можно использовать для входа. Пароль — от 12 символов.'}</p>
+      <p class="field-hint">{account ? 'Заполните пароль, чтобы заменить действующий.' : 'Для входа достаточно имени и пароля от 12 символов.'}</p>
       <div class="ms-actions"><button class="button button-primary" type="submit" disabled={Boolean(account && !changedEmail && !password)}>
         {busy ? 'Сохранение…' : account ? 'Сохранить доступ' : 'Создать механика'}</button>
         {cancel && <button type="button" class="button" onClick={cancel}>Отмена</button>}</div>
@@ -96,6 +83,8 @@ export function MechanicSettings({ client }: { client: Client }) {
   const [creating, setCreating] = useState(false);
   const [writing, setWriting] = useState(false);
   const [notice, setNotice] = useState('');
+  const [actionError, setActionError] = useState('');
+  const actionLock = useRef(false);
   const panel = useRef<HTMLElement>(null);
   const focusPanel = () => requestAnimationFrame(() => panel.current?.focus());
   useEffect(() => {
@@ -120,7 +109,8 @@ export function MechanicSettings({ client }: { client: Client }) {
     return () => scope.abort();
   }, [client, rateAttempt]);
 
-  const roster = [...(accounts ?? [])].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name, 'ru') || a.id.localeCompare(b.id));
+  const applications = (accounts ?? []).filter(account => account.pending);
+  const roster = (accounts ?? []).filter(account => !account.pending).sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name, 'ru') || a.id.localeCompare(b.id));
   const selected = roster.find(a => a.id === pickedId) ?? roster[0];
   const today = workshopDay();
   const currentRates = new Map<string, Rate>();
@@ -137,16 +127,54 @@ export function MechanicSettings({ client }: { client: Client }) {
     setNotice(created ? 'Механик добавлен. Выберите дату и задайте ставку.' : 'Данные для входа сохранены.');
   }
 
+  async function changeAccess(account: Account, action: 'approve' | 'reject' | 'delete') {
+    if (writing || actionLock.current) return;
+    if (action === 'delete' && !window.confirm('Удалить профиль «' + account.name + '»? История работ и выплат сохранится.')) return;
+    if (action === 'reject' && !window.confirm('Отклонить заявку от «' + account.name + '»?')) return;
+    actionLock.current = true;
+    setWriting(true);
+    setActionError('');
+    setNotice('');
+    try {
+      const { id } = await accountRequest<{ id: string }>(client, { action, id: account.id });
+      if (id !== account.id) throw new Error('Сервис не подтвердил изменение доступа.');
+      setAccounts(items => (items ?? []).flatMap(person => person.id !== id ? [person] :
+        action === 'approve' ? [{ ...person, active: true, pending: false }] : []));
+      if (action === 'approve') { pick(id); setCreating(false); focusPanel(); }
+      reloadRoster(n => n + 1);
+      setNotice(action === 'approve' ? 'Заявка одобрена. Механик может войти по имени и паролю.'
+        : action === 'reject' ? 'Заявка отклонена.' : 'Профиль механика удалён.');
+    } catch (failure) {
+      setActionError(failure instanceof Error ? failure.message : 'Не удалось изменить доступ.');
+    } finally {
+      actionLock.current = false;
+      setWriting(false);
+    }
+  }
+
   return <div class="ms-settings">
     <header class="ms-heading"><h1 data-route-heading tabIndex={-1}>Механики</h1>
       {!creating && <button class="button button-primary" type="button" disabled={writing}
         onClick={() => { setCreating(true); setNotice(''); focusPanel(); }}>Добавить механика</button>}
     </header>
+    {actionError && <p class="notice notice-error" role="alert">{actionError}</p>}
     {notice && <p class="ms-notice" role="status">{notice}</p>}
     {rosterError && <p class="notice" role="alert">{rosterError}{' '}
       <button type="button" class="button button-small" onClick={() => reloadRoster(n => n + 1)}>Повторить</button></p>}
     {rateError && <p class="notice" role="alert">Не удалось загрузить ставки.{' '}
       <button type="button" class="button button-small" onClick={() => reloadRates(n => n + 1)}>Повторить</button></p>}
+    <section class="ms-panel ms-applications" aria-label="Заявки на доступ">
+      <div class="ms-heading"><h2>Заявки на доступ</h2>
+        <button type="button" class="button button-small" disabled={writing} onClick={() => reloadRoster(n => n + 1)}>Обновить заявки</button>
+      </div>
+      {accounts && (applications.length ? <ul>{applications.map(person => <li key={person.id}>
+        <strong>{person.name}</strong>
+        <div class="ms-actions">
+          <button type="button" class="button button-primary" disabled={writing} onClick={() => void changeAccess(person, 'approve')}>Одобрить</button>
+          <button type="button" class="button" disabled={writing} onClick={() => void changeAccess(person, 'reject')}>Отклонить</button>
+        </div>
+      </li>)}</ul> : <p>Новых заявок пока нет.</p>)}
+    </section>
     <div class="ms-columns">
       <section class="ms-panel ms-directory" aria-label="Список механиков">
         <h2>Список механиков</h2>
@@ -173,6 +201,8 @@ export function MechanicSettings({ client }: { client: Client }) {
             <AccountForm client={client} account={selected} saved={saved} pending={setWriting} />
           </section>
         </>}
+        <button type="button" class="button order-cancel-link" disabled={writing}
+          onClick={() => void changeAccess(selected, 'delete')}>Удалить профиль</button>
       </section>}
     </div>
   </div>;

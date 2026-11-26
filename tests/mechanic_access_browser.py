@@ -10,6 +10,13 @@ def exercise_accounts(browser, base, new_page):
     ctx, page, errors, live = new_page(browser, fixture, {'width': 320, 'height': 844})
     try:
         page.goto(base + '/index.html#mechanics')
+        page.get_by_role('button', name='Создать аккаунт механика').click()
+        page.get_by_label('Имя механика', exact=True).fill('Тестовая заявка')
+        page.get_by_label('Пароль', exact=True).fill('fixture-application-password')
+        page.get_by_role('button', name='Отправить заявку').click()
+        expect(page.get_by_role('status')).to_contain_text('Заявка отправлена')
+        assert page.evaluate("__garageCalls.filter(c => c.method === 'invoke' && c.action === 'register').length") == 1
+        assert not page.evaluate("__garageCalls.some(c => c.method === 'setSession')")
         identifier = page.get_by_label('Имя или электронная почта', exact=True)
         expect(identifier).to_have_attribute('type', 'text')
         identifier.fill(profile['name'])
@@ -24,8 +31,10 @@ def exercise_accounts(browser, base, new_page):
         expect(nav.get_by_role('link')).to_have_count(3)
         expect(nav.get_by_role('link', name='Заказы владельца')).to_have_attribute('aria-current', 'page')
         expect(page.get_by_role('link', name='Механики', exact=True)).to_have_count(0)
+        expect(page.get_by_text('Сводка', exact=False)).to_have_count(0)
+        expect(page.get_by_label('Дата заказа', exact=True)).to_be_visible()
         assert page.evaluate("__garageCalls.filter(c => c.method === 'setSession').length") == 1
-        assert page.evaluate("__garageCalls.filter(c => c.method === 'invoke').every(c => c.action === 'login')")
+        assert page.evaluate("__garageCalls.filter(c => c.method === 'invoke' && c.action !== 'register').every(c => c.action === 'login')")
         assert not errors and not live, (errors, live)
     finally:
         ctx.close()
@@ -61,20 +70,28 @@ def exercise_accounts(browser, base, new_page):
         ctx.close()
 
     account = {**profile, 'email': email}
-    ctx, page, errors, live = new_page(browser, {'accounts': [account], 'staff': [profile]}, {'width': 320, 'height': 844})
+    pending = {**account, 'id': 'a2331903-73ce-47ca-aac2-92ee4fd60922', 'name': 'Тестовая заявка',
+               'email': None, 'active': False, 'pending': True}
+    ctx, page, errors, live = new_page(browser, {'accounts': [account, pending], 'staff': [profile]}, {'width': 320, 'height': 844})
     try:
         page.goto(base + '/index.html#mechanics')
         expect(page.get_by_role('heading', name='Механики', exact=True, level=1)).to_be_visible()
+        application = page.get_by_role('region', name='Заявки на доступ')
+        expect(application.get_by_text(pending['name'], exact=True)).to_be_visible()
+        application.get_by_role('button', name='Одобрить', exact=True).click()
+        expect(page.get_by_text('Заявка одобрена.', exact=False)).to_be_visible()
+        expect(application.get_by_text(pending['name'], exact=True)).to_have_count(0)
+        expect(page.get_by_role('button', name='Настроить ' + pending['name'])).to_be_visible()
         page.get_by_role('button', name='Добавить механика').click()
         page.get_by_label('Имя механика', exact=True).fill('Новый механик')
-        page.get_by_label('Электронная почта', exact=True).fill('new-mechanic@example.invalid')
+        expect(page.get_by_label('Электронная почта (необязательно)', exact=True)).not_to_have_attribute('required', '')
         page.get_by_label('Пароль', exact=True).fill('fixture-initial-password')
         page.get_by_role('button', name='Создать механика').click()
         page.wait_for_function("__garageCalls.some(c => c.method === 'invoke' && c.action === 'create')")
         created = page.evaluate("__garageCalls.find(c => c.method === 'invoke' && c.action === 'create')")
-        assert (created['name'], created['email'], created['suppliedPassword']) == ('Новый механик', 'new-mechanic@example.invalid', True)
+        assert (created['name'], created.get('email'), created['suppliedPassword']) == ('Новый механик', None, True)
         mail = page.get_by_label('Электронная почта', exact=True)
-        expect(mail).to_have_value('new-mechanic@example.invalid')
+        expect(mail).to_have_value('')
         mail.fill('corrected@example.invalid')
         page.get_by_label('Новый пароль', exact=True).fill('a-fixture-new-password')
         page.get_by_role('button', name='Сохранить доступ').click()
@@ -87,10 +104,14 @@ def exercise_accounts(browser, base, new_page):
         expect(page.get_by_text('Ставка сохранена.', exact=True)).to_be_visible()
         rate = page.evaluate("__garageCalls.find(c => c.name === 'garage_save_mechanic_rate').args")
         assert (rate['p_mechanic_id'], rate['p_effective_date'], rate['p_rate_bp']) == (updated['id'], '2026-11-25', 1750)
+        page.once('dialog', lambda dialog: dialog.accept())
+        page.get_by_role('button', name='Удалить профиль', exact=True).click()
+        expect(page.get_by_text('Профиль механика удалён.', exact=True)).to_be_visible()
+        expect(page.get_by_role('button', name='Настроить Новый механик')).to_have_count(0)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         assert not errors and not live, (errors, live)
     finally:
         ctx.close()
     return ['name sign-in verifies the mechanic session and keeps owner settings private',
             'the account menu opens personal name, email and password settings',
-            'owner creates a mechanic, updates access and saves a dated percentage at mobile width']
+            'owner approves a request, creates a mechanic without email, sets access and rates, and removes a profile']

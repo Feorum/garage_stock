@@ -46,7 +46,7 @@ RPC = {
     'garage_owner_gift_offer', 'garage_save_order_with_gift', 'garage_owner_review_prices',
     'garage_check_work', 'garage_uncheck_work', 'garage_submit_work',
     'garage_act_get', 'garage_act_save', 'garage_act_template', 'garage_save_commercial',
-    'garage_custom_orders', 'garage_save_custom_order', 'garage_owner_order_note', 'garage_save_owner_order_note',
+    'garage_custom_orders', 'garage_save_custom_order', 'garage_delete_order', 'garage_owner_order_note', 'garage_save_owner_order_note',
     'garage_order_payroll', 'garage_save_order_payroll', 'garage_mechanic_rates', 'garage_save_mechanic_rate',
 }
 PARAM_TYPES = {
@@ -466,7 +466,7 @@ if __name__ == '__main__':
     try:
         with Database() as database:
             database.setup()
-            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql', 'pay-amounts.sql', 'completion-acts.sql', 'commercial-terms.sql', 'custom-orders.sql', 'standard-payroll.sql', 'order-film.sql', 'owner-order-notes.sql', 'profile-login-names.sql'):
+            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql', 'pay-amounts.sql', 'completion-acts.sql', 'commercial-terms.sql', 'custom-orders.sql', 'standard-payroll.sql', 'order-film.sql', 'owner-order-notes.sql', 'profile-login-names.sql', 'mechanic-registration-and-removal.sql'):
                 database.sql((ROOT / 'tests' / suite).read_text())
             database.sql("""
                 insert into garage_price_lists (id,name,source_sha256,status)
