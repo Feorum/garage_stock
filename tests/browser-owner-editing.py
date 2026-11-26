@@ -132,8 +132,9 @@ def run(args):
                 page.get_by_role('button',name='Закрыть форму',exact=True).click()
                 page.get_by_role('button',name='К списку заказов',exact=True).click()
                 page.get_by_role('link', name='Управление заказами', exact=True).click()
-                page.get_by_role('combobox', name='Статус заказа', exact=True).select_option('review')
-                expect(page.locator('.compact-order')).to_have_count(1)
+                tools = page.locator('.owner-order-index')
+                tools.get_by_role('combobox', name='Статус заказа', exact=True).select_option('review')
+                expect(tools.locator('.compact-order')).to_have_count(1)
                 finish(context, errors, live)
             passed.append('drafts and published orders are chronological with source-row ties at 390,1440,1728')
 
