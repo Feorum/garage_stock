@@ -103,12 +103,29 @@ export function createAuthController(client, { onChange }) {
       subscription = result.data.subscription;
       await refresh();
     },
-    async signIn(email, password) {
+    async signIn(identifier, password) {
       if (signingIn || signingOut || destroyed) return;
       signingIn = true;
       try {
-        const result = await client.auth.signInWithPassword({ email, password });
-        if (result.error) return { error: authErrorMessage(result.error) };
+        if (identifier.includes('@')) {
+          const result = await client.auth.signInWithPassword({ email: identifier, password });
+          if (result.error) return { error: authErrorMessage(result.error) };
+        } else {
+          const { data, error } = await client.functions.invoke('garage-accounts', {
+            body: { action: 'login', identifier, password },
+          });
+          if (error) {
+            const status = error.context?.status;
+            if (status === 401 || status === 400) return { error: 'Неверное имя или пароль.' };
+            if (status === 429) return { error: authErrorMessage({ status }) };
+            return { error: 'Не удалось войти по имени. Проверьте подключение или войдите по электронной почте.' };
+          }
+          if (!data?.access_token || !data?.refresh_token) throw new Error('Session unavailable');
+          const result = await client.auth.setSession({
+            access_token: data.access_token, refresh_token: data.refresh_token,
+          });
+          if (result.error) throw result.error;
+        }
         await refresh();
         return {};
       } catch {

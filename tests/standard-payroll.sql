@@ -185,4 +185,70 @@ begin
     (select sum((j->>'basis_kopeks')::bigint)::bigint from jsonb_array_elements(lines) j));
   perform pg_temp.pay_check(v->>'total_kopeks'='0' and v->>'excess_kopeks'='0','fractional limit cannot create an extra ruble');
 end $$;
+
+-- Internal preparation and heating accrue only on completed wrapping. Tint
+-- remains a customer service with its own ordinary percentage earnings.
+insert into public.garage_orders(id,vehicle,vehicle_group_code,source,created_by) values
+  ('f1000000-0000-4000-8000-000000000004','Wrapping + tint','VG02','manager','00000000-0000-4000-8000-000000000001'),
+  ('f1000000-0000-4000-8000-000000000005','Tint only','VG02','manager','00000000-0000-4000-8000-000000000001');
+insert into public.garage_order_tasks(id,order_id,work_code,work_name,options) values
+  ('f2000000-0000-4000-8000-000000000006','f1000000-0000-4000-8000-000000000004','W01','Wrapping','{}'),
+  ('f2000000-0000-4000-8000-000000000007','f1000000-0000-4000-8000-000000000004','W19','Tint','{"tint_percent":15}'),
+  ('f2000000-0000-4000-8000-000000000008','f1000000-0000-4000-8000-000000000005','W19','Tint only','{"tint_percent":15}');
+set local role authenticated;
+set local request.jwt.claim.sub='00000000-0000-4000-8000-000000000001';
+do $$
+declare mixed uuid:='f1000000-0000-4000-8000-000000000004'; tint uuid:='f1000000-0000-4000-8000-000000000005';
+  helper uuid:='00000000-0000-4000-8000-000000000004'; v jsonb;
+begin
+  v:=garage_order_payroll(mixed);
+  perform pg_temp.pay_check(v->>'wrapping_steps'='true' and v->>'total_kopeks'='0',
+    'both internal stages available before completing wrapping');
+  v:=garage_save_order_payroll(mixed,v->>'token',array[helper],array[helper],'[]',null,null,gen_random_uuid());
+  perform pg_temp.pay_check(v->'prep_ids'=to_jsonb(array[helper]) and v->'people'='[]','early assignment does not pay incomplete work');
+  v:=garage_order_payroll(tint);
+  perform pg_temp.pay_check(v->>'wrapping_steps'='false','no preparation or heating for tint-only order');
+  begin
+    perform garage_save_order_payroll(tint,v->>'token',array[helper],'{}','[]',null,null,gen_random_uuid());
+    raise exception 'Tint-only order received a wrapping assignment';
+  exception when invalid_parameter_value then null; end;
+end $$;
+select garage_save_task_pricing('f2000000-0000-4000-8000-000000000006',0,50000,'',gen_random_uuid());
+select garage_save_task_pricing('f2000000-0000-4000-8000-000000000007',0,50000,'',gen_random_uuid());
+select garage_save_commercial('f1000000-0000-4000-8000-000000000004',0,null,'agreed');
+select garage_save_mechanic_rate('00000000-0000-4000-8000-000000000002',
+  (now() at time zone 'Europe/Minsk')::date,2500,
+  (select (r->>'rate_bp')::integer from jsonb_array_elements(garage_mechanic_rates()) r
+    where r->>'mechanic_id'='00000000-0000-4000-8000-000000000002'
+      and (r->>'effective_date')::date=(now() at time zone 'Europe/Minsk')::date),gen_random_uuid());
+set local request.jwt.claim.sub='00000000-0000-4000-8000-000000000002';
+select garage_check_work('f2000000-0000-4000-8000-000000000006',gen_random_uuid());
+select garage_check_work('f2000000-0000-4000-8000-000000000007',gen_random_uuid());
+select garage_submit_work('f1000000-0000-4000-8000-000000000004',(select (o->>'version')::int
+  from jsonb_array_elements(garage_list_orders()) o where o->>'id'='f1000000-0000-4000-8000-000000000004'),gen_random_uuid(),'');
+set local request.jwt.claim.sub='00000000-0000-4000-8000-000000000001';
+select garage_vehicle_action('f1000000-0000-4000-8000-000000000004','close',(select (o->>'version')::int
+  from jsonb_array_elements(garage_list_orders()) o where o->>'id'='f1000000-0000-4000-8000-000000000004'),gen_random_uuid(),'');
+do $$
+declare v jsonb:=garage_order_payroll('f1000000-0000-4000-8000-000000000004');
+begin
+  perform pg_temp.pay_check(v->>'wrapping_steps'='true' and v->>'closed'='true' and v->>'total_kopeks'='20000'
+    and (v->'people') @> '[{"mechanic_id":"00000000-0000-4000-8000-000000000004","kopeks":2400}]'
+    and (v->'lines') @> '[{"task_id":"f2000000-0000-4000-8000-000000000007","wrapping":false}]',
+    'closure pays each 3% stage once on 400 BYN wrapping only and freezes scope: '||v::text);
+end $$;
+reset role;
+
+-- Closed snapshots from before the scope change used both roles for every pay line.
+update garage_payroll.revisions r set frozen_lines=(select jsonb_agg(l-'wrapping') from jsonb_array_elements(r.frozen_lines) l)
+  where r.order_id='f1000000-0000-4000-8000-000000000004' and operation='close';
+set local role authenticated;
+set local request.jwt.claim.sub='00000000-0000-4000-8000-000000000001';
+do $$
+declare v jsonb:=garage_order_payroll('f1000000-0000-4000-8000-000000000004');
+begin
+  perform pg_temp.pay_check((v->'people') @> '[{"mechanic_id":"00000000-0000-4000-8000-000000000004","kopeks":4800}]',
+    'historic frozen lines keep their previous payout scope');
+end $$;
+reset role;
 rollback;

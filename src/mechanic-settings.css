@@ -1,0 +1,34 @@
+.ms-settings { min-width: 0; }
+.ms-heading, .ms-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; }
+.ms-heading { justify-content: space-between; margin-bottom: 1.15rem; }
+.ms-heading h1 { margin: 0; }
+.ms-notice, .ms-settings > .notice { margin: 0 0 .8rem; }
+.ms-notice { padding: .65rem .85rem; border-radius: .55rem; background: var(--green-soft); color: var(--green); }
+.ms-columns { display: grid; grid-template-columns: minmax(13rem,.77fr) minmax(0,1.55fr); align-items: start; gap: 1rem; }
+.ms-panel { min-width: 0; padding: 1.2rem; background: var(--surface); border-radius: .8rem; border: 1px solid var(--line); }
+.ms-panel h2 { margin: 0 0 1rem; font-size: 1.15rem; }
+.ms-panel h3 { margin: 0 0 .7rem; font-size: .98rem; }
+.ms-panel p { margin: .55rem 0; }
+.ms-directory ul { list-style: none; padding: 0; margin: 0; max-height: min(60vh, 34rem); overflow-y: auto; }
+.ms-directory li + li { border-top: 1px solid var(--line); }
+.ms-directory li button {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  min-height: 3.85rem; padding: .52rem .62rem; text-align: start;
+  background: none; border: 1px solid transparent; border-radius: .42rem; color: var(--ink);
+}
+.ms-directory button:hover { background: var(--surface-raised); }
+.ms-directory button[aria-pressed=true] { background: var(--accent-soft); border-color: var(--line); }
+.ms-directory strong, .ms-directory small { display: block; overflow-wrap: anywhere; }
+.ms-directory strong { font-size: .91rem; font-weight: 620; }
+.ms-directory small { margin-top: .12rem; font-size: .77rem; color: var(--muted); }
+.ms-percent { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; font-size: .86rem; }
+.ms-access { margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px solid var(--line); }
+.ms-account-form fieldset { display: grid; gap: .78rem; }
+.ms-panel label { display: grid; align-content: start; gap: .28rem; }
+.ms-panel .field-hint { margin: 0; }
+.ms-panel [role=alert] { color: var(--danger); }
+.ms-panel .payroll-rate-history { margin: .6rem 0 0; padding-left: 1.25rem; color: var(--muted); font-size: .84rem; }
+@media (max-width: 760px) {
+  .ms-columns { grid-template-columns: minmax(0,1fr); }
+  .ms-panel { padding: .95rem; }
+}

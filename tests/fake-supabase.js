@@ -5,7 +5,8 @@ export function createClient() {
   const calls = globalThis.__garageCalls = [];
   const listeners = new Set();
   const channels = new Set();
-  const user = { id: fixture.userId || '11111111-1111-4111-8111-111111111111', app_metadata: fixture.appMetadata || {} };
+  const user = { email: fixture.email || 'garage-test@example.invalid', new_email: fixture.pendingEmail,
+    id: fixture.userId || '11111111-1111-4111-8111-111111111111', app_metadata: fixture.appMetadata || {} };
   let session = fixture.signedIn === false ? null : { user };
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms || 0));
   const emit = (event, next = session) => {
@@ -38,6 +39,9 @@ export function createClient() {
     { id: user.id, name: 'Test Mechanic' },
     { id: '22222222-2222-4222-8222-222222222222', name: 'Other Mechanic' },
   ]);
+  const accounts = clone(fixture.accounts || []);
+  const mechanicRates = clone(fixture.mechanicRates || []);
+  const fixtureSession = { access_token: 'fixture-access', refresh_token: 'fixture-refresh' };
   const receipts = new Map();
   const ownerNotes = new Map();
   const inlineCheckedOrders = new Set();
@@ -154,6 +158,35 @@ export function createClient() {
     }
   };
 
+  async function invoke(name, { body }) {
+    if (name !== 'garage-accounts') throw new Error(`Unexpected fixture function: ${name}`);
+    const { password, ...request } = body;
+    calls.push({ method: 'invoke', functionName: name, ...request, suppliedPassword: Boolean(password) });
+    const denied = (status, code) => ({ data: null, error: { message: code,
+      context: new Response(JSON.stringify({ error: code, code }), { status }) } });
+    if (body.action === 'login') {
+      await pause(fixture.loginDelay);
+      if (fixture.loginError || body.identifier !== fixture.loginName || password !== fixture.namePassword) {
+        return denied(401, 'invalid_credentials');
+      }
+      return { data: fixtureSession, error: null };
+    }
+    if (!session || currentRole() !== 'admin') return denied(403, 'forbidden');
+    if (body.action === 'list') return { data: { accounts: clone(accounts) }, error: null };
+    if (body.action === 'create') {
+      const id = crypto.randomUUID();
+      accounts.push({ id, name: body.name, email: body.email, role: 'mechanic', active: true });
+      staff.push({ id, name: body.name });
+      return { data: { id }, error: null };
+    }
+    const account = accounts.find(person => person.id === body.id);
+    if (account && body.action === 'update') {
+      if (body.email !== undefined) account.email = body.email;
+      return { data: { id: account.id }, error: null };
+    }
+    throw new Error(`Unexpected fixture action: ${body.action}`);
+  }
+
   async function rpc(name, args = {}) {
     const authenticatedAtRequest = Boolean(session);
     const frozenSheetList = name === 'garage_sheet_pull_sources' && fixture.freezeSheetListSnapshot ? clone(sheetSources) : null;
@@ -244,6 +277,20 @@ export function createClient() {
       : errorResult('Owner access required.', '42501');
     if (name === 'garage_owner_gift_offer') return owner ? { data: clone(fixture.giftOffer || null), error: null } : errorResult('Owner access required.', '42501');
     if (name === 'garage_manager_intakes') return owner ? { data: clone(managerIntakes), error: null } : errorResult('Owner access required.', '42501');
+    if (name === 'garage_update_profile_name') {
+      fixture.profile = { ...(await profile()).data, name: args.p_name.trim() };
+      return { data: fixture.profile.name, error: null };
+    }
+    if (name === 'garage_mechanic_rates' || name === 'garage_save_mechanic_rate') {
+      if (!owner) return errorResult('Owner access required.', '42501');
+      if (name === 'garage_mechanic_rates') return { data: clone(mechanicRates), error: null };
+      const row = mechanicRates.find(item => item.mechanic_id === args.p_mechanic_id && item.effective_date === args.p_effective_date);
+      if ((row?.rate_bp ?? null) !== args.p_expected_rate_bp) return errorResult('Rate changed.', '40001');
+      if (row) row.rate_bp = args.p_rate_bp;
+      else mechanicRates.push({ mechanic_id: args.p_mechanic_id, name: memberName(args.p_mechanic_id),
+        effective_date: args.p_effective_date, rate_bp: args.p_rate_bp });
+      return { data: null, error: null };
+    }
     if (name === 'garage_staff') return owner ? { data: clone(staff), error: null } : errorResult('Owner access required.', '42501');
     if (name === 'garage_order_financials') {
       if (!owner) return errorResult('Owner access required.', '42501');
@@ -603,7 +650,16 @@ export function createClient() {
       calls.push({ method: 'removeChannel', name: channel.name });
       return 'ok';
     },
+    functions: { invoke },
     auth: {
+      async setSession(tokens) {
+        calls.push({ method: 'setSession' });
+        if (tokens.access_token !== fixtureSession.access_token || tokens.refresh_token !== fixtureSession.refresh_token) {
+          return errorResult('Invalid fixture session.', 'invalid_credentials');
+        }
+        emit('SIGNED_IN', { user });
+        return { data: { user, session }, error: null };
+      },
       async getSession() {
         calls.push({ method: 'getSession' });
         await pause(fixture.sessionDelay);
@@ -646,8 +702,12 @@ export function createClient() {
         emit('SIGNED_OUT', null);
         return { error: null };
       },
-      async updateUser() {
-        calls.push({ method: 'updateUser' });
+      async updateUser({ email, password }, options = {}) {
+        calls.push({ method: 'updateUser', email, redirect: options.emailRedirectTo, suppliedPassword: Boolean(password) });
+        if (!fixture.updateError && email) {
+          if (fixture.confirmEmailImmediately) user.email = email;
+          else user.new_email = email;
+        }
         return { data: { user }, error: fixture.updateError ? { message: fixture.updateError } : null };
       },
     },

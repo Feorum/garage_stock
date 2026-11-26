@@ -10,7 +10,7 @@ interface Person { mechanic_id: string; name: string }
 interface Worker extends Person { automatic_kopeks: Amount; override_kopeks: Amount; kopeks: Amount }
 interface Line { task_id: string; work_date: string; basis_kopeks: Amount; manual_shares?: {mechanic_id: string}[] | null; people: (Person & { rate_bp: Amount })[] }
 interface Payroll {
-  applicable: boolean; historical?: boolean; closed: boolean; version: number; token: string;
+  applicable: boolean; historical?: boolean; wrapping_steps?: boolean; closed: boolean; version: number; token: string;
   prep_ids: string[]; heat_ids: string[]; people: Worker[]; lines: Line[];
   basis_kopeks: Amount; cap_kopeks: Amount; total_kopeks: Amount; excess_kopeks: Amount;
   reserve_kopeks: Amount; automatic_reserve_kopeks: Amount; override_reserve_kopeks: Amount;
@@ -36,7 +36,7 @@ function retainedOverrides(lines: Line[], inputs: SaveArgs) {
 }
 function RoleField({ name, ids, change, roster, disabled }: { disabled: boolean; name: string; ids: string[]; change(ids: string[]): void; roster: Staff[] }) {
   return <fieldset class="payroll-role" disabled={disabled}><legend>{name} · 3%</legend>
-    {ids.length ? <button type="button" class="button" onClick={() => change([])}>Снять отметки</button> : <small>Не требовался этап</small>}
+    {ids.length ? <button type="button" class="button" onClick={() => change([])}>Снять отметки</button> : <small>Исполнитель не назначен</small>}
     {roster.map(p => <label key={p.id}><input type="checkbox" checked={ids.includes(p.id)} onChange={e =>
       change(e.currentTarget.checked ? [...ids, p.id] : ids.filter(id => id !== p.id))} />{p.name}</label>)}
   </fieldset>;
@@ -117,7 +117,10 @@ function Calculation({ order, client, mutate, staff }: Props) {
   const editable = !busy && !loading && !failed && !stale;
   const roster = new Map(staff.map(p => [p.id, p]));
   for (const p of model.people) if (!roster.has(p.mechanic_id)) roster.set(p.mechanic_id, { id: p.mechanic_id, name: p.name });
-  const names = (ids: string[]) => ids.map(id => roster.get(id)?.name || 'Прежний исполнитель').join(', ') || 'Не требовался этап';
+  const wrappingSteps = model.wrapping_steps ?? order.tasks.some(task =>
+    task.status !== 'cancelled' && Boolean(task.work_code) && task.work_code !== 'W19');
+  const savedSteps = model.prep_ids.length > 0 || model.heat_ids.length > 0;
+  const names = (ids: string[]) => ids.map(id => roster.get(id)?.name || 'Прежний исполнитель').join(', ') || 'Исполнитель не назначен';
   const service = (id: string) => { const task = order.tasks.find(t => t.id === id); return task ? taskName(task) : 'Работа'; };
   const selected = model.people.find(p => p.mechanic_id === editor?.key);
   const amount = editor ? hundredths(editor.text) : null;
@@ -145,8 +148,14 @@ function Calculation({ order, client, mutate, staff }: Props) {
       <div><dt>Всего в премиальный фонд</dt><dd>{fmt(model.reserve_kopeks == null || model.additional_kopeks == null ? null : model.reserve_kopeks + model.additional_kopeks)}</dd></div>
     </dl>
     {(model.excess_kopeks ?? 0) > 0 && <p class="notice">Выплаты выше потолка на {fmt(model.excess_kopeks)}.</p>}
-    <dl class="payroll-roles"><div><dt>Подготовка</dt><dd>{names(model.prep_ids)}</dd></div><div><dt>Загрев</dt><dd>{names(model.heat_ids)}</dd></div></dl>
-    {!editor && <button type="button" class="button" disabled={!editable} onClick={() => begin('roles')}>Выбрать исполнителей подготовки и загрева</button>}
+    {(wrappingSteps || savedSteps) && <>
+      <dl class="payroll-roles" aria-label="Внутренние этапы оклейки">
+        <div><dt>Подготовка</dt><dd>{names(model.prep_ids)}</dd></div>
+        <div><dt>Загрев</dt><dd>{names(model.heat_ids)}</dd></div>
+      </dl>
+      {!editor && <button type="button" class="button" disabled={!editable}
+        onClick={() => begin('roles')}>Выбрать исполнителей подготовки и загрева</button>}
+    </>}
     {editor && <form class="payroll-editor" onSubmit={e => { e.preventDefault(); void save(); }}>
       {editor.key === 'roles' ? <div class="payroll-role-grid">{(['p_prep_ids', 'p_heat_ids'] as const).map(field =>
         <RoleField key={field} name={field === 'p_prep_ids' ? 'Подготовка' : 'Загрев'} ids={editor.inputs[field]} roster={[...roster.values()]} disabled={busy}

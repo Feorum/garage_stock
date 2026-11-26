@@ -466,7 +466,7 @@ if __name__ == '__main__':
     try:
         with Database() as database:
             database.setup()
-            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql', 'pay-amounts.sql', 'completion-acts.sql', 'commercial-terms.sql', 'custom-orders.sql', 'standard-payroll.sql', 'order-film.sql', 'owner-order-notes.sql'):
+            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql', 'pay-amounts.sql', 'completion-acts.sql', 'commercial-terms.sql', 'custom-orders.sql', 'standard-payroll.sql', 'order-film.sql', 'owner-order-notes.sql', 'profile-login-names.sql'):
                 database.sql((ROOT / 'tests' / suite).read_text())
             database.sql("""
                 insert into garage_price_lists (id,name,source_sha256,status)

@@ -39,19 +39,28 @@ export function vehicleChoices(groups: { code: string; name: string }[]): Vehicl
   return result.filter(item => count.get(item.label) === 1);
 }
 
+function matchesChoice(input: string, { brand, model, aliases }: VehicleChoice) {
+  return [model, ...aliases].some(label => key(label) === input || key(brand + ' ' + label) === input);
+}
+
 export function findVehicleChoice(value: string, choices: VehicleChoice[]): VehicleChoice | undefined {
   const input = key(value);
   // Bare Atlas in an old source can refer to any of three workbook groups.
   if (input === 'atlas' || input === 'атлас') return undefined;
-  return choices.find(({ brand, model, aliases }) =>
-    [model, ...aliases].some(label => key(label) === input || key(brand + ' ' + label) === input));
+  return choices.find(model => matchesChoice(input, model));
 }
 
 export function requiresOkavangoYear(value: string): boolean {
   return /^(?:geely[\s-]*)?(?:ok[ao]vango|ок[ао]ванго)(?=$|[^\p{L}])/iu.test(value.trim());
 }
 
-export function actVehicleName(vehicle: string): string {
-  const model = findVehicleChoice(vehicle, models);
-  return model?.group === 'VG12' ? 'MONJARO' : vehicle;
+export function actVehicleName(vehicle: string, group?: string): string {
+  const input = key(vehicle);
+  const match = models.find(model => model.group === group && matchesChoice(input, model)) ?? models.find(model => matchesChoice(input, model));
+  if (match) return match.group === 'VG12' ? match.brand + ' MONJARO' : match.label;
+  // Older Okavango orders can lack the model year. Retain a year only when the
+  // order identifies one. Catalogue selection still uses its exact year range.
+  const okavango = /^(?:geely[\s-]*)?(?:ok[ao]vango|ок[ао]ванго)(?:[\s-]+(\d{4}))?$/iu.exec(vehicle.trim());
+  if (okavango) return okavango[1] ? 'GEELY OKAVANGO ' + okavango[1] : 'GEELY OKAVANGO';
+  return vehicle.trim();
 }

@@ -49,7 +49,7 @@ export function actJobs(order: OwnerOrder, quote: ActQuote, mode: ActFormat) {
   const prices = mode === 'discount' ? quote.listed : quote.allocated;
   // Later omitted completions belong to the order. An issued act retains its original work list.
   return order.tasks.filter(task => task.status === 'completed' && Object.hasOwn(prices, task.id)).map(task => ({
-    id: task.id, name: taskName(task), kopeks: prices[task.id] ?? null,
+    id: task.id, workCode: task.work_code, name: taskName(task), kopeks: prices[task.id] ?? null,
   }));
 }
 

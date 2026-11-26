@@ -51,6 +51,16 @@ separately. Coordinate compatible backend changes before a dependent frontend
 release. Pushing SQL or Edge source through this workflow does not apply it to
 production.
 
+The mechanic account screen and name sign-in require migration
+`20261126175607_profile_login_names.sql` and the `garage-accounts` Edge Function.
+The function verifies passwords with Supabase Auth. Account administration
+requires a verified current Owner session. The function holds its Auth Admin
+credential only in the Edge runtime. The public bundle uses the publishable key.
+
+Apply `20261126180356_wrapping_payroll_steps.sql` before publishing the wrapping
+payout changes. This keeps preparation and heating on completed wrapping work
+and preserves the calculation scope captured in older closed orders.
+
 For completion-feedback releases, apply migrations `20261116203155`,
 `20261116203249` and `20261116203339` in order after preserving a verified
 private snapshot. Deploy all `pull-manager-sheets` dependencies, including

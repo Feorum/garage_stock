@@ -7,6 +7,7 @@ import type { Section as ShiftSection } from './shift-model';
 import { MechanicBoard } from './mechanic-board';
 import { OwnerWorkspace } from './owner-workspace';
 import { ExecutorMarker } from './executor-marker';
+import { MechanicSettings } from './mechanic-settings';
 import { PayView } from './pay';
 import { LedgerView } from './ledger-view';
 import { SheetsView } from './sheets-view';
@@ -32,19 +33,19 @@ function SignIn({ auth, client, message }: { auth: Auth; client: Client; message
     if (locked.current) return;
     const form = event.currentTarget as HTMLFormElement;
     const data = new FormData(form);
-    const email = String(data.get('email') || '').trim();
+    const identifier = String(data.get('identifier') || '').trim();
     locked.current = true;
     setLoading(true);
     setFeedback('');
     try {
       if (recovery) {
-        const { error } = await client.auth.resetPasswordForEmail(email, {
+        const { error } = await client.auth.resetPasswordForEmail(identifier, {
           redirectTo: new URL('account.html', location.href).href,
         });
         if (error) throw error;
         setFeedback('Если учётная запись существует, мы отправили ссылку на указанную почту.');
       } else {
-        const result = await auth.signIn(email, String(data.get('password') || ''));
+        const result = await auth.signIn(identifier, String(data.get('password') || ''));
         if (result?.error) setFeedback(result.error);
         const password = form.elements.namedItem('password') as HTMLInputElement | null;
         if (password) password.value = '';
@@ -62,8 +63,9 @@ function SignIn({ auth, client, message }: { auth: Auth; client: Client; message
         {brand}
         <h1>{recovery ? 'Восстановление пароля' : 'Вход в мастерскую'}</h1>
         <form class="login-form" onSubmit={submit}>
-          <label for="email">Электронная почта</label>
-          <input name="email" id="email" type="email" autoComplete="username" required />
+          <label for="identifier">{recovery ? 'Электронная почта' : 'Имя или электронная почта'}</label>
+          <input name="identifier" id="identifier" type={recovery ? 'email' : 'text'} autoComplete={recovery ? 'email' : 'username'}
+            autoCapitalize="none" spellcheck={false} required />
           {!recovery && (
             <>
               <label for="password">Пароль</label>
@@ -98,6 +100,7 @@ function TabIcon({ icon }: { icon: string }) {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+      {icon === 'team' && <><circle cx="9" cy="8" r="3.3" /><path d="M2.5 20v-2a6.5 6.5 0 0 1 13 0v2M16 5a3.2 3.2 0 0 1 0 6M17.5 14a5 5 0 0 1 4 4.9V20" /></>}
       {icon === 'home' && <><path d="m3 10 9-7.5 9 7.5M5.5 9v11h13V9" /><path d="M10 20v-6h4v6" /></>}
       {icon === 'review' && <><rect x="3.5" y="3.5" width="17" height="17" rx="3" /><path d="m7.5 12 3 3 6-6" /></>}
       {icon === 'orders' && <><path d="M8 5H5v16h14V5h-3" /><rect x="8" y="3" width="8" height="4" rx="1" /><path d="M8 11h8m-8 4h5" /></>}
@@ -126,10 +129,13 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
       setHash(location.hash);
     };
     const net = () => setOnline(navigator.onLine);
+    const restored = (event: PageTransitionEvent) => { if (event.persisted) void auth.refresh(true); };
+    window.addEventListener('pageshow', restored);
     window.addEventListener('hashchange', readHash);
     window.addEventListener('offline', net);
     window.addEventListener('online', net);
     return () => {
+      window.removeEventListener('pageshow', restored);
       window.removeEventListener('hashchange', readHash);
       window.removeEventListener('offline', net);
       window.removeEventListener('online', net);
@@ -139,7 +145,7 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
     document.title = (drawer ? 'Карточка заказа' : route.label) + ' · Garage';
     const origin = drawerOrigin.current;
     if (profile.role === 'admin') {
-      if (!route.record && route.id === route.section.id) drawerOrigin.current = route.id;
+      if (!route.record && route.id === route.section.id && route.id !== 'mechanics') drawerOrigin.current = route.id;
       else if (!drawer) drawerOrigin.current = 'orders';
     }
     if (previous.current === hash) return;
@@ -160,6 +166,9 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
   const props = { client, profile, navigate, section: route.id, recordId: route.record };
   if (profile.role === 'admin') {
     switch (route.id) {
+      case 'mechanics':
+        screen = <MechanicSettings client={client} />;
+        break;
       case 'ledger':
         screen = <LedgerView client={client} />;
         break;

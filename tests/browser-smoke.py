@@ -17,6 +17,7 @@ import threading
 from urllib.parse import urlsplit
 
 from playwright.sync_api import sync_playwright, expect
+from mechanic_access_browser import exercise_accounts
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -151,7 +152,7 @@ def run(args):
         try:
             # Both roles load only their own workspace navigation.
             for role, name, expected_links, forbidden in [
-                ('admin', 'Test Owner', ['Главная', 'На проверке', 'Все заказы', 'Отчёты и история'], 'История'),
+                ('admin', 'Test Owner', ['Главная', 'На проверке', 'Все заказы', 'Отчёты и история', 'Механики'], 'История'),
                 ('mechanic', 'Test Mechanic', ['Заказы владельца', 'Заказы менеджеров', 'История'], 'Отчёты'),
             ]:
                 viewport = {'width': 320, 'height': 844} if role == 'mechanic' else None
@@ -194,7 +195,7 @@ def run(args):
                 'signedIn': False, 'loginError': 'Invalid login credentials', 'loginDelay': 250,
             }, {'width': 390, 'height': 844})
             page.goto(base + '/index.html')
-            page.get_by_label('Электронная почта', exact=True).fill('test@example.invalid')
+            page.get_by_label('Имя или электронная почта', exact=True).fill('test@example.invalid')
             page.get_by_label('Пароль', exact=True).fill('not-a-real-password')
             page.get_by_role('button', name='Войти', exact=True).click()
             button = page.locator('form button[type="submit"]')
@@ -213,7 +214,7 @@ def run(args):
                 'signedIn': False, 'profile': {'name': 'Test Mechanic', 'role': 'mechanic'},
             })
             page.goto(base + '/index.html')
-            page.get_by_label('Электронная почта', exact=True).fill('test@example.invalid')
+            page.get_by_label('Имя или электронная почта', exact=True).fill('test@example.invalid')
             page.get_by_label('Пароль', exact=True).fill('not-a-real-password')
             page.get_by_role('button', name='Войти', exact=True).click()
             ready(page, 'Test Mechanic')
@@ -264,18 +265,20 @@ def run(args):
             context.close()
 
             # The account callback remains verified, scrubbed and usable after configuration refactor.
-            context, page, errors, live = new_page(browser, {})
-            page.goto(base + '/account.html#access_token=fake-test-token&type=recovery')
-            expect(page.get_by_label('Новый пароль', exact=True)).to_be_visible()
-            assert page.url == base + '/account.html', page.url
-            page.get_by_label('Новый пароль', exact=True).fill('a-long-test-password')
-            page.get_by_label('Повторите новый пароль', exact=True).fill('a-long-test-password')
-            page.get_by_role('button', name='Сохранить пароль', exact=True).click()
-            expect(page.get_by_role('heading', name='Пароль сохранён', exact=True)).to_be_visible()
-            assert not errors, errors
-            assert not live, live
-            passed.append('account callback verification, URL cleanup and password form')
-            context.close()
+            for flow in ('invite', 'recovery'):
+                context, page, errors, live = new_page(browser, {})
+                page.goto(base + '/account.html#access_token=fake-test-token&type=' + flow)
+                expect(page.get_by_label('Имя для входа', exact=True)).to_have_count(0)
+                expect(page.get_by_label('Новый пароль', exact=True)).to_be_visible()
+                assert page.url == base + '/account.html', page.url
+                page.get_by_label('Новый пароль', exact=True).fill('a-long-test-password')
+                page.get_by_label('Повторите новый пароль', exact=True).fill('a-long-test-password')
+                page.get_by_role('button', name='Сохранить пароль', exact=True).click()
+                expect(page.get_by_role('heading', name='Пароль сохранён', exact=True)).to_be_visible()
+                assert not errors, errors
+                assert not live, live
+                context.close()
+            passed.append('invitation and recovery callback verification, URL cleanup and password form')
 
             for path, fixture in (
                 ('/account.html?code=unsupported-test-code', {}),
@@ -290,6 +293,8 @@ def run(args):
                 assert not errors, errors
                 context.close()
             passed.append('unsupported and failed account callbacks rejected and scrubbed')
+
+            passed.extend(exercise_accounts(browser, base, new_page))
 
             # Real service-worker upgrade: install a minimal v5 worker on the same scope first.
             check_bundled_client(browser, base)

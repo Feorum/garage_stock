@@ -83,9 +83,23 @@ test('model selection preserves brand, finish and year with the price group of t
   }
   assert.equal(parse(row({ 3: 'ФХ11' })).rows[0].order.vehicle, 'GEELY ATLAS (ФХ11)');
   assert.equal(parse(row({ 3: 'ФХ11 (Atlas)' })).rows[0].order.vehicle_group_code, 'VG04');
-  assert.equal(actVehicleName('GEELY MONJARO (матовый)'), 'MONJARO');
-  assert.equal(actVehicleName('GEELY MONJARO'), 'MONJARO');
-  assert.equal(actVehicleName('Старая запись'), 'Старая запись');
+  assert.equal(actVehicleName('GEELY MONJARO (матовый)'), 'GEELY MONJARO');
+  assert.equal(actVehicleName('GEELY MONJARO'), 'GEELY MONJARO');
+  assert.equal(actVehicleName('Старая запись', 'VG02'), 'Старая запись');
+  for (const [vehicle, group, expected] of [
+    ['е7', 'VG01', 'GEELY EMGRAND 7'],
+    ['E7 new', 'VG02', 'GEELY EMGRAND'], ['S50', 'VG02', 'BELGEE S50'],
+    ['х7', 'VG03', 'GEELY EMGRAND X7'],
+    ['атлас ФХ-11', 'VG04', 'GEELY ATLAS (ФХ11)'],
+    ['X70', 'VG05', 'BELGEE X70'], ['ATLAS PRO', 'VG05', 'GEELY ATLAS PRO'],
+    ['Атлас', 'VG06', 'GEELY ATLAS'], ['Сityray', 'VG07', 'GEELY CITYRAY'],
+    ['X50+', 'VG08', 'BELGEE X50+'], ['Coolray', 'VG08', 'GEELY COOLRAY'],
+    ['Х80', 'VG09', 'BELGEE X80'], ['GS', 'VG10', 'GEELY GS'],
+    ['Geometry C', 'VG11', 'GEELY GEOMETRY C'],
+    ['Mongaro', 'VG12', 'GEELY MONJARO'], ['Okovango 2022', 'VG13', 'GEELY OKAVANGO 2022'],
+    ['EX2', 'VG14', 'GEELY EX2'], ['EX5', 'VG15', 'GEELY EX5'],
+    ['Galaxy E8', 'VG16', 'GEELY E8'], ['Tugella', 'VG17', 'GEELY TUGELLA'],
+  ]) assert.equal(actVehicleName(vehicle, group), expected, vehicle);
   assertReview(parse(row({ 3: 'GEELY OKAVANGO 2025' })).rows[0], 'UNKNOWN_VEHICLE_GROUP');
   assertReview(parse(row({ 3: 'OKAVANGO' })).rows[0], 'UNKNOWN_VEHICLE_GROUP');
   const rows = [{ name: 'Okovango 20-24', code: 'old' }, { name: 'OKAVANGO 2026', code: 'new' }];

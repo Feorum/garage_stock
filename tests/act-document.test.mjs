@@ -33,7 +33,7 @@ test('act uses editable work paragraphs and preserves the rest of the Word packa
   assert.match(xml, /41 \(сорок один\) белорусский рубль, 01 копейка без НДС\./);
   assert.match(xml, /Подписи сторон/);
   assert.doesNotMatch(xml, /garage-jobs|\{\{GARAGE/);
-  assert.equal((xml.match(/<\/w:p>/g) || []).length, 8);
+  assert.equal((xml.match(/<\/w:p>/g) || []).length, 7);
   assert.equal(await zip.file('word/styles.xml').async('string'), '<styles/>');
   assert.deepEqual(await zip.file('word/fonts/font1.odttf').async('uint8array'), new Uint8Array([0, 7, 255]));
   assert.equal(actFilename(data), 'Акт Д-3 от 29.02.2028 — Модель -Т-.docx');
@@ -88,11 +88,52 @@ test('negotiated 750 BYN can be issued in each layout using the same Word master
     const zip = await JSZip.loadAsync(bytes);
     return (await zip.file('word/document.xml').async('string')).replace(/<[^>]*>/g, '');
   }
-  assert.match(await rendered('weighted', [45000, 30000]), /Капот – 450,00 BYN.*Зеркала – 300,00 BYN/s);
-  assert.match(await rendered('discount', [48000, 32000]), /Капот – 480,00 BYN.*Зеркала – 320,00 BYN.*Скидка – −50,00 BYN/s);
+  assert.match(await rendered('weighted', [45000, 30000]), /1\. Капот \(450,00 BYN\), Зеркала \(300,00 BYN\) – 750,00 BYN/);
+  assert.match(await rendered('discount', [48000, 32000]), /1\. Капот \(480,00 BYN\), Зеркала \(320,00 BYN\) – 800,00 BYN\s*Скидка – −50,00 BYN/);
   const names = await rendered('names', [null, null]);
-  assert.match(names, /Капот\s*Зеркала\s*Итого 750 \(семьсот пятьдесят\)/);
+  assert.match(names, /1\. Капот, Зеркала\s*Итого 750 \(семьсот пятьдесят\)/);
   assert.doesNotMatch(names, /BYN| – |Скидка/);
   await assert.rejects(rendered('weighted', [48000, 32000]));
   await assert.rejects(rendered('discount', [20000, 30000]));
+});
+
+test('ordinary works and W19 tint use consecutive service lines regardless of input order', async () => {
+  const tinted = { name: 'Задняя полусфера · 5%', workCode: 'W19', kopeks: 3251 };
+  const otherTint = { name: 'Задняя полусфера · 15%', workCode: 'W19', kopeks: 2701 };
+  const ordinary = { name: 'Капот', workCode: 'W01', kopeks: 12455 };
+  const gift = { name: 'Подарочная работа', workCode: 'W09', kopeks: 0 };
+  const bytes = await fixture();
+  async function jobParagraphs(jobs, mode = 'weighted', agreedTotal = null) {
+    const zip = await JSZip.loadAsync(await generateActDocument(bytes, { ...data, jobs, mode, agreedTotal }));
+    const xml = await zip.file('word/document.xml').async('string');
+    return [...xml.matchAll(/<w:p>([\s\S]*?)<\/w:p>/g)]
+      .map(match => match[1].replace(/<[^>]*>/g, ''))
+      .filter(text => /^([12]\. |Скидка)/u.test(text));
+  }
+  assert.deepEqual(await jobParagraphs([tinted, ordinary, otherTint, gift]), [
+    '1. Капот (124,55 BYN), Подарочная работа (0,00 BYN) – 124,55 BYN',
+    '2. Задняя полусфера · 5% (32,51 BYN), Задняя полусфера · 15% (27,01 BYN) – 59,52 BYN',
+  ]);
+  assert.deepEqual(await jobParagraphs([ordinary, tinted], 'discount', 11000), [
+    '1. Капот – 124,55 BYN', '2. Задняя полусфера · 5% – 32,51 BYN', 'Скидка – −47,06 BYN',
+  ]);
+  assert.deepEqual(await jobParagraphs([tinted]), ['1. Задняя полусфера · 5% – 32,51 BYN']);
+  assert.deepEqual(await jobParagraphs([otherTint, tinted], 'names', 10000),
+    ['1. Задняя полусфера · 15%, Задняя полусфера · 5%']);
+});
+
+test('original Word list numbering cannot duplicate group numbers or number the discount', async () => {
+  for (const properties of [
+    '<w:pStyle w:val="ListParagraph"/><w:keepNext/><w:spacing w:after="10"/>',
+    '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="4"/></w:numPr>',
+  ]) {
+    const original = skeleton.replace('<w:p><w:r><w:t>{{GARAGE_JOB_NAME}}',
+      '<w:p><w:pPr>' + properties + '</w:pPr><w:r><w:t>{{GARAGE_JOB_NAME}}');
+    const zip = await JSZip.loadAsync(await generateActDocument(await fixture(original), {
+      ...data, mode: 'discount', agreedTotal: 10,
+    }));
+    const xml = await zip.file('word/document.xml').async('string');
+    assert.equal((xml.match(/<w:numId w:val="0"\/>/g) || []).length, 2);
+    assert.doesNotMatch(xml, /w:numId w:val="4"/);
+  }
 });

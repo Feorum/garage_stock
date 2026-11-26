@@ -9,3 +9,8 @@ entrypoint = "./functions/manager-orders/index.ts"
 # The private schedule credential is checked before any source is acquired.
 verify_jwt = false
 entrypoint = "./functions/pull-manager-sheets/index.ts"
+
+[functions.garage-accounts]
+# The password grant is public. Owner actions validate a live Auth user and profile.
+verify_jwt = false
+entrypoint = "./functions/garage-accounts/index.ts"

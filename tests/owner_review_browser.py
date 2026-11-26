@@ -56,7 +56,7 @@ def exercise_owner_review(browser, base, smoke, output):
                      '2026-10-31T20:59:59Z', planned_date='2026-10-16')
     later = visit('Geely Cityray', 'closed', [item('Двери', 2500)], '2026-11-01T00:01:00+02:00', planned_date='2026-10-17')
     fixture = {'orders': visits, 'reviewPrices': prices}
-    labels = ('Главная', 'На проверке', 'Все заказы', 'Отчёты и история')
+    labels = ('Главная', 'На проверке', 'Все заказы', 'Отчёты и история', 'Механики')
 
     def order_link(page, order_id):
         return page.locator(f'main a[href="#orders/{order_id}"]')

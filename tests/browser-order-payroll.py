@@ -60,6 +60,44 @@ class Fixture:
         return {'data': replies.get(method), 'error': None}
 
 
+def check_wrapping_steps(browser, base):
+    for mixed in (False, True):
+        fixture = Fixture()
+        wrapping = fixture.order['tasks'][0]
+        tint = {**wrapping, 'id': 'tint', 'work_code': 'W19', 'work_name': 'Тонировка задней полусферы'}
+        fixture.order['tasks'] = [tint, wrapping] if mixed else [tint]
+        fixture.pay['lines'] = [{**fixture.pay['lines'][0], 'task_id': task['id']} for task in fixture.order['tasks']]
+        # The tint-only case also exercises an earlier RPC response without wrapping_steps.
+        if mixed:
+            fixture.pay['wrapping_steps'] = True
+        context, page, errors, live = smoke.new_page(browser, {})
+        try:
+            page.expose_function('__garageRpcFixture', fixture.rpc)
+            page.goto(base + '/index.html#orders/visit')
+            detail = page.get_by_role('dialog', name='Карточка заказа')
+            labels = ('Подготовка', 'Загрев')
+            for tab in ('Обзор', 'Цены'):
+                detail.get_by_role('button', name=tab, exact=True).click()
+                for text in labels:
+                    expect(detail.get_by_text(text, exact=True)).to_have_count(0)
+            detail.get_by_role('button', name='Оплата механиков', exact=True).click()
+            section = detail.locator('.order-payroll')
+            expect(section.get_by_text('Всего исполнителям', exact=True)).to_be_visible()
+            edit_steps = section.get_by_role('button', name='Выбрать исполнителей подготовки и загрева')
+            if mixed:
+                edit_steps.click()
+                for text in labels:
+                    group = section.get_by_role('group', name=text + ' · 3%')
+                    expect(group.get_by_role('checkbox', name='Миша')).to_be_visible()
+            else:
+                expect(edit_steps).to_have_count(0)
+                for text in labels:
+                    expect(section.get_by_text(text, exact=True)).to_have_count(0)
+            assert not errors and not live, (errors, live)
+        finally:
+            context.close()
+
+
 def run(browser, base):
     fixture = Fixture()
     context, page, errors, live = smoke.new_page(browser, {'profile': {'role': 'admin', 'name': 'Виталий'}},
@@ -128,6 +166,7 @@ if __name__ == '__main__':
             browser = p.chromium.launch(executable_path=options.chromium, args=['--no-sandbox'])
             try:
                 run(browser, base)
+                check_wrapping_steps(browser, base)
             finally:
                 browser.close()
     finally:

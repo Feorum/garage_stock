@@ -490,3 +490,9 @@ input[type='checkbox'], input[type='radio'] { width: 1.1rem; height: 1.1rem; mar
 .gift-dialog h2 { margin-top: 0; }
 .gift-dialog p { line-height: 1.5; }
 .gift-selection { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+
+.profile-field-form { padding-bottom: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--line); }
+.profile-field-form > .button { justify-self: start; }
+.profile-field-form .form-feedback, .profile-pending { margin-top: .45rem; font-size: .875rem; }
+.profile-password summary { min-height: 44px; padding-block: .6rem; font-weight: 600; cursor: pointer; }
+.profile-password .login-form { margin-block: .5rem 1rem; }

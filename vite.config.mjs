@@ -74,6 +74,9 @@ export default defineConfig(({ isPreview }) => {
         input: { app: 'index.html', account: 'account.html', sdk: 'src/supabase.js' },
         preserveEntrySignatures: 'strict',
         output: {
+          // The preview and lazy DOCX generator share only the small act formatters.
+          // Keep the generator from importing the application entry for these.
+          manualChunks: { 'act-amounts': ['./src/act-amounts.js'] },
           entryFileNames: chunk => chunk.name === 'sdk' ? 'sdk.js' : 'assets/[name]-[hash].js',
           assetFileNames(asset) {
             const name = asset.names[0];

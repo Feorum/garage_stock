@@ -15,7 +15,7 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
         raw = buf.getvalue()
     chunks = [base64.b64encode(raw[i:i + 60]).decode('ascii') for i in range(0, len(raw), 60)]
     tasks = [make_task('W19', 'completed', 1), make_task('W09', 'completed', 2), make_task('W01', 'cancelled', 3)]
-    order = {**make_order(168, tasks=tasks), 'status': 'closed', 'vin': ''}
+    order = {**make_order(168, tasks=tasks), 'status': 'closed', 'vin': '', 'vehicle': 'S50'}
     second = {**make_order(169, 2, tasks=tasks), 'status': 'closed'}
     opened = make_order(170, 3)
     prices = [1251, 0]
@@ -135,8 +135,10 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
         submit.click()
         expect(page.get_by_role('alert')).to_contain_text('Сохранение реквизитов не подтверждено')
         first = exported_text()
+        assert 'BELGEE S50' in first
         assert '47/11' in first and '12,52 BYN' in first and '0,00 BYN' in first
-        assert tasks[0]['work_name'] in first and '15%' in first and tasks[2]['work_name'] not in first
+        assert first.index('1. ' + tasks[1]['work_name']) < first.index('2. ' + tasks[0]['work_name'])
+        assert '15%' in first and tasks[2]['work_name'] not in first
         button.click()
         expect(number).to_have_value('47/11')
         expect(number).to_have_attribute('readonly', '')

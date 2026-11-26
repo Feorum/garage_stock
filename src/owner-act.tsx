@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { read, type Money, type OwnerOrder } from './owner-model';
 import { money } from './pay-model';
+import { actWorkLines } from './act-amounts.js';
 import { actVehicleName } from './vehicle-models';
 import type { GarageClient } from './shift-model';
 import { actQuote, actJobs, downloadAct, fieldsFrom, templateBytes, type ActRecord, type ActFields, type ActFormat } from './owner-act-model';
@@ -124,7 +125,7 @@ function ActForm({ order, client, price, refreshPrice, refreshOrder, close }: Pr
       const expectedAmounts = latest.commercial || record.pricing_snapshot
         ? { mode: layout, quote: freshQuote } : freshQuote.allocated;
       const data = { ...fields, number: record.number || serial + '/' + month,
-        contractNumber: fields.contractNumber.trim(), vin: fields.vin.trim(), vehicle: actVehicleName(order.vehicle),
+        contractNumber: fields.contractNumber.trim(), vin: fields.vin.trim(), vehicle: actVehicleName(order.vehicle, order.vehicle_group_code),
         jobs: preview, mode: layout, agreedTotal: agreed };
       phase = 'document';
       const [generator, chunks] = await Promise.all([import('./act-document'), read<string[]>(client, 'garage_act_template')]);
@@ -194,9 +195,11 @@ function ActForm({ order, client, price, refreshPrice, refreshOrder, close }: Pr
             <option value="names">Названия работ и общий итог</option>
           </select>
         </label>}
-        {agreed != null && preview.length > 0 && <ul aria-label="Работы в акте">
-          {preview.map(job => <li key={job.id}>{job.name}{layout !== 'names' && job.kopeks != null && ' · ' + money(job.kopeks)}</li>)}
-          {layout === 'discount' && !unpriced.length && lineTotal > agreed && <li>Скидка · −{money(lineTotal - agreed)}</li>}
+        {preview.length > 0 && <ul aria-label="Работы в акте">
+          {actWorkLines(preview, layout !== 'names').map(line => <li key={line.label}>
+            {line.label}{line.kopeks != null && ' · ' + money(line.kopeks)}
+          </li>)}
+          {layout === 'discount' && agreed != null && !unpriced.length && lineTotal > agreed && <li>Скидка · −{money(lineTotal - agreed)}</li>}
         </ul>}
         {wrongDiscount && <p role="alert">Договорная сумма превышает сумму работ. Выберите другой формат акта.</p>}
         {mismatch && <p role="alert">Месяц даты должен совпадать с месяцем сохранённого номера акта.</p>}

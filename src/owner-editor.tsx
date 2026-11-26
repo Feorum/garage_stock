@@ -1,7 +1,7 @@
 import { GiftDialog, qualifies, type GiftOffer } from './owner-gift';
 import { useCallback, useEffect, useState, useRef } from 'preact/hooks';
 import { WORKS, VEHICLE_GROUPS } from './catalogue.js';
-import { findVehicleChoice, orderVehicleChoices, requiresOkavangoYear } from './vehicle-models';
+import { findVehicleChoice, orderVehicleChoices, requiresOkavangoYear, vehicleGroupLabel } from './vehicle-models';
 import type { GarageClient } from './shift-model';
 import {
   availableWorks,
@@ -387,7 +387,7 @@ export function OrderEditor({
                 <option value="">Выберите группу автомобилей</option>
                 {VEHICLE_GROUPS.map((g) => (
                   <option key={g.code} value={g.code}>
-                    {g.name}
+                    {vehicleGroupLabel(g)}
                   </option>
                 ))}
               </select>

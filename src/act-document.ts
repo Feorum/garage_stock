@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { actDateLabel, actPrice, actTotal, validActAmount } from './act-amounts.js';
+import { actDateLabel, actPrice, actTotal, actWorkLines, validActAmount } from './act-amounts.js';
 
 export interface ActDocumentData {
   number: string;
@@ -8,7 +8,7 @@ export interface ActDocumentData {
   actDate: string;
   vehicle: string;
   vin: string;
-  jobs: { name: string; kopeks: number | null }[];
+  jobs: { name: string; workCode?: string; kopeks: number | null }[];
   mode?: 'weighted' | 'discount' | 'names';
   agreedTotal?: number | null;
 }
@@ -64,19 +64,30 @@ export async function generateActDocument(template: Uint8Array, data: ActDocumen
   const [before, tail] = segments;
   const sections = tail.split(end);
   if (sections.length !== 2) throw invalidTemplate();
-  const [prototype, after] = sections;
+  const [originalParagraph, after] = sections;
+  // Numbers are part of the visible group label. A Word list in the private
+  // master must not add a second number or number the separate discount.
+  const noList = '<w:numPr><w:numId w:val="0"/></w:numPr>';
+  let prototype = originalParagraph.replace(/<w:numPr\b[^>]*?(?:\/>|>[\s\S]*?<\/w:numPr>)/, noList);
+  if (prototype === originalParagraph && !prototype.includes(noList) && /<w:pStyle\b/.test(prototype)) {
+    // An inherited list style also needs an explicit numbering override.
+    prototype = prototype.replace(/(<w:pPr(?:\s[^>]*)?>\s*(?:<w:(?:pStyle|keepNext|keepLines|pageBreakBefore|framePr|widowControl)\b[^>]*\/>\s*)*)/, '$1' + noList);
+  }
   // Expand only the prepared work paragraph. User-entered text never passes
   // through a second replacement, even if it looks like a template field.
   const staticParts = replaceSlots(before + start + after, fields).split(start);
+  // Validate each source name before composing it with a number or other names.
+  for (const job of data.jobs) xmlText(job.name);
+  const lines = actWorkLines(data.jobs, mode !== 'names');
   let jobs: string[];
   if (mode === 'names') {
     // In existing private masters the dash, amount and BYN may occupy separate styled runs.
     replaceSlots(prototype, { JOB_NAME: 'x', JOB_PRICE: '0' });
     const namesOnly = prototype.replace(/(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g,
       (_match, open, content, close) => open + (content.includes('{{GARAGE_JOB_NAME}}') ? '{{GARAGE_JOB_NAME}}' : '') + close);
-    jobs = data.jobs.map(job => replaceSlots(namesOnly, { JOB_NAME: job.name }));
+    jobs = lines.map(line => replaceSlots(namesOnly, { JOB_NAME: line.label }));
   } else {
-    jobs = data.jobs.map(job => replaceSlots(prototype, { JOB_NAME: job.name, JOB_PRICE: actPrice(job.kopeks!) }));
+    jobs = lines.map(line => replaceSlots(prototype, { JOB_NAME: line.label, JOB_PRICE: actPrice(line.kopeks!) }));
     if (mode === 'discount' && listed! > total) {
       jobs.push(replaceSlots(prototype, { JOB_NAME: 'Скидка', JOB_PRICE: '−' + actPrice(listed! - total) }));
     }
