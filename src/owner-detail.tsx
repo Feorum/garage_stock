@@ -3,6 +3,7 @@ import { qualifies, type GiftOffer } from './owner-gift';
 import { useLayoutEffect, useState, useRef } from 'preact/hooks';
 import { dayLabel, taskName } from './shift-model';
 import type { Client } from './workspace-types';
+import { TaskPricing } from './owner-pricing';
 import { OrderPhotos } from './order-photos';
 import { OrderFilm } from './order-film';
 import { customerPrice, money } from './pay-model';
@@ -31,16 +32,23 @@ interface DetailProps {
   notify: (s: string) => void;
 }
 
-function JobPriceList({ order, prices }: { order: OwnerOrder; prices: Money | null }) {
-  const byJob = new Map((prices?.tasks ?? prices?.items ?? []).map(item => [item.task_id, customerPrice(item)]));
+function JobPriceList({ order, prices, client, reload }: {
+  order: OwnerOrder; prices: Money | null; client: Client; reload(): Promise<Money>;
+}) {
+  const byJob = new Map((prices?.tasks ?? prices?.items ?? []).map(item => [item.task_id, item]));
   if (!order.tasks.length) return <p class="muted">Работы пока не добавлены.</p>;
   return <ul class="owner-price-rows" aria-label="Работы и цены" role="list">
     {order.tasks.map(task => {
-      const amount = byJob.get(task.id);
+      const price = byJob.get(task.id);
+      const amount = price ? customerPrice(price) : null;
       const cancelled = task.status === 'cancelled';
       return <li class={cancelled ? 'is-cancelled' : undefined} key={task.id} data-task-id={task.id}>
         <strong>{taskName(task)}</strong>
-        <span>{cancelled ? 'Отменено' : amount != null ? money(amount) : prices ? 'Цена не указана' : '—'}</span>
+        {!cancelled && price?.private_version != null
+          ? <TaskPricing inline client={client} taskId={task.id} value={price}
+              onSaved={() => window.dispatchEvent(new CustomEvent('garage-order-finance-updated', { detail: order.id }))}
+              reload={async () => { await reload(); }} />
+          : <span>{cancelled ? 'Отменено' : amount != null ? money(amount) : prices ? 'Цена не указана' : '—'}</span>}
       </li>;
     })}
   </ul>;
@@ -222,7 +230,7 @@ export function OwnerDetail({
       <div class="order-section-body" hidden={section !== 'prices'}>
         <section class="owner-price-section" aria-labelledby="owner-price-heading">
           <h3 id="owner-price-heading">Прайс</h3>
-          <JobPriceList order={order} prices={price} />
+          <JobPriceList order={order} prices={price} client={client} reload={financials} />
           {price && (price.commercial && order.status !== 'cancelled'
             ? <OwnerCommercial client={client} orderId={order.id} terms={price.commercial} summary={price}
                 refresh={async () => { await refreshOrder(); await financials(); }} />
@@ -230,7 +238,6 @@ export function OwnerDetail({
           {priceError ? <p role="alert">Не удалось загрузить стоимость работ.{' '}
             <button type="button" class="button" onClick={() => void financials().catch(() => {})}>Повторить расчёт</button>
           </p> : !price && <p role="status">Загружаем стоимость работ…</p>}
-          {canEdit && <button type="button" class="button order-price-edit" onClick={() => edit()}>Изменить цены работ</button>}
           {order.status !== 'cancelled' && <div class="button-row owner-price-actions">
             <button type="button" class="button" onClick={omit}>Добавить пропущенную выполненную работу</button>
             {canOfferGift && <button type="button" class="button" onClick={() => edit(true)}>Выбрать подарок для клиента</button>}

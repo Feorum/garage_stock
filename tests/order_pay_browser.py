@@ -53,9 +53,11 @@ def exercise_order_pay(db, directory, chromium, owner, first, second):
                     expect(page).to_have_url(url + '/payroll')
                     payroll = page.locator('.order-payroll')
                     for name, value in [('Андрей', '12,51'), ('Миша', '4,03')]:
-                        edit = payroll.get_by_role('button', name='Изменить сумму · ' + name, exact=True)
+                        amount_row = payroll.locator('.payroll-amount-row').filter(has=page.get_by_text(name, exact=True))
+                        edit = amount_row.get_by_role('button', name='Изменить сумму · ' + name, exact=True)
                         edit.click()
-                        field = payroll.get_by_label(name + ', BYN', exact=True)
+                        field = amount_row.get_by_label(name + ', BYN', exact=True)
+                        expect(field).to_be_focused()
                         if width == 320:
                             field.fill(value)
                             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')

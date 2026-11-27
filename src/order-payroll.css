@@ -7,7 +7,8 @@
 .payroll-amounts > div, .payroll-roles > div { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; padding: .35rem .55rem; }
 .payroll-amounts > div:nth-child(odd) { background: var(--surface-raised); }
 .payroll-amounts dd, .payroll-roles dd { text-align: end; overflow-wrap: anywhere; }
-.payroll-amount { background: transparent; border: 0; padding: .25rem 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: .18em; }
+.payroll-amount-row.is-editing { display: grid; grid-template-columns: minmax(4rem, 1fr) minmax(0, 3fr); }
+.payroll-amount-row.is-editing dt { align-self: start; padding-block-start: .6rem; }
 .payroll-amounts small { display: block; color: var(--muted); }
 .payroll-editor, .payroll-rates { display: grid; gap: .75rem; }
 .payroll-role-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .5rem; }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { dayLabel, instantLabel, taskName, type GarageClient } from './shift-model';
 import { decimal, hundredths, money } from './pay-model';
 import { errorText, isConflict, read, type Mutate, type OwnerOrder, type Staff } from './owner-model';
@@ -42,7 +42,7 @@ function RoleField({ name, ids, change, roster, disabled }: { disabled: boolean;
   </fieldset>;
 }
 interface Props { client: GarageClient; order: OwnerOrder; mutate: Mutate; staff: Staff[] }
-interface Editor { token: string; inputs: SaveArgs; key: string; text: string }
+interface Editor { token: string; inputs: SaveArgs; key: string; label: string; text: string }
 
 function Calculation({ order, client, mutate, staff }: Props) {
   const [model, setModel] = useState<Payroll | null>(null);
@@ -55,6 +55,17 @@ function Calculation({ order, client, mutate, staff }: Props) {
   const generation = useRef(0);
   const mounted = useRef(false);
   const sending = useRef(false);
+  const amountInput = useRef<HTMLInputElement>(null);
+  const amountButton = useRef<HTMLButtonElement | null>(null);
+  useLayoutEffect(() => {
+    if (editor && editor.key !== 'roles') {
+      amountInput.current?.focus();
+      amountInput.current?.select();
+    } else if (!editor && amountButton.current) {
+      amountButton.current.focus({ preventScroll: true });
+      amountButton.current = null;
+    }
+  }, [editor?.key]);
   const refresh = () => setReload(n => n + 1);
   useEffect(() => {
     mounted.current = true;
@@ -72,10 +83,14 @@ function Calculation({ order, client, mutate, staff }: Props) {
     }).catch(() => { if (mounted.current && generation.current === call) setFailed(true); })
       .finally(() => { if (mounted.current && generation.current === call) setLoading(false); });
   }, [client, order, reload]);
-  function begin(key: string, value?: Amount) {
+  function begin(key: string, label = '', value?: Amount) {
     if (!model) return;
     setMessage('');
-    setEditor({ key, token: model.token, inputs: savedInputs(model), text: value == null ? '' : decimal(value) });
+    setEditor({ key, label, token: model.token, inputs: savedInputs(model), text: value == null ? '' : decimal(value) });
+  }
+  function closeEditor() {
+    setEditor(null);
+    setMessage('');
   }
   async function save(automatic = false) {
     if (!editor || !model || model.token !== editor.token || failed || loading || sending.current) return;
@@ -113,7 +128,9 @@ function Calculation({ order, client, mutate, staff }: Props) {
   if (!model) return <p role="status">Загружаем расчёт…</p>;
   if (model.historical) return <p>Для этого заказа сохранён прежний порядок оплаты. <a href="#pay">Распределение по работам</a></p>;
   if (!model.applicable) return <p>Для этого заказа расчёт по ставкам не применяется.</p>;
-  const stale = !!editor && editor.token !== model.token;
+  const missingEditorPerson = editor && !['roles', 'reserve', 'additional'].includes(editor.key) &&
+    !model.people.some(person => person.mechanic_id === editor.key) ? editor : null;
+  const stale = !!editor && (editor.token !== model.token || Boolean(missingEditorPerson));
   const editable = !busy && !loading && !failed && !stale;
   const roster = new Map(staff.map(p => [p.id, p]));
   for (const p of model.people) if (!roster.has(p.mechanic_id)) roster.set(p.mechanic_id, { id: p.mechanic_id, name: p.name });
@@ -131,9 +148,31 @@ function Calculation({ order, client, mutate, staff }: Props) {
       : Math.max(0, model.cap_kopeks - model.total_kopeks);
   const additional = model.closed ? model.additional_kopeks : model.override_additional_kopeks ?? automaticAdditional;
   function row(label: string, key: string, current: Amount, auto: Amount, override: Amount, note?: string) {
-    return <div key={key} class="payroll-amount-row"><dt>{label}</dt><dd>
-      <button class="payroll-amount" type="button" disabled={!!editor || !editable} aria-label={'Изменить сумму · ' + label}
-        onClick={() => begin(key, current)}>{fmt(current)}</button>
+    const active = editor?.key === key;
+    return <div key={key} class={'payroll-amount-row' + (active ? ' is-editing' : '')}><dt>{label}</dt><dd>
+      <button class="money-row-value" type="button" hidden={active} disabled={!!editor || !editable}
+        aria-label={'Изменить сумму · ' + label}
+        onClick={event => { amountButton.current = event.currentTarget; begin(key, label, current); }}>{fmt(current)}</button>
+      {active && <form class="money-row-form" onSubmit={event => { event.preventDefault(); void save(); }} onKeyDown={event => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!sending.current) closeEditor();
+        }
+      }}>
+        <fieldset disabled={busy}>
+          <div class="money-row-controls">
+            <input ref={amountInput} aria-label={label + ', BYN'} type="text" inputMode="decimal" required
+              autoComplete="off" value={editor.text} onInput={e => setEditor({ ...editor, text: e.currentTarget.value })} />
+            <button type="submit" class="button button-primary" aria-label="Сохранить расчёт" disabled={!editable || amount == null}>Сохранить</button>
+            <button type="button" class="button" onClick={closeEditor}>Отмена</button>
+            <button type="button" class="button" disabled={!editable} onClick={() => void save(true)}>По расчёту</button>
+          </div>
+        </fieldset>
+        {pendingExcess > 0 && <p class="notice">После сохранения выплаты превысят потолок на {money(pendingExcess)}.</p>}
+        {stale && <p role="alert">Расчёт изменился. Проверьте актуальные суммы и откройте правку заново.</p>}
+        {message && <p role="status">{message}</p>}
+      </form>}
       {override != null && <small>Вручную · расчёт {fmt(auto)}</small>}
       {note && <small>{note}</small>}
     </dd></div>;
@@ -147,6 +186,7 @@ function Calculation({ order, client, mutate, staff }: Props) {
       <div><dt>Внутренняя «Цена» выполненных работ</dt><dd>{fmt(model.basis_kopeks)}</dd></div>
       <div><dt>Потолок выплат · 25%</dt><dd>{fmt(model.cap_kopeks)}</dd></div>
       {model.people.map(p => row(p.name, p.mechanic_id, p.kopeks, p.automatic_kopeks, p.override_kopeks))}
+      {missingEditorPerson && row(missingEditorPerson.label, missingEditorPerson.key, null, null, null)}
       <div><dt>Всего исполнителям</dt><dd>{fmt(model.total_kopeks)}</dd></div>
       {row('Премиальный фонд · 5%', 'reserve', model.reserve_kopeks, model.automatic_reserve_kopeks, model.override_reserve_kopeks)}
       {row('доп прем', 'additional', additional, automaticAdditional, model.override_additional_kopeks,
@@ -162,19 +202,16 @@ function Calculation({ order, client, mutate, staff }: Props) {
       {!editor && <button type="button" class="button" disabled={!editable}
         onClick={() => begin('roles')}>Выбрать исполнителей подготовки и загрева</button>}
     </>}
-    {editor && <form class="payroll-editor" onSubmit={e => { e.preventDefault(); void save(); }}>
-      {editor.key === 'roles' ? <div class="payroll-role-grid">{(['p_prep_ids', 'p_heat_ids'] as const).map(field =>
+    {editor?.key === 'roles' && <form class="payroll-editor" onSubmit={e => { e.preventDefault(); void save(); }}>
+      <div class="payroll-role-grid">{(['p_prep_ids', 'p_heat_ids'] as const).map(field =>
         <RoleField key={field} name={field === 'p_prep_ids' ? 'Подготовка' : 'Загрев'} ids={editor.inputs[field]} roster={[...roster.values()]} disabled={busy}
           change={ids => setEditor({ ...editor, inputs: { ...editor.inputs, [field]: ids } })} />)}</div>
-        : <label>{selected?.name ?? (editor.key === 'additional' ? 'доп прем' : 'Премиальный фонд')}, BYN
-          <input type="text" inputMode="decimal" required disabled={busy} value={editor.text} onInput={e => setEditor({ ...editor, text: e.currentTarget.value })} />
-        </label>}
-      {editor.key === 'roles' && retainedOverrides(model.lines, editor.inputs).length < editor.inputs.p_amounts.length && <p class="notice">Ручная выплата снятому исполнителю будет удалена из нового расчёта.</p>}
-      {pendingExcess > 0 && <p class="notice">После сохранения выплаты превысят потолок на {money(pendingExcess)}.</p>}
+      {retainedOverrides(model.lines, editor.inputs).length < editor.inputs.p_amounts.length && <p class="notice">Ручная выплата снятому исполнителю будет удалена из нового расчёта.</p>}
       {stale && <p role="alert">Расчёт изменился. Проверьте актуальные суммы и откройте правку заново.</p>}
-      <div class="button-row"><button class="button button-primary" type="submit" disabled={!editable || (editor.key !== 'roles' && amount == null)}>Сохранить расчёт</button>
-        {editor.key !== 'roles' && <button class="button" type="button" disabled={!editable} onClick={() => void save(true)}>По расчёту</button>}
-        <button class="button" type="button" disabled={busy} onClick={() => { setEditor(null); setMessage(''); }}>Отмена</button></div>
+      <div class="button-row">
+        <button class="button button-primary" type="submit" disabled={!editable}>Сохранить расчёт</button>
+        <button class="button" type="button" disabled={busy} onClick={closeEditor}>Отмена</button>
+      </div>
     </form>}
     {model.lines.length > 0 && <details><summary>Работы и ставки на дату выполнения</summary>
       <ul>{model.lines.map(line => <li key={line.task_id}><strong>{service(line.task_id)}</strong> · {dayLabel(line.work_date)} · {fmt(line.basis_kopeks)}
@@ -187,7 +224,7 @@ function Calculation({ order, client, mutate, staff }: Props) {
       {h.people?.length ? <ul>{h.people.map(p => <li key={p.mechanic_id}>{p.name} · {fmt(p.kopeks)}</li>)}</ul> : null}
       {h.reserve_kopeks != null && <p>Премиальный фонд · {fmt(h.reserve_kopeks)}. Доп прем · {fmt(h.additional_kopeks)}</p>}
     </li>)}</ol></details>}
-    {message && <p role="status">{message}</p>}
+    {message && (!editor || editor.key === 'roles') && <p role="status">{message}</p>}
   </div>;
 }
 export function OrderPayroll(props: Props) {

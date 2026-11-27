@@ -61,6 +61,48 @@ class Fixture:
         return {'data': replies.get(method), 'error': None}
 
 
+def check_legacy_payout_row(browser, base):
+    fixture = Fixture()
+    person = {'mechanic_id': 'a', 'name': 'Андрей', 'former': False}
+    payout = {'version': 1, 'pool_kopeks': 4600, 'candidates': [person],
+              'shares': [{**person, 'basis_points': 10000, 'kopeks': 4600}]}
+    pricing = {'status': 'priced', 'effective_total_kopeks': 112500, 'tasks': [
+        {'task_id': 'task', 'catalogue_kopeks': 112500, 'private_version': 0, 'payout': payout}]}
+    writes = []
+
+    def rpc(method, params):
+        if method == 'garage_order_financials':
+            return {'data': pricing, 'error': None}
+        if method == 'garage_pay_save_amounts':
+            writes.append(params)
+            payout.update(version=2, pool_kopeks=4715, shares=[{**person, 'basis_points': 10000, 'kopeks': 4715}])
+            return {'data': payout, 'error': None}
+        return fixture.rpc(method, params)
+
+    context, page, errors, live = smoke.new_page(browser, {}, viewport={'width': 390, 'height': 844})
+    try:
+        page.expose_function('__garageRpcFixture', rpc)
+        page.goto(base + '/index.html#orders/edit-visit')
+        job = page.locator('tbody[data-task-id="task"]')
+        payout_cell = job.locator('[data-column=payout]')
+        button = payout_cell.get_by_role('button', name='Изменить распределение')
+        expect(button).to_contain_text('46,00')
+        button.click()
+        expect(job.locator('tr')).to_have_count(1)
+        field = payout_cell.get_by_label('Андрей, BYN')
+        expect(field).to_be_focused()
+        field.fill('47,15')
+        payout_cell.get_by_label('Причина распределения').fill('Уточнённая выплата')
+        payout_cell.get_by_role('button', name='Сохранить распределение').click()
+        expect(button).to_contain_text('47,15')
+        expect(button).to_be_focused()
+        assert writes[0]['p_amounts'] == [{'mechanic_id': 'a', 'kopeks': 4715}]
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        assert not errors and not live, (errors, live)
+    finally:
+        context.close()
+
+
 def check_wrapping_steps(browser, base):
     for mixed in (False, True):
         fixture = Fixture()
@@ -114,10 +156,24 @@ def run(browser, base):
         expect(preliminary).to_be_visible()
         assert not fixture.saves
         expect(section.get_by_text('Всего в премиальный фонд').locator('..')).to_contain_text(re.compile(r'69,00\sBYN'))
-        section.get_by_role('button', name='Изменить сумму · Андрей').click()
-        section.get_by_label('Андрей, BYN').fill('235,00')
+        andrey = section.locator('.payroll-amount-row').filter(has=page.locator('dt', has_text=re.compile('^Андрей$')))
+        start = andrey.get_by_role('button', name='Изменить сумму · Андрей')
+        rows = section.locator('.payroll-amounts > div')
+        count = rows.count()
+        start.click()
+        inline_field = andrey.get_by_label('Андрей, BYN')
+        expect(inline_field).to_be_focused()
+        expect(rows).to_have_count(count)
+        expect(section.locator('.payroll-editor')).to_have_count(0)
+        inline_field.fill('100')
+        inline_field.press('Escape')
+        expect(start).to_be_focused()
+        assert not fixture.saves
+        start.click()
+        inline_field.fill('235,00')
         expect(section.get_by_text(re.compile(r'После сохранения выплаты превысят потолок на 10,00'))).to_be_visible()
-        section.get_by_role('button', name='Сохранить расчёт').click()
+        andrey.get_by_role('button', name='Сохранить расчёт').click()
+        expect(start).to_be_focused()
         expect(section.get_by_text(re.compile(r'Выплаты выше потолка на 10,00'))).to_be_visible()
         expect(additional).to_have_text(re.compile(r'^0,00\sBYN'))
         assert fixture.saves[-1]['p_amounts'] == [{'mechanic_id': 'a', 'kopeks': 23500}]
@@ -125,7 +181,8 @@ def run(browser, base):
         section.get_by_role('button', name='По расчёту').click()
         expect(section.get_by_role('button', name='Изменить сумму · Андрей')).to_contain_text('201,00')
         section.get_by_role('button', name='Изменить сумму · доп прем').click()
-        section.get_by_label('доп прем, BYN').fill('19,31')
+        bonus = section.locator('.payroll-amount-row').filter(has=page.locator('dt', has_text=re.compile('^доп прем$')))
+        bonus.get_by_label('доп прем, BYN').fill('19,31')
         section.get_by_role('button', name='Сохранить расчёт').click()
         expect(section.get_by_role('button', name='Изменить сумму · доп прем')).to_contain_text('19,31')
         section.get_by_role('button', name='Выбрать исполнителей подготовки и загрева').click()
@@ -177,6 +234,7 @@ if __name__ == '__main__':
             browser = p.chromium.launch(executable_path=options.chromium, args=['--no-sandbox'])
             try:
                 run(browser, base)
+                check_legacy_payout_row(browser, base)
                 check_wrapping_steps(browser, base)
             finally:
                 browser.close()
