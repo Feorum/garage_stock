@@ -13,8 +13,7 @@ def exercise_gift_offer(page, db, base, owner, mechanic):
     vehicle = 'Автомобиль для проверки подарка'
     def show_new_offer(name):
         page.goto(f'{base}/index.html#orders')
-        page.get_by_role('link', name='Управление заказами', exact=True).click()
-        page.get_by_role('button', name='Новый заказ', exact=True).click()
+        page.get_by_role('link', name='Новый заказ', exact=True).click()
         page.get_by_role('combobox', name='Модель автомобиля', exact=True).select_option('manual')
         page.get_by_label('Автомобиль', exact=True).fill(name)
         page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
@@ -129,7 +128,6 @@ def exercise_owner_pricing(db, directory, chromium, owner, first, second):
                 expect(button).to_contain_text('20,01')
                 page.get_by_role('button', name='Изменить заказ', exact=True).click()
                 expect(page).to_have_url(f'{base}/index.html#orders/edit-{order_id}')
-                page.get_by_text('Данные и состав работ', exact=True).click()
                 scope_colour = page.get_by_label('Цвет (необязательно)', exact=True)
                 scope_colour.fill('Черновик')
                 row = page.locator(f'tbody[data-task-id="{task_id}"]')

@@ -77,16 +77,10 @@ export function Instructions({ order }: { order: BoardOrder }) {
     !(order.instructions_from_manager && order.manager_comment_updated_at) &&
     order.instructions;
   const written = order.tasks.filter((task) => task.instructions || (task.can_see_notes && !!task.notes?.length));
-  if (!general && !written.length && !order.manager_comment && !order.vehicle_workflow?.return_note) return null;
+  if (!general && !written.length && !order.manager_comment) return null;
   return (
     <details class="mb-instructions">
       <summary>Указания и заметки</summary>
-      {order.vehicle_workflow?.return_note && (
-        <div>
-          <h4>Комментарий владельца</h4>
-          <p>{order.vehicle_workflow.return_note}</p>
-        </div>
-      )}
       {general && (
         <div>
           <h4>Указания к заказу</h4>

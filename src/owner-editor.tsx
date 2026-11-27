@@ -21,6 +21,7 @@ import {
   type Staff,
 } from './owner-model';
 import { Quote, SourceReference } from './owner-summary';
+import { IntakeIssues } from './owner-intakes';
 
 interface EditorProps {
   seed: EditorSeed;
@@ -354,7 +355,10 @@ export function OrderEditor({
               ? 'Изменение заказа'
               : 'Новый заказ'}
         </legend>
-        {resolving && <SourceReference intake={base.intake} />}
+        {resolving && base.intake && <>
+          <IntakeIssues intake={base.intake} />
+          <SourceReference intake={base.intake} />
+        </>}
         {ambiguous && (
           <p role="status" class="notice">
             Перед публикацией разделите повторяющиеся строки в рабочей таблице и обновите заявку.

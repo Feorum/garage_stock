@@ -55,7 +55,16 @@ def exercise_owner_review(browser, base, smoke, output):
     previous = visit('Belgee X70', 'closed', [item('Крылья', 48000), item('Сохранённая работа', 2013, [], 'pending')],
                      '2026-10-31T20:59:59Z', planned_date='2026-10-16')
     later = visit('Geely Cityray', 'closed', [item('Двери', 2500)], '2026-11-01T00:01:00+02:00', planned_date='2026-10-17')
-    fixture = {'orders': visits, 'reviewPrices': prices}
+    intake_id = '80000000-0000-4000-8003-000000000001'
+    raw = {'vehicle': 'S50', 'vin': 'TEST0000000000009', 'manager_label': 'Мария', 'notes': 'Проверить способ оклейки'}
+    intake = {'id': intake_id, 'version': 1, 'status': 'pending', 'row_numbers': [42], 'source_name': 'Таблица заявок',
+              'original': raw, 'latest': raw, 'suggested_order': {**raw, 'vehicle_group_code': 'VG02'},
+              'issues': ['NO_APPROVED_TASKS']}
+    fixture = {'orders': visits, 'reviewPrices': prices, 'managerIntakes': [
+        intake,
+        {**intake, 'id': '80000000-0000-4000-8003-000000000002', 'order_id': ready},
+        {**intake, 'id': '80000000-0000-4000-8003-000000000003', 'status': 'source_completed'},
+    ]}
     labels = ('Главная', 'На проверке', 'Все заказы', 'Отчёты и история', 'Механики')
 
     def order_link(page, order_id):
@@ -64,8 +73,12 @@ def exercise_owner_review(browser, base, smoke, output):
     def order_card(page, order_id):
         return page.locator(f'article[data-order-id="{order_id}"]')
 
+    def intake_link(page):
+        return page.get_by_role('region', name='Заявки менеджеров').get_by_role('link', name=re.compile('S50.*Проверить заявку'))
+
     for width in (320, 1440):
-        context, page, errors, requests = smoke.new_page(browser, fixture, {'width': width, 'height': 900})
+        setup = {**fixture, 'rpcErrors': {'garage_manager_intakes': 'Intake temporarily unavailable'}} if width == 320 else fixture
+        context, page, errors, requests = smoke.new_page(browser, setup, {'width': width, 'height': 900})
         try:
             page.clock.set_fixed_time('2026-11-18T12:00:00Z')
             page.goto(base + '/index.html#shift')
@@ -78,10 +91,18 @@ def exercise_owner_review(browser, base, smoke, output):
                 assert min(bounds['height'], bounds['width']) >= 44, bounds
             expect(nav.get_by_role('link', name='На проверке', exact=True)).to_have_attribute('aria-current', 'page')
             expect(page.get_by_role('heading', name='На проверке', exact=True)).to_be_visible()
+            attention = page.get_by_role('region', name='Требует внимания')
+            expect(attention.get_by_role('region', name='Передачи механиков')).to_be_visible()
             for order_id in (ready, missing, zero, unavailable, partial):
                 expect(order_link(page, order_id)).to_be_visible()
             for order_id in (active, current, previous, later, cancelled):
                 expect(order_link(page, order_id)).to_have_count(0)
+            if width == 320:
+                expect(attention.get_by_role('alert')).to_contain_text('Не удалось загрузить заявки менеджеров.')
+                page.evaluate('delete __garageTest.rpcErrors.garage_manager_intakes')
+                attention.get_by_role('button', name='Повторить загрузку заявок').click()
+            expect(intake_link(page)).to_have_count(1)
+            expect(intake_link(page)).to_have_attribute('href', f'#orders/intake-{intake_id}/review')
             card = order_card(page, ready)
             def job(card, name):
                 return card.get_by_role('listitem').filter(has_text=re.compile('^' + re.escape(name)))
@@ -118,7 +139,7 @@ def exercise_owner_review(browser, base, smoke, output):
             note_box = card.locator('.owner-review-note').bounding_box()
             assert note_box['y'] + note_box['height'] <= confirm.bounding_box()['y']
             batches = page.evaluate("__garageCalls.filter(c => c.name === 'garage_owner_review_prices').map(c => c.args.p_order_ids)")
-            assert set().union(*map(set, batches)) == {ready, missing, zero, unavailable, partial}, batches
+            assert set().union(*map(set, batches)) == {ready, missing, zero, unavailable, partial, active, current, previous, later}, batches
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             page.screenshot(path=output / f'owner-review-{width}.png')
             order_link(page, ready).click()
@@ -128,6 +149,15 @@ def exercise_owner_review(browser, base, smoke, output):
             expect(drawer).to_be_visible()
             page.keyboard.press('Escape')
             expect(drawer).to_have_count(0)
+            page.evaluate("location.hash = '#shift?week=2026-10-26'")
+            for order_id in (ready, missing, zero):
+                expect(order_link(page, order_id)).to_be_visible()
+            for order_id in (unavailable, partial):
+                expect(order_link(page, order_id)).to_have_count(0)
+            expect(attention.get_by_role('region', name='Заявки менеджеров')).to_have_count(0)
+            attention.get_by_role('link', name='За все даты').click()
+            expect(order_link(page, unavailable)).to_be_visible()
+            expect(intake_link(page)).to_be_visible()
             nav.get_by_role('link', name='Главная', exact=True).click()
             expect(page.get_by_role('heading', level=1, name='Главная')).to_be_visible()
             weekly = page.get_by_role('region', name='Недельная сводка заказов')
@@ -137,8 +167,28 @@ def exercise_owner_review(browser, base, smoke, output):
             for order_id in (zero, missing, ready):
                 expect(schedule.locator(f'a[href="#orders/{order_id}"]')).to_be_visible()
             expect(schedule.locator(f'a[href="#orders/{partial}"]')).to_have_count(0)
-            schedule.locator('a[href="#orders"]').click()
+            schedule.get_by_role('link', name='К журналу заказов').click()
             expect(weekly).to_have_count(0)
+            expect(page).to_have_url(re.compile(r'#orders\?week=2026-10-26'))
+            for order_id in (ready, missing, zero):
+                expect(order_link(page, order_id)).to_be_visible()
+            for order_id in (unavailable, partial):
+                expect(order_link(page, order_id)).to_have_count(0)
+            expect(page.get_by_role('region', name='Заявки менеджеров')).to_have_count(0)
+            nav.get_by_role('link', name='Все заказы', exact=True).click()
+            expect(intake_link(page)).to_be_visible()
+            intake_link(page).click()
+            expect(page).to_have_url(base + f'/index.html#orders/intake-{intake_id}/review')
+            form = drawer.get_by_role('form', name='Проверка заявки менеджера')
+            expect(form.get_by_label('VIN', exact=True)).to_have_value(raw['vin'])
+            expect(form.get_by_label('Менеджер', exact=True)).to_have_value(raw['manager_label'])
+            expect(drawer).to_contain_text('Выберите запрошенные менеджером работы из каталога.')
+            form.get_by_text('Исходная заявка менеджера · только владельцу', exact=True).click()
+            expect(form.get_by_text(raw['notes'], exact=True)).to_be_visible()
+            assert page.evaluate("__garageCalls.every(call => call.name !== 'garage_save_team_order')")
+            form.get_by_role('button', name='Закрыть форму').click()
+            expect(drawer).to_have_count(0)
+            expect(intake_link(page)).to_be_focused()
             for order_id in (ready, missing, zero, unavailable, partial, active):
                 expect(order_link(page, order_id)).to_be_visible()
             order_ids = '(cards) => cards.map(card => card.dataset.orderId)'
@@ -162,7 +212,7 @@ def exercise_owner_review(browser, base, smoke, output):
             expect(order_card(page, ready)).to_have_class(re.compile(r'\border-weekday-5\b'))
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             page.screenshot(path=output / f'owner-archive-{width}.png', full_page=True)
-            expect(page.get_by_role('link', name='Управление заказами')).to_have_attribute('href', '#orders/tools')
+            expect(page.get_by_role('link', name='Управление заказами')).to_have_count(0)
             status = page.get_by_role('combobox', name='Статус заказа')
             status.select_option(label='На проверке')
             expect(order_link(page, active)).to_have_count(0)
@@ -249,6 +299,18 @@ def exercise_owner_review(browser, base, smoke, output):
             assert len(confirmations) == 2 and confirmations[0] == confirmations[1], confirmations
             assert confirmations[0]['p_action'] == 'close' and confirmations[0]['p_request_id']
             assert page.evaluate("id => __garageOrderState.orders.find(o => o.id === id).status", ready) == 'closed'
+            if width == 1440:
+                intake_link(page).click()
+                form.get_by_label('Плановая дата', exact=True).fill('2026-10-30')
+                form.locator('#new-work-W01').check()
+                form.get_by_role('button', name='Опубликовать заказ').click()
+                expect(form).to_have_count(0)
+                expect(drawer.get_by_role('heading', name='BELGEE S50', exact=True)).to_be_visible()
+                page.keyboard.press('Escape')
+                expect(attention.get_by_text('Нет заявок на проверке.')).to_be_visible()
+                page.evaluate("hash => { location.hash = hash }", f'#orders/intake-{intake_id}/review')
+                expect(drawer).to_contain_text('Заявка уже обработана или недоступна.')
+                expect(form).to_have_count(0)
             assert not errors and not requests, (errors, requests)
         finally:
             context.close()

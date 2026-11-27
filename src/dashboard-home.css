@@ -4,7 +4,6 @@
   --home-coral-ink: var(--accent);
   --home-coral-soft: var(--accent-soft);
   --home-divider: var(--line);
-  --home-green: var(--green);
   --home-soft-blue: #edf3f9;
 }
 .dash-home-overview {
@@ -14,8 +13,7 @@
   --dash-accent: var(--home-coral);
   margin-bottom: 16px;
 }
-.dash-home-overview .dash-weeks, .dash-home-overview .dash-activity,
-.dash-home-overview .dash-metric, .home-completion, .home-schedule {
+.dash-home-overview .dash-weeks, .home-schedule {
   background: var(--surface);
   border: 1px solid var(--home-divider);
   border-radius: 13px;
@@ -39,73 +37,16 @@
 .dash-home-overview .dash-step { color: var(--muted); width: 28px; }
 .dash-home-overview .dash-period-heading { margin: 17px 2px 12px; }
 .dash-home-overview .dash-period-heading h2 { font-size: 1rem; }
-.dash-home-overview .dash-period-controls button, .dash-home-overview .dash-pick {
+.dash-home-overview .dash-period-controls > button:not(.dash-widget-trigger), .dash-home-overview .dash-pick {
   color: var(--muted);
   background: var(--surface);
   border-color: var(--line);
 }
-.dash-home-overview .dash-period-controls button[aria-pressed=true] {
+.dash-home-overview .dash-period-controls > button[aria-pressed=true] {
   color: var(--home-coral-ink);
   background: var(--home-coral-soft);
   border-color: #f1c1b4;
 }
-.dash-home-overview .dash-summary { grid-template-columns: minmax(0, 1fr); gap: 14px; }
-.dash-home-overview .dash-activity { min-height: 215px; padding: 19px 24px 15px; }
-.dash-home-overview .dash-chart-heading h3 { font-size: 1.08rem; }
-.dash-home-overview .dash-unit { background: var(--paper); }
-.dash-home-overview .dash-unit button { color: var(--muted); padding: 5px 10px; }
-.dash-home-overview .dash-unit button[aria-pressed=true] {
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: 0 1px 4px #29394720;
-}
-.dash-home-overview .dash-plot { margin-top: 24px; gap: 12px; }
-.dash-home-overview .dash-bars::before {
-  border-color: #e6eaed;
-  background: linear-gradient(to bottom, transparent calc(50% - .5px), #edf0f2 50%, transparent calc(50% + .5px));
-}
-.dash-home-overview .dash-track { width: 6px; background: #dce2e6; }
-.dash-home-overview .dash-fill small { background: var(--surface); color: var(--ink); font-weight: 600; }
-.dash-home-overview .dash-day.dash-today > span { color: var(--home-coral-ink); font-weight: 650; }
-.dash-home-overview .dash-metrics { grid-template-columns: minmax(140px,1.03fr) repeat(3,minmax(0,1fr)); gap: 12px; }
-.dash-home-overview .dash-metric { gap: 12px; }
-.dash-home-overview .dash-metric-label svg { color: var(--muted); }
-.dash-home-overview .dash-change.dash-gain { color: var(--home-green); }
-.dash-home-overview .dash-change.dash-loss { color: #ae4d62; }
-.home-completion {
-  grid-row: span 2;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 14px 8px;
-  text-align: center;
-}
-.home-completion h3 { margin: 0; color: var(--muted); font-size: .86rem; font-weight: 500; }
-.home-progress-ring {
-  display: grid;
-  place-items: center;
-  position: relative;
-  border-radius: 50%;
-  width: clamp(76px, 10cqw, 102px);
-  aspect-ratio: 1;
-  flex: none;
-  isolation: isolate;
-  background: conic-gradient(from -90deg, var(--home-coral) var(--completion), #e7eaec var(--completion));
-}
-.home-progress-ring::before {
-  position: absolute;
-  inset: 7px;
-  z-index: -1;
-  content: '';
-  border-radius: inherit;
-  background: var(--surface);
-}
-.home-progress-ring strong { font-size: 1.4rem; font-weight: 600; line-height: 1; letter-spacing: -.045em; }
-.home-completion p { color: var(--muted); font-size: .76rem; }
-.home-completion b { color: var(--ink); font-weight: 560; }
 .home-schedule { min-width: 0; overflow: hidden; }
 .home-schedule-heading {
   display: flex;
@@ -135,13 +76,15 @@
 }
 .home-schedule-day + .home-schedule-day { border-left: 1px solid var(--home-divider); }
 .home-schedule-day h3 { margin: 0; font-size: .79rem; font-weight: 450; color: var(--muted); text-align: center; }
-.home-schedule-day time { display: inline-block; padding: 4px 6px; }
+.home-day-link { display: grid; min-height: 2.75rem; place-items: center; border-radius: 5px; color: var(--muted); text-decoration: none; }
+.home-day-link:hover { color: var(--home-coral-ink); background: var(--paper); text-decoration: underline; }
+.home-schedule-day time { padding: 4px 6px; }
 .home-schedule-day time > span { color: var(--ink); font-weight: 650; text-transform: capitalize; }
 .home-schedule-day.is-today h3 time, .home-schedule-day.is-today time > span { color: var(--home-coral-ink); }
 .home-schedule-day.is-today h3 time { border-radius: 5px; background: var(--home-coral-soft); }
 .home-schedule-day ul { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
 .home-day-empty { padding-top: .4rem; font-size: .85rem; text-align: center; color: var(--muted); }
-.home-schedule-day a {
+.home-visit {
   --visit-fill: var(--home-soft-blue);
   --visit-mark: #748bb6;
   --visit-state: #4b6688;
@@ -157,7 +100,7 @@
   text-decoration: none;
   overflow-wrap: anywhere;
 }
-.home-schedule-day a:hover { box-shadow: inset 0 0 0 1px var(--visit-mark); }
+.home-visit:hover { box-shadow: inset 0 0 0 1px var(--visit-mark); }
 .home-visit-meta { color: var(--visit-state); font-size: .69rem; line-height: 1.25; }
 .home-schedule-day a strong { font-size: .84rem; line-height: 1.25; font-weight: 620; }
 .home-visit-work { font-size: .75rem; line-height: 1.32; color: var(--ink); }
@@ -168,18 +111,7 @@
 .home-schedule-day .visit-tone-completed, .home-schedule-day .visit-tone-closed { --visit-fill: #eaf2f0; --visit-mark: #85aba4; --visit-state: #456c64; }
 .home-schedule-day .visit-tone-cancelled { --visit-fill: #f2f2f4; --visit-mark: #aaaab0; --visit-state: #606268; }
 .home-schedule-empty { margin: 0; padding: 10px 20px 16px; color: var(--muted); font-size: .875rem; }
-@container dashboard-summary (max-width: 780px) {
-  .dash-home-overview .dash-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
-  .dash-home-overview .dash-metric-label svg { display: none; }
-  .home-completion { grid-column: 1/-1; grid-row: auto; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 10px 14px; }
-  .home-progress-ring { order: -1; width: 48px; }
-  .home-progress-ring::before { inset: 4px; }
-  .home-progress-ring strong { font-size: .87rem; }
-  .home-completion p { margin-left: auto; }
-}
 @container dashboard-summary (max-width: 520px) {
-  .dash-home-overview .dash-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .dash-home-overview .dash-activity { min-height: 190px; padding: 14px 13px; }
   .dash-home-overview .dash-period-heading { margin: 12px 0 9px; }
   .dash-home-overview .dash-weeks { padding: 4px; gap: 3px; }
   .dash-home-overview .dash-step { width: 22px; }

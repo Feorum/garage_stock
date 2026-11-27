@@ -1,7 +1,15 @@
-import { useState } from 'preact/hooks';
-import { matchesOrder, type DashboardOrder } from './dashboard-model';
+import type { ComponentChildren } from 'preact';
+import { useMemo, useState } from 'preact/hooks';
+import { dashboardCatalogueTotal, dashboardMetricOrders, dashboardWorkRows, lastDayOfWeek, matchesOrder, ordersInWeek, parseDashboardScope,
+  shiftDate, type DashboardMetric, type DashboardOrder, type DashboardScope } from './dashboard-model';
+import { nextTableSort, orderColumns, orderTableCsv, orderTableDefaults, orderViewHref, readOrderTableSettings,
+  sortTableRows, withOrderColumns, workColumnIds, workColumns, workTableCsv, type OrderColumn,
+  type OrderLayout, type OrderTableSettings, type OrderWorkRow, type TableSort, type WorkColumn } from './dashboard-order-table';
+import { OrderViewControls } from './dashboard-order-views';
 import { formatOrderDay, weekdayClass } from './order-calendar';
+import { useOwnerPreference } from './owner-preferences';
 import { money } from './pay-model';
+import { dayLabel } from './shift-model';
 import './dashboard-order-list.css';
 
 const icons = {
@@ -12,9 +20,6 @@ const icons = {
   open: 'm9 5 7 7-7 7',
   plus: 'M12 5v14 M5 12h14',
   calendar: 'M4 6h16v15H4z M4 11h16 M8 3v6 M16 3v6',
-  wrench: 'M14 5a5 5 0 0 0-6 6L3.5 16a2.4 2.4 0 0 0 3.4 3.4l5.1-5A5 5 0 0 0 19 8l-3.1 3-3-2.9 3.1-3.2Z',
-  review: 'M2.5 12s3.7-6 9.5-6 9.5 6 9.5 6-3.7 6-9.5 6-9.5-6-9.5-6Z M14.5 12a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Z',
-  done: 'M20 12a8 8 0 1 1-4-6.9 M8.3 10.9l3.2 3.2 9-9',
   list: 'M5 5h14v15H5z M9 9h6 M9 13h6 M9 17h4',
 };
 function ListIcon({ name }: { name: keyof typeof icons }) {
@@ -24,25 +29,22 @@ function ListIcon({ name }: { name: keyof typeof icons }) {
 
 const dayFormat = new Intl.DateTimeFormat('ru-RU', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const shortDay = (date: string) => dayFormat.format(new Date(date + 'T12:00:00Z'));
-const typeName = (order: DashboardOrder) => order.isCustom ? 'Кастомный' : 'Стандарт';
 const noDate = 'undated';
+const metricLabels: Record<DashboardMetric, string> = {
+  orders: 'Заказы', active: 'В работе', closed: 'Закрытые заказы', works: 'Работы',
+  completedWorks: 'Выполненные работы', amount: 'По прайсу',
+};
 
-function filteredCsv(orders: DashboardOrder[], period: string) {
+function downloadCsv(lines: string[][], period: string, name: string) {
   function quote(value: string) {
     const plainText = /^\s*[=+@-]|^[\t\r\n]/.test(value) ? "'" + value : value;
     return '"' + plainText.replaceAll('"', '""') + '"';
   }
-  const lines = [
-    ['Номер', 'Автомобиль', 'VIN', 'Тип', 'Дата', 'Состояние', 'Источник', 'Исполнители', 'Работы', 'По прайсу, BYN'],
-    ...orders.map(o => [o.number, o.vehicle, o.vin, typeName(o), o.date, o.phaseLabel, o.sourceLabel,
-      o.people.map(p => p.name).join(', '), o.works.map(w => w.name).join(', '),
-      o.catalogueKopeks === null ? '' : (o.catalogueKopeks / 100).toFixed(2).replace('.', ',')]),
-  ];
   const text = lines.map(row => row.map(quote).join(';')).join('\r\n');
   const url = URL.createObjectURL(new Blob(['\uFEFF', text], { type: 'text/csv;charset=utf-8' }));
   const link = document.createElement('a');
   link.href = url;
-  link.download = 'garage-orders' + (period ? '-' + period : '') + '.csv';
+  link.download = 'garage-' + name + (period ? '-' + period : '') + '.csv';
   document.body.append(link);
   try { link.click(); }
   finally { link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 60_000); }
@@ -66,104 +68,236 @@ function matchesStatus(order: DashboardOrder, status: StatusFilter) {
   }
 }
 
-function Summary({ orders }: { orders: DashboardOrder[] }) {
-  const metrics: { label: string; icon: keyof typeof icons; count: number }[] = [
-    { label: 'Всего заказов', icon: 'list', count: orders.length },
-    { label: 'Активные заказы', icon: 'wrench', count: orders.filter(o => matchesStatus(o, 'active')).length },
-    { label: 'На проверке', icon: 'review', count: orders.filter(o => matchesStatus(o, 'review')).length },
-    { label: 'Закрытые заказы', icon: 'done', count: orders.filter(o => matchesStatus(o, 'closed')).length },
-  ];
-  return <dl class="od-stats" aria-label="Сводка по всем заказам">{metrics.map(m =>
-    <div key={m.icon} class={'od-stat od-stat-' + m.icon}>
-      <dt>{m.label}<ListIcon name={m.icon} /></dt><dd>{m.count}</dd>
-    </div>)}</dl>;
+interface ColumnHeading { label: string; minWidth: number; weight: number }
+interface SortControls<Column extends string> {
+  keys: Column[];
+  columns: Record<Column, ColumnHeading>;
+  sort: TableSort<Column>;
+  onSort: (sort: TableSort<Column>) => void;
+  ready: boolean;
 }
 
-function OrderRow({ order }: { order: DashboardOrder }) {
-  const workers = order.people.map(p => p.name).join(', ');
-  const subtitle = [order.colour, order.sourceLabel].filter(Boolean).join(' · ');
-  const dateText = order.date ? shortDay(order.date) : 'Дата не назначена';
-  const reference = order.number || typeName(order);
-  return <article class={'owner-board-card od-order ' + weekdayClass(order.date)} data-order-id={order.id}>
-    <a href={order.href} class="owner-board-open od-grid od-row">
-      <span class="od-number" title={reference}>{reference}</span>
-      <div class="od-vehicle">
-        <h2 title={order.vehicle}>{order.vehicle}</h2>
-        <small class="od-order-meta">{subtitle}</small>
-        <small class="od-compact-meta">{reference} · {dateText}</small>
-      </div>
-      <span class="od-date" title={formatOrderDay(order.date) || undefined}>
-        {order.date ? <time dateTime={order.date}>{order.dateKind === 'due' ? 'Срок ' : ''}{dateText}</time> : dateText}
-      </span>
-      <span class="od-person" title={workers || undefined}>{workers || (order.isCustom ? 'В карточке' : 'Не назначены')}</span>
+function TableHeading<Column extends string>({ keys, columns, sort, onSort, ready }: SortControls<Column>) {
+  return <div class="od-grid od-columns" role="group" aria-label="Сортировка по столбцам">
+    {keys.map(column => {
+      const active = sort.column === column;
+      const next = nextTableSort(sort, column);
+      return <button key={column} type="button" aria-pressed={active} disabled={!ready}
+        aria-description={active ? sort.direction === 'asc' ? 'По возрастанию' : 'По убыванию' : undefined}
+        title={next.direction === 'asc' ? 'По возрастанию' : 'По убыванию'}
+        class={'od-sort' + (active ? ' od-sort-active' : '') + (active && sort.direction === 'desc' ? ' od-desc' : '')}
+        onClick={() => onSort(next)}>
+        {columns[column].label}<ListIcon name="sort" />
+      </button>;
+    })}
+    <span />
+  </div>;
+}
+
+function CompactSort<Column extends string>({ keys, columns, sort, onSort, ready }: SortControls<Column>) {
+  return <div class="od-compact-sort">
+    <span class="od-sort-label" aria-hidden="true">Сортировка</span>
+    <label class="od-select"><select value={sort.column} aria-label="Столбец сортировки" disabled={!ready}
+      onChange={event => onSort(nextTableSort(sort, event.currentTarget.value as Column))}>
+      {keys.map(column => <option key={column} value={column}>{columns[column].label}</option>)}
+    </select><ListIcon name="chevron" /></label>
+    <button type="button" class={'od-sort od-sort-active' + (sort.direction === 'desc' ? ' od-desc' : '')} disabled={!ready}
+      aria-label={sort.direction === 'asc' ? 'Сортировать по убыванию' : 'Сортировать по возрастанию'}
+      onClick={() => onSort(nextTableSort(sort, sort.column))}><ListIcon name="sort" /></button>
+  </div>;
+}
+
+function TableCell({ name, label, children }: { name: string; label: string; children: ComponentChildren }) {
+  return <div class={'od-cell od-cell-' + name}>
+    <small class="od-cell-label" aria-hidden="true">{label}</small>
+    <div class="od-cell-value">{children}</div>
+  </div>;
+}
+
+function OrderDate({ order }: { order: DashboardOrder }) {
+  if (!order.date) return 'Дата не назначена';
+  return <time dateTime={order.date} title={formatOrderDay(order.date)}>
+    {order.dateKind === 'due' ? 'Срок ' : ''}{shortDay(order.date)}
+  </time>;
+}
+
+function OrderValue({ order, column, showMissingRate }: { order: DashboardOrder; column: OrderColumn; showMissingRate: boolean }) {
+  switch (column) {
+    case 'vehicle': return <h2>{order.vehicle}</h2>;
+    case 'date': return <OrderDate order={order} />;
+    case 'plannedDate':
+    case 'dueDate':
+    case 'createdDate':
+    case 'closedDate': {
+      const date = orderColumns[column].value(order);
+      return date ? <time dateTime={date} title={formatOrderDay(date)}>{dayLabel(date)}</time> : '—';
+    }
+    case 'people': return orderColumns.people.value(order) || 'Не назначены';
+    case 'phase': return <div class="od-phases">
       <span class={'od-phase od-phase-' + (order.status === 'cancelled' ? 'cancelled' : order.tone)}>{order.phaseLabel}</span>
-      <span class={'od-price' + (order.catalogueKopeks === null ? ' od-price-empty' : '')}>
-        {order.catalogueKopeks === null
-          ? <span title={order.isCustom ? 'Кастомный заказ' : 'Сумма по прайсу недоступна'}>—</span>
-          : money(order.catalogueKopeks)}
-      </span>
+      {order.inReview && <span class="od-phase od-phase-review">На проверке</span>}
+    </div>;
+    case 'amount': return order.catalogueKopeks !== null ? money(order.catalogueKopeks)
+      : showMissingRate ? <span class="od-rate-missing">{order.catalogueRateMissing ? 'Ставка не указана' : 'Сумма недоступна'}</span>
+        : <span title="Сумма по прайсу недоступна">—</span>;
+    case 'vin': return orderColumns.vin.value(order) || <span title="VIN не указан">—</span>;
+    case 'instructions':
+    case 'managerComment': {
+      const message = orderColumns[column].value(order);
+      return message ? <span class="od-cell-note" title={message}>{message}</span> : '—';
+    }
+    default: return orderColumns[column].value(order) || '—';
+  }
+}
+
+function OrderRow({ order, columns, showMissingRate }: { order: DashboardOrder; columns: OrderColumn[]; showMissingRate: boolean }) {
+  return <article class={'owner-board-card od-order ' + weekdayClass(order.date)} data-order-id={order.id}>
+    <a href={order.href} class="owner-board-open od-grid od-row"
+      aria-label={columns.includes('vehicle') ? undefined : 'Открыть заказ · ' + order.vehicle}>
+      {columns.map(column => <TableCell key={column} name={column} label={orderColumns[column].label}>
+        <OrderValue order={order} column={column} showMissingRate={showMissingRate} />
+      </TableCell>)}
       <span class="od-open-icon" title="Открыть заказ"><ListIcon name="open" /></span>
     </a>
   </article>;
 }
 
-export function DashboardOrderList({ orders }: { orders: DashboardOrder[] }) {
+function WorkValue({ row, column }: { row: OrderWorkRow; column: WorkColumn }) {
+  const { order, work } = row;
+  const value = workColumns[column].value(row);
+  switch (column) {
+    case 'vehicle': return <strong>{value}</strong>;
+    case 'date': return <OrderDate order={order} />;
+    case 'status': return <span class={'od-phase' + (work.status === 'completed' ? ' od-phase-completed' : '')}>
+      {value || 'Состояние не указано'}
+    </span>;
+    case 'people': return value || 'Не назначены';
+    default: return value || '—';
+  }
+}
+
+function WorkRows({ rows, sorting }: { rows: OrderWorkRow[]; sorting: SortControls<WorkColumn> }) {
+  return <div class="od-records" style={gridStyle(sorting)}>
+    <div class="od-table">
+      <TableHeading {...sorting} />
+      <ul class="od-work-list">{rows.map(row => {
+        const { order, work } = row;
+        return <li key={order.key + '/' + work.id} data-order-id={order.id} data-work-id={work.id}>
+          <a class="od-grid od-row" href={order.href}>
+            {workColumnIds.map(column => <TableCell key={column} name={column} label={workColumns[column].label}>
+              <WorkValue row={row} column={column} />
+            </TableCell>)}
+            <span class="od-open-icon"><ListIcon name="open" /></span>
+          </a>
+        </li>;
+      })}</ul>
+    </div>
+  </div>;
+}
+
+function gridStyle<Column extends string>({ keys, columns }: SortControls<Column>) {
+  const tracks = keys.map(column => columns[column]);
+  return {
+    '--od-columns': tracks.map(column => `minmax(${column.minWidth}rem, ${column.weight}fr)`).join(' ') + ' 1rem',
+    '--od-tracks-width': (1 + tracks.reduce((width, column) => width + column.minWidth, 0)) + 'rem',
+    '--od-column-gaps': keys.length,
+  };
+}
+
+export function DashboardOrderList({ orders, query = '' }: { orders: DashboardOrder[]; query?: string }) {
+  const scope = parseDashboardScope(query);
+  const viewId = new URLSearchParams(query).get('view');
+  return <OrderJournal key={scope.week + '/' + scope.day + '/' + scope.metric} orders={orders} scope={scope} viewId={viewId} />;
+}
+
+function OrderJournal({ orders, scope, viewId }: { orders: DashboardOrder[]; scope: DashboardScope; viewId: string | null }) {
+  const [stored, saveSettings, ready] = useOwnerPreference<OrderTableSettings>('orderTable', orderTableDefaults);
+  const settings = useMemo(() => readOrderTableSettings(stored), [stored]);
   const [query, setQuery] = useState('');
-  const [day, setDay] = useState('');
+  const [day, setDay] = useState(scope.day);
   const [status, setStatus] = useState<StatusFilter>('all');
-  const [descending, setDescending] = useState(false);
-  const dates = [...new Set(orders.map(o => o.date).filter(Boolean))].sort();
-  const matches = orders.filter(o => (!day || day === (o.date || noDate)) && matchesStatus(o, status) && matchesOrder(o, query));
-  // The queue sorts undated orders last in both directions and keeps its original tie-breaks.
-  if (descending) matches.sort((a, b) => Number(!a.date) - Number(!b.date) || b.date.localeCompare(a.date));
+  const scoped = Boolean(scope.week || scope.day || scope.metric !== 'orders');
+  const showAmount = scope.metric === 'amount';
+  const view = settings.views.find(tab => tab.id === viewId);
+  const layout = view ?? settings.main;
+  function changeLayout(next: OrderLayout) {
+    saveSettings(view ? { ...settings, views: settings.views.map(tab => tab.id === view.id ? { ...tab, ...next } : tab) }
+      : { ...settings, main: next });
+  }
+  const orderSorting: SortControls<OrderColumn> = {
+    keys: layout.columns, columns: orderColumns, sort: layout.sort, ready, onSort: sort => changeLayout({ ...layout, sort }),
+  };
+  const workSorting: SortControls<WorkColumn> = {
+    keys: workColumnIds, columns: workColumns, sort: settings.workSort, ready,
+    onSort: workSort => saveSettings({ ...settings, workSort }),
+  };
+  const weekOrders = ordersInWeek(orders, scope.week);
+  const dates = scope.week ? Array.from({ length: 7 }, (_, index) => shiftDate(scope.week, index)).filter(Boolean)
+    : [...new Set([...orders.map(o => o.date), scope.day].filter(Boolean))].sort();
+  const candidates = dashboardMetricOrders(weekOrders, scope.metric)
+    .filter(o => (!day || day === (o.date || noDate)) && matchesStatus(o, status));
+  const matches = sortTableRows(candidates.filter(o => matchesOrder(o, query)), layout.sort, orderColumns);
+  const workRows = scope.metric === 'works' || scope.metric === 'completedWorks'
+    ? sortTableRows(dashboardWorkRows(candidates, scope.metric).filter(({ order, work }) =>
+      matchesOrder({ ...order, people: work.people, works: [work] }, query)), settings.workSort, workColumns)
+    : null;
+  const count = workRows?.length ?? matches.length;
+  const amounts = showAmount ? dashboardCatalogueTotal(matches) : null;
   const archived = matches.filter(o => !o.isCustom && o.archived);
   const current = matches.filter(o => o.isCustom || !o.archived);
-  const filtered = Boolean(query.trim() || day || status !== 'all');
-  const sortLabel = descending ? 'Сначала ближайшие заказы' : 'Сначала поздние заказы';
-  const sortButton = (compact: boolean) => <button type="button" title={sortLabel} aria-label={sortLabel}
-    onClick={() => setDescending(!descending)} class={'od-sort' + (compact ? ' od-sort-compact' : '') + (descending ? ' od-desc' : '')}>
-    {!compact && 'Дата'}<ListIcon name="sort" />
-  </button>;
+  const filtered = Boolean(scoped || query.trim() || day || status !== 'all');
   const reset = () => { setQuery(''); setDay(''); setStatus('all'); };
-  return <>
-    <Summary orders={orders} />
-    <section class="owner-board od-list" aria-label="Список заказов">
-      <header class="od-toolbar">
-        <h2>Список заказов</h2>
-        <label class="od-search"><ListIcon name="search" /><input type="search" aria-label="Поиск заказов"
-          placeholder="Найти заказ" value={query} onInput={e => setQuery(e.currentTarget.value)} /></label>
-        <label class="od-select"><select aria-label="Статус заказа" value={status}
-          onChange={e => setStatus(e.currentTarget.value as StatusFilter)}>
-          {Object.entries(filters).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select><ListIcon name="chevron" /></label>
-        <label class={'od-day' + (day ? ' od-day-active' : '')} title={day ? day === noDate ? 'Без даты' : formatOrderDay(day) : 'Фильтр по дате'}>
-          <ListIcon name="calendar" />
-          <select aria-label="День заказа" value={day} onChange={e => setDay(e.currentTarget.value)}>
-            <option value="">Все даты</option>
-            {dates.map(date => <option key={date} value={date}>{formatOrderDay(date)}</option>)}
-            {orders.some(o => !o.date) && <option value={noDate}>Без даты</option>}
-          </select>
-        </label>
-        {sortButton(true)}
-        <div class="od-toolbar-actions">
-          <button type="button" class="od-export" disabled={!matches.length} onClick={() => filteredCsv(matches, day)}
-            aria-label="Экспорт" title="Скачать выбранные заказы в CSV"><ListIcon name="download" /><span>Экспорт</span></button>
-          <a class="od-new-order" href="#orders/new"><ListIcon name="plus" />Новый заказ</a>
-        </div>
-      </header>
-      {filtered && <div class="od-applied"><span aria-live="polite">Найдено заказов · {matches.length}{day && ' · ' + (day === noDate ? 'Без даты' : formatOrderDay(day))}</span>
-        <button type="button" onClick={reset}>Сбросить фильтры</button></div>}
-      <div class="od-grid od-columns">
-        <span class="od-number">Заказ</span><span>Автомобиль</span>{sortButton(false)}<span class="od-person">Исполнители</span>
-        <span>Состояние</span><span class="od-price">По прайсу</span><span />
+  return <section class="owner-board od-list" aria-label={scoped ? metricLabels[scope.metric] : 'Список заказов'}>
+    {!scoped && <OrderViewControls key={view?.id || 'main'} settings={settings} view={view} layout={layout} ready={ready}
+      changeColumns={columns => changeLayout(withOrderColumns(layout, columns))} saveSettings={saveSettings} />}
+    <header class="od-toolbar">
+      <h2>{scoped ? metricLabels[scope.metric] : 'Список заказов'}</h2>
+      <label class="od-search"><ListIcon name="search" /><input type="search" aria-label="Поиск заказов"
+        placeholder="Найти заказ" value={query} onInput={e => setQuery(e.currentTarget.value)} /></label>
+      <label class="od-select"><select aria-label="Статус заказа" value={status}
+        onChange={e => setStatus(e.currentTarget.value as StatusFilter)}>
+        {Object.entries(filters).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select><ListIcon name="chevron" /></label>
+      <label class={'od-day' + (day ? ' od-day-active' : '')} title={day ? day === noDate ? 'Без даты' : formatOrderDay(day) : 'Фильтр по дате'}>
+        <ListIcon name="calendar" />
+        <select aria-label="День заказа" value={day} onChange={e => setDay(e.currentTarget.value)}>
+          <option value="">{scope.week ? 'Вся неделя' : 'Все даты'}</option>
+          {dates.map(date => <option key={date} value={date}>{formatOrderDay(date)}</option>)}
+          {!scope.week && orders.some(o => !o.date) && <option value={noDate}>Без даты</option>}
+        </select>
+      </label>
+      {workRows ? <CompactSort {...workSorting} /> : <CompactSort {...orderSorting} />}
+      <div class="od-toolbar-actions">
+        <button type="button" class="od-export" disabled={!count} onClick={() => downloadCsv(
+          workRows ? workTableCsv(workRows) : orderTableCsv([...current, ...archived], layout.columns),
+          day || scope.week, workRows ? 'works' : 'orders')}
+          aria-label="Экспорт" title="Скачать текущую выборку в CSV"><ListIcon name="download" /><span>Экспорт</span></button>
+        <a class="od-new-order" href="#orders/new"><ListIcon name="plus" />Новый заказ</a>
       </div>
-      <div class="owner-board-list od-body">{current.map(o => <OrderRow key={o.key} order={o} />)}</div>
-      {archived.length > 0 && <details class="owner-archive od-archive" open={filtered || undefined}>
-        <summary>Архив <span>{archived.length}</span></summary>
-        <div class="owner-board-list od-body">{archived.map(o => <OrderRow key={o.key} order={o} />)}</div>
-      </details>}
-      {!matches.length && <div class="od-empty" role="status"><ListIcon name={filtered ? 'search' : 'list'} />
-        <strong>{filtered ? 'Заказы не найдены' : 'Заказов пока нет'}</strong></div>}
-    </section>
-  </>;
+    </header>
+    {filtered && <div class="od-applied">
+      {scope.week && <span class="od-scope">Неделя {shortDay(scope.week)} – {shortDay(lastDayOfWeek(scope.week))}</span>}
+      {day && <span class="od-scope">{day === noDate ? 'Без даты' : formatOrderDay(day)}</span>}
+      <span aria-live="polite">{workRows ? 'Работ' : 'Найдено заказов'} · {count}</span>
+      {amounts && count > 0 && <span aria-live="polite">{amounts.missing ? 'Заказов без полной суммы · ' + amounts.missing
+        : amounts.total !== null ? 'Всего по прайсу · ' + money(amounts.total) : 'Общая сумма недоступна'}</span>}
+      {scoped ? <a href={orderViewHref(view?.id)}>Сбросить фильтры</a> : <button type="button" onClick={reset}>Сбросить фильтры</button>}
+    </div>}
+    {workRows ? <WorkRows rows={workRows} sorting={workSorting} /> : <div class="od-records" style={gridStyle(orderSorting)}>
+      <div class="owner-board od-table">
+        <TableHeading {...orderSorting} />
+        <div class="owner-board-list od-body">{current.map(o =>
+          <OrderRow key={o.key} order={o} columns={layout.columns} showMissingRate={showAmount} />)}
+        </div>
+        {archived.length > 0 && <details class="owner-archive od-archive" open={filtered || undefined}>
+          <summary>Архив <span>{archived.length}</span></summary>
+          <div class="owner-board-list od-body">{archived.map(o =>
+            <OrderRow key={o.key} order={o} columns={layout.columns} showMissingRate={showAmount} />)}
+          </div>
+        </details>}
+      </div>
+    </div>}
+    {!count && <div class="od-empty" role="status"><ListIcon name={filtered ? 'search' : 'list'} />
+      <strong>{workRows ? 'Работы не найдены' : filtered ? 'Заказы не найдены' : 'Заказов пока нет'}</strong></div>}
+  </section>;
 }

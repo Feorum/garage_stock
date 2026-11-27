@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { useOwnerData } from './owner-data';
 import { dayLabel, today, type GarageClient } from './shift-model';
 import { decimal, hundredths } from './pay-model';
 import { errorText, isConflict, read, type Staff } from './owner-model';
@@ -8,6 +9,7 @@ interface Props { client: GarageClient; onSaved?: () => void }
 
 interface SelectedRate { mechanicId: string; rates: Rate[]; refresh(): void }
 export function RateForm({ client, onSaved, selected }: Props & { selected?: SelectedRate }) {
+  const store = useOwnerData();
   const [directory, setDirectory] = useState<{ staff: Staff[]; rates: Rate[] } | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [reload, setReload] = useState(0);
@@ -29,7 +31,7 @@ export function RateForm({ client, onSaved, selected }: Props & { selected?: Sel
     let current = true;
     setLoadError(false);
     setDirectory(null);
-    Promise.all([read<Staff[]>(client, 'garage_staff'), read<Rate[]>(client, 'garage_mechanic_rates')])
+    Promise.all([store.staff.read(reload > 0), store.rates.read(reload > 0)])
       .then(([staff, rates]) => {
         if (!Array.isArray(staff) || !Array.isArray(rates)) throw new Error();
         if (current) {

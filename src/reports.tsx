@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'preact/hooks';
-import { workshopDay, type Client, type Navigate } from './workspace-types';
-import { readRpc } from './workspace-rpc';
+import { useState } from 'preact/hooks';
+import { workshopDay, type Navigate } from './workspace-types';
+import { useOwnerData, useResource } from './owner-data';
 
 interface Person {
   mechanic_id: string;
@@ -16,39 +16,19 @@ interface Task {
   working_name?: string;
   participants?: Person[];
 }
-interface Order {
-  id: string;
-  vehicle: string;
-  status: string;
-  tasks: Task[];
-}
 function contributors(task: Task): Person[] {
   if (task.participants?.length) return task.participants;
   return task.working_mechanic_id
     ? [{ mechanic_id: task.working_mechanic_id, name: task.working_name || 'Механик', status: 'confirmed' }]
     : [];
 }
-export function Reports({ client, navigate }: { client: Client; navigate: Navigate }) {
-  const [orders, setOrders] = useState<Order[] | null>(null);
+export function Reports({ navigate }: { navigate: Navigate }) {
+  const store = useOwnerData();
+  const { data: orders, failed } = useResource(store.orders);
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [worker, setWorker] = useState('');
-  const [refresh, setRefresh] = useState(0);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  useEffect(() => {
-    const scope = new AbortController();
-    setStatus('loading');
-    readRpc<Order[]>(client, 'garage_list_orders', {}, scope.signal)
-      .then((data) => {
-        if (scope.signal.aborted) return;
-        setOrders(data);
-        setStatus('ready');
-      })
-      .catch(() => {
-        if (!scope.signal.aborted) setStatus('error');
-      });
-    return () => scope.abort();
-  }, [client, refresh]);
+  const status = failed ? 'error' : orders ? 'ready' : 'loading';
   const all = (orders ?? []).flatMap((order) => order.tasks.map((task) => ({ order, task })));
   const staff = new Map(
     all.flatMap(({ task }) => contributors(task).map((p) => [p.mechanic_id, p.name] as const)),
@@ -73,7 +53,7 @@ export function Reports({ client, navigate }: { client: Client; navigate: Naviga
   return (
     <section class="reports-workspace">
       <div class="order-toolbar">
-        <button class="button" onClick={() => setRefresh((v) => v + 1)}>
+        <button class="button" onClick={() => void store.refreshBoard()}>
           Обновить отчёт
         </button>
       </div>

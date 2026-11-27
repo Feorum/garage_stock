@@ -27,8 +27,7 @@ def exercise_owner_order(db, directory, chromium, owner, first, second):
                 }, {'width': 390, 'height': 844})
                 page.expose_function('__garageRpcFixture', transport)
                 page.goto(base + '/index.html#orders')
-                page.get_by_role('link', name='Управление заказами', exact=True).click()
-                page.get_by_role('button', name='Новый заказ').click()
+                page.get_by_role('link', name='Новый заказ').click()
                 page.get_by_role('combobox', name='Модель автомобиля', exact=True).select_option('manual')
                 page.get_by_label('Автомобиль', exact=True).fill(vehicle)
                 page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
@@ -42,11 +41,10 @@ def exercise_owner_order(db, directory, chromium, owner, first, second):
                 rates = panel.get_by_role('region', name='Цены и выплаты', exact=True)
                 for name in ['Андрей', 'Миша']:
                     expect(rates.get_by_text(name + ' · Назначено', exact=True)).to_be_visible()
-                panel.get_by_text('Данные и состав работ', exact=True).click()
                 page.get_by_label('Цвет (необязательно)', exact=True).fill('Белый')
                 page.get_by_role('button', name='Сохранить изменения', exact=True).click()
-                panel.get_by_role('button', name='Цены', exact=True).click()
-                panel.get_by_role('button', name='Добавить пропущенную выполненную работу').click()
+                panel.get_by_role('region', name='Состав заказа', exact=True).get_by_role(
+                    'button', name='Добавить пропущенную выполненную работу').click()
                 page.get_by_role('combobox', name='Пропущенная работа из каталога', exact=True).select_option('W09')
                 page.get_by_role('combobox', name='Исполнитель', exact=True).select_option(first)
                 page.get_by_role('checkbox', name='Миша', exact=True).check()

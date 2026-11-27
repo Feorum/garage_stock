@@ -50,8 +50,8 @@ def calls(page, name):
     return page.evaluate('(name) => (__garageCalls || []).filter(c => c.name === name)', name)
 
 def expand(page, selector):
-    page.locator(selector).click()
-    panel = page.get_by_role('region', name='Подробности заказа', exact=True)
+    page.locator(selector).locator('a').click()
+    panel = page.get_by_role('dialog', name='Карточка заказа').get_by_role('region', name='Подробности заказа', exact=True)
     expect(panel).to_be_visible()
     return panel
 
@@ -104,46 +104,42 @@ def run(args):
                     before_server.shutdown(); before_server.server_close()
             for width in [390, 1440, 1728]:
                 context, page, errors, live = smoke.new_page(browser, fixture, {'width': width, 'height': 1000})
-                page.goto(base + '/index.html#orders/tools')
+                page.goto(base + '/index.html#orders')
                 smoke.ready(page, 'Test Owner')
-                expect(page.locator('.compact-order')).to_have_count(4)
-                sequence = page.locator('.compact-order').evaluate_all('(rows) => rows.map(row => row.dataset.intakeId || row.dataset.orderId)')
-                assert sequence == [early['id'], fixture['orders'][2]['id'], INTAKE, late['id']], sequence
-                first = page.locator('.compact-order').first
+                expect(page.locator('.od-order')).to_have_count(3)
+                sequence = page.locator('.od-order').evaluate_all('(rows) => rows.map(row => row.dataset.intakeId || row.dataset.orderId)')
+                assert sequence == [early['id'], fixture['orders'][2]['id'], late['id']], sequence
+                first = page.locator('.od-order').first
                 expect(first.locator('time')).to_have_attribute('datetime', '2026-11-14')
-                expect(first.locator('.task-status')).to_have_text('Запланирован')
+                expect(first.locator('.od-phase')).to_have_text('Запланирован')
                 expect(first).to_contain_text('Вы')
                 expect(page.locator('.owner-order-pane')).to_have_count(0)
                 expect(page.get_by_role('link', name='Утверждённые работы', exact=True)).to_have_count(0)
-                measurement = page.locator('.order-index-row').first.evaluate('(node) => ({height:node.getBoundingClientRect().height,width:node.getBoundingClientRect().width,overflow:document.documentElement.scrollWidth>innerWidth})')
-                assert measurement['height'] >= 44 and not measurement['overflow'], measurement
+                measurement = page.locator('.od-row').first.evaluate('(node) => ({height:node.getBoundingClientRect().height,width:node.getBoundingClientRect().width,overflow:document.documentElement.scrollWidth>innerWidth})')
+                assert measurement['height'] >= 32 and not measurement['overflow'], measurement
                 layouts.append({'viewport': width, **measurement})
                 page.screenshot(path=str(args.output / f'compact-orders-{width}.png'), full_page=True)
                 capture(page,width,'closed')
-                intake_row = page.locator(f'[data-intake-id="{INTAKE}"]')
+                intake_row = page.locator(f'[data-manager-intake-id="{INTAKE}"] a')
                 intake_row.focus()
                 page.keyboard.press('Enter')
-                expect(page).to_have_url(base + '/index.html#orders/' + INTAKE)
+                expect(page).to_have_url(base + '/index.html#orders/intake-' + INTAKE + '/review')
                 expect(page.locator('.owner-order-pane')).to_be_visible()
                 capture(page,width,'expanded')
-                page.locator('.owner-order-pane').get_by_role('button',name='Изменить заказ',exact=True).click()
                 page.evaluate('window.scrollTo(0,0)')
                 capture(page,width,'editor')
                 page.get_by_role('button',name='Закрыть форму',exact=True).click()
-                page.get_by_role('button',name='К списку заказов',exact=True).click()
-                page.get_by_role('link', name='Управление заказами', exact=True).click()
-                tools = page.locator('.owner-order-index')
-                tools.get_by_role('combobox', name='Статус заказа', exact=True).select_option('review')
-                expect(tools.locator('.compact-order')).to_have_count(1)
+                expect(page).to_have_url(base + '/index.html#orders')
+                expect(intake_row).to_be_focused()
+                expect(page.get_by_role('link', name='Управление заказами')).to_have_count(0)
                 finish(context, errors, live)
-            passed.append('drafts and published orders are chronological with source-row ties at 390,1440,1728')
+            passed.append('journal orders are chronological and pending intakes open the review form at 390,1440,1728')
 
             context, page, errors, live = smoke.new_page(browser, {'managerIntakes': [intake()]})
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
-            draft = expand(page, f'[data-intake-id="{INTAKE}"]')
-            draft.get_by_role('button', name='Изменить заказ', exact=True).click()
-            form = page.locator('.new-order-form')
+            draft = expand(page, f'[data-manager-intake-id="{INTAKE}"]')
+            form = draft.locator('.new-order-form')
             expect(page.get_by_label('Автомобиль', exact=True)).to_have_value('S50')
             expect(page.get_by_role('combobox', name='Группа автомобилей', exact=True)).to_have_value('VG02')
             expect(page.get_by_label('Указания (необязательно)', exact=True)).to_have_value('')
@@ -158,16 +154,19 @@ def run(args):
             expect(form.locator('.financial-summary dd')).to_have_count(1)
             page.get_by_label('Указания (необязательно)', exact=True).fill('Only approved operational instructions')
             page.get_by_role('button', name='Опубликовать заказ', exact=True).click()
-            expect(page.locator('[data-intake-id]')).to_have_count(0)
-            page.get_by_role('button', name='Цены', exact=True).click()
-            expect(page.get_by_role('region', name='Прайс').locator('[data-task-id]')).to_have_count(3)
-            expect(page.locator('.owner-order-index')).to_have_count(0)
+            expect(form).to_have_count(0)
+            draft.get_by_role('button', name='Цены', exact=True).click()
+            expect(draft.get_by_role('region', name='Прайс').locator('[data-task-id]')).to_have_count(3)
+            expect(page.get_by_role('dialog', name='Карточка заказа').locator('.owner-order-index')).to_have_count(0)
             sent = calls(page, 'garage_save_team_order')
             assert len(sent) == 1 and sent[0]['args']['p_expected_version'] == 1
             assert [item['work_code'] for item in sent[0]['args']['p_tasks']] == ['W01', 'W09', 'W19']
             assert sent[0]['args']['p_order']['instructions'] == 'Only approved operational instructions'
             assert 'BYN' not in json.dumps(sent[0]['args'])
             assert all(not item['assigned_to'] for item in sent[0]['args']['p_tasks'])
+            page.keyboard.press('Escape')
+            expect(page).to_have_url(base + '/index.html#orders')
+            expect(page.locator(f'[data-manager-intake-id="{INTAKE}"]')).to_have_count(0)
             passed.append('free-written Manager request is interpreted through the same multi-work form, with private server quote and explicit publication')
             finish(context, errors, live)
 
@@ -178,7 +177,7 @@ def run(args):
             linked.update({'order_id': existing['id'], 'status': 'owner_managed', 'owner_managed': True, 'source_changed': True})
             context, page, errors, live = smoke.new_page(browser, {'orders': [existing], 'managerIntakes': [linked],
                 'rpcDelays': {'garage_save_team_order': 150}})
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             card = expand(page, '[data-order-id]')
             expect(card.get_by_text('Текст таблицы изменился после проверки владельцем. Выбранные работы сохранены.', exact=True)).to_be_visible()
@@ -196,7 +195,7 @@ def run(args):
             detail.get_by_role('button', name='Оставить без изменений', exact=True).click()
             expect(cancel).to_be_focused()
             detail.get_by_role('button', name='Изменить заказ', exact=True).click()
-            page.get_by_text('Данные и состав работ', exact=True).click()
+            expect(page.locator('.new-order-form')).to_be_visible()
             expect(page.get_by_role('combobox', name='Группа автомобилей', exact=True)).to_be_disabled()
             expect(page.locator('#new-work-W19')).to_be_checked()
             expect(page.locator('#new-work-W19')).to_be_disabled()
@@ -219,11 +218,10 @@ def run(args):
             finish(context, errors, live)
 
             context, page, errors, live = smoke.new_page(browser, {'orders': [order(180)]})
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             card = expand(page, '[data-order-id]')
             card.get_by_role('button', name='Изменить заказ', exact=True).click()
-            page.get_by_text('Данные и состав работ', exact=True).click()
             page.get_by_label('Автомобиль', exact=True).fill('Keep my draft edits')
             page.evaluate('__garageOrderState.orders[0].version++; __garageOrderState.orders[0].colour = "External correction"')
             page.get_by_role('button', name='Сохранить изменения', exact=True).click()
@@ -238,9 +236,9 @@ def run(args):
             finish(context, errors, live)
 
             context, page, errors, live = smoke.new_page(browser, {'rpcDelays': {'garage_quote_order': 500}})
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
-            page.get_by_role('button', name='Новый заказ', exact=True).click()
+            page.get_by_role('link', name='Новый заказ', exact=True).click()
             page.get_by_role('combobox', name='Модель автомобиля', exact=True).select_option('manual')
             page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
             page.locator('#new-work-W01').check()
@@ -257,9 +255,9 @@ def run(args):
             finish(context, errors, live)
 
             context, page, errors, live = smoke.new_page(browser, {'rpcErrors': {'garage_quote_order': {'times':1,'message':'Temporary calculation failure'}}})
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
-            page.get_by_role('button', name='Новый заказ', exact=True).click()
+            page.get_by_role('link', name='Новый заказ', exact=True).click()
             page.get_by_role('combobox', name='Модель автомобиля', exact=True).select_option('manual')
             page.get_by_label('Автомобиль', exact=True).fill('Keep choices after quote failure')
             page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
@@ -279,9 +277,9 @@ def run(args):
             duplicated['observations'] = [{'row_number':169,'raw':{**duplicated['original'],'notes':'Latest first occurrence'}},
                                          {'row_number':170,'raw':{**duplicated['original'],'notes':'Latest second occurrence'}}]
             context, page, errors, live = smoke.new_page(browser, {'managerIntakes':[duplicated]})
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
-            card = expand(page, f'[data-intake-id="{INTAKE}"]')
+            card = expand(page, f'[data-manager-intake-id="{INTAKE}"]')
             card.get_by_text('Исходная заявка менеджера · только владельцу',exact=True).click()
             for text in ['Original first occurrence','Original second occurrence','Latest first occurrence','Latest second occurrence']:
                 expect(card.get_by_text(text,exact=True)).to_be_visible()
@@ -307,13 +305,14 @@ def run(args):
                 existing['status'] = 'closed'
                 original_tasks = json.loads(json.dumps(existing['tasks']))
                 context, page, errors, live = smoke.new_page(browser, {'orders': [existing], 'loseCompletionResponseOnce': lost_response})
-                page.goto(base + '/index.html#orders/tools')
+                page.goto(base + '/index.html#orders')
                 smoke.ready(page, 'Test Owner')
                 page.get_by_role('combobox', name='Статус заказа', exact=True).select_option('all')
                 page.locator('.owner-archive summary').click()
                 card = expand(page, f'[data-order-id="{existing["id"]}"]')
-                card.get_by_role('button', name='Цены', exact=True).click()
-                card.get_by_role('button', name='Добавить пропущенную выполненную работу', exact=True).click()
+                composition = card.get_by_role('region', name='Состав заказа', exact=True)
+                omission = composition.get_by_role('button', name='Добавить пропущенную выполненную работу', exact=True)
+                omission.click()
                 expect(page.locator('.completion-form')).to_be_visible()
                 expect(page.locator('#completion-work option[value="W01"]')).to_have_js_property('disabled', True)
                 expect(page.locator('#completion-work option[value="W19"]')).to_have_js_property('disabled', True)
@@ -356,7 +355,7 @@ def run(args):
                 current['manager_comment_updated_at'] = '2026-11-15T12:00:00Z'
                 context, page, errors, live = smoke.new_page(browser, {'orders': [current],
                     'profile': {'name': 'Test Owner' if role == 'admin' else 'Test Mechanic', 'role': role}}, {'width': 390, 'height': 844})
-                page.goto(base + ('/index.html#orders/tools' if role == 'admin' else '/index.html#manager-orders'))
+                page.goto(base + ('/index.html#orders' if role == 'admin' else '/index.html#manager-orders'))
                 smoke.ready(page, 'Test Owner' if role == 'admin' else 'Test Mechanic')
                 card = (expand(page, f'[data-order-id="{current["id"]}"]') if role == 'admin'
                         else open_visit(page, current['id']))

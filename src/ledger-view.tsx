@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { createLedgerCalculator } from './ledger-calculations.js';
 import {
   ledgerHeaders,
   ledgerFailure,
@@ -11,20 +10,15 @@ import {
 import type { Calc, LedgerData, LedgerRow, Save, Section, Workbook } from './ledger-types';
 import { LedgerForm, LedgerHistory } from './ledger-form';
 import { LedgerRecord, needsReview, Totals } from './ledger-record';
+import { newestSheet, useOwnerData } from './owner-data';
 import { readRpc } from './workspace-rpc';
 import type { Client } from './workspace-types';
 
-function newest(book: Workbook) {
-  const key = (s: Workbook['sheets'][number]) => {
-    const p = s.metadata?.source_period;
-    return p?.year && p?.month ? p.year * 12 + p.month : 0;
-  };
-  return [...book.sheets].sort((a, b) => key(b) - key(a))[0]?.id;
-}
 function sectionsFor(data: LedgerData): Section[] {
   return data.sheet.metadata?.sections || [...new Set(data.rows.map((r) => r.section))].map((id) => ({ id }));
 }
 export function LedgerView({ client }: { client: Client }) {
+  const store = useOwnerData();
   const [books, setBooks] = useState<Workbook[]>([]);
   const [data, setData] = useState<LedgerData | null>(null);
   const [calc, setCalc] = useState<Calc>(null);
@@ -44,54 +38,35 @@ export function LedgerView({ client }: { client: Client }) {
     locked = useRef(false);
   const receipts = useRef(new Map<string, string>());
   const panel = useRef<HTMLDivElement>(null);
-  const cache = useRef<{ id: string; revision: number; calculator: NonNullable<Calc> } | null>(null);
   const rpc = <T,>(name: string, args: Record<string, unknown> = {}) =>
     readRpc<T>(client, name, args, scope.current.signal);
   function notify(title: string, text = '') {
     setFeedback({ title, text });
   }
-  async function load(sheetId: string, clear = true) {
+  async function load(sheetId: string, clear = true, force = false) {
     const token = ++seq.current;
     const current = () => !scope.current.signal.aborted && token === seq.current;
     setLoading(true);
     try {
-      for (let tries = 0; tries < 3; tries++) {
-        const next = await rpc<LedgerData>('garage_ledger_sheet', { p_sheet_id: sheetId });
-        if (!current()) return null;
-        if (!next.sheet || !next.import || !Array.isArray(next.rows)) throw new Error();
-        let calculation = cache.current;
-        if (calculation?.id !== next.import.id || calculation.revision !== next.import.revision) {
-          const context = await rpc<{ revision: number }>('garage_ledger_context', {
-            p_import_id: next.import.id,
-          });
-          if (!current()) return null;
-          if (context?.revision !== next.import.revision) continue;
-          calculation = {
-            id: next.import.id,
-            revision: context.revision,
-            calculator: createLedgerCalculator(context),
-          };
-        }
-        cache.current = calculation;
-        setCalc(calculation.calculator);
-        setData(next);
-        setStale(false);
-        const sections = sectionsFor(next);
-        const fallback =
-          sections.find((s) => ['ledger', 'entries'].includes(s.id) || s.kind === 'entries')?.id ||
-          sections[0]?.id ||
-          '';
-        setSection((s) =>
-          data?.sheet.id === next.sheet.id && sections.some((v) => v.id === s) ? s : fallback,
-        );
-        if (data?.sheet.id !== next.sheet.id) {
-          setIssuesOnly(false);
-          setPage(0);
-        }
-        if (clear) notify('');
-        return next;
+      const { data: next, calculation } = await store.sheet(sheetId).read(force);
+      if (!current()) return null;
+      setCalc(calculation.calculator);
+      setData(next);
+      setStale(false);
+      const sections = sectionsFor(next);
+      const fallback =
+        sections.find((s) => ['ledger', 'entries'].includes(s.id) || s.kind === 'entries')?.id ||
+        sections[0]?.id ||
+        '';
+      setSection((s) =>
+        data?.sheet.id === next.sheet.id && sections.some((v) => v.id === s) ? s : fallback,
+      );
+      if (data?.sheet.id !== next.sheet.id) {
+        setIssuesOnly(false);
+        setPage(0);
       }
-      throw { code: '40001' };
+      if (clear) notify('');
+      return next;
     } catch (e) {
       if (current()) notify('Журнал недоступен', ledgerFailure(e));
       return null;
@@ -99,14 +74,14 @@ export function LedgerView({ client }: { client: Client }) {
       if (current()) setLoading(false);
     }
   }
-  async function initialize() {
+  async function initialize(force = false) {
     setLoading(true);
     try {
-      const imports = await rpc<Workbook[]>('garage_ledger_imports');
+      const imports = await store.books.read(force);
       if (scope.current.signal.aborted) return;
       setBooks(imports);
-      const id = imports[0] && newest(imports[0]);
-      if (id) await load(id);
+      const id = imports[0] && newestSheet(imports[0]);
+      if (id) await load(id, true, force);
       else {
         notify('Книга ещё не импортирована');
         setLoading(false);
@@ -122,10 +97,9 @@ export function LedgerView({ client }: { client: Client }) {
     void initialize();
     return () => {
       scope.current.abort();
-      cache.current = null;
       receipts.current.clear();
     };
-  }, [client]);
+  }, [client, store]);
   function close() {
     setEditor(null);
     setConflict(undefined);
@@ -148,12 +122,13 @@ export function LedgerView({ client }: { client: Client }) {
     const signature = JSON.stringify([name, payload]);
     const id = receipts.current.get(signature) || crypto.randomUUID();
     receipts.current.set(signature, id);
+    store.invalidateLedgerBook(data.import.id, data.sheet.id);
     try {
       const result = await rpc<{ row: LedgerRow; revision: number }>(name, { ...payload, p_request_id: id });
       if (scope.current.signal.aborted) return false;
       if (!result.row || !Number.isInteger(result.revision)) throw new Error();
       receipts.current.delete(signature);
-      cache.current = null;
+      store.invalidateLedgerBook(data.import.id, data.sheet.id);
       setCalc(null);
       setStale(true);
       setData({
@@ -163,7 +138,7 @@ export function LedgerView({ client }: { client: Client }) {
           ? data.rows.map((r) => (r.id === result.row.id ? result.row : r))
           : [...data.rows, result.row],
       });
-      const refreshed = await load(data.sheet.id, false);
+      const refreshed = await load(data.sheet.id, false, true);
       if (!scope.current.signal.aborted)
         notify(
           'Сохранено',
@@ -174,10 +149,10 @@ export function LedgerView({ client }: { client: Client }) {
       return true;
     } catch (e) {
       if (scope.current.signal.aborted) return false;
-      cache.current = null;
+      store.invalidateLedgerBook(data.import.id, data.sheet.id);
       setCalc(null);
       setStale(true);
-      const current = await load(data.sheet.id, false);
+      const current = await load(data.sheet.id, false, true);
       if (!scope.current.signal.aborted) {
         if ((e as { code?: string })?.code === '40001')
           setConflict(current?.rows.find((r) => r.id === args.p_row_id));
@@ -235,7 +210,7 @@ export function LedgerView({ client }: { client: Client }) {
             onChange={(e) => {
               const b = books.find((item) => item.id === e.currentTarget.value);
               if (b) {
-                const id = newest(b);
+                const id = newestSheet(b);
                 if (id) void load(id);
               }
             }}
@@ -283,7 +258,7 @@ export function LedgerView({ client }: { client: Client }) {
             ))}
           </select>
         </label>
-        <button class="button" disabled={busy} onClick={() => (data ? load(data.sheet.id) : initialize())}>
+        <button class="button" disabled={busy} onClick={() => (data ? load(data.sheet.id, true, true) : initialize(true))}>
           Обновить журнал
         </button>
         <button

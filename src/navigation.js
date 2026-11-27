@@ -20,12 +20,17 @@ export function getSections(role) {
   if (role === 'mechanic') return MECHANIC;
   return [];
 }
-// A saved order opens over the current list. Creation and management are full pages.
+// A saved order opens over the current list. Creation opens a full page.
 export function isOwnerOrderDetail(section, record) {
-  return section === 'orders' && Boolean(record) && !['new', 'custom-new', 'tools'].includes(record);
+  return section === 'orders' && Boolean(record) && !['new', 'custom-new'].includes(record);
 }
 export function resolveRoute(role, hash = '') {
-  const [id, rawRecord] = hash.replace(/^#/, '').split('/');
+  const [path, query = ''] = hash.replace(/^#/, '').split('?', 2);
+  let [id, rawRecord, view] = path.split('/');
+  if (role === 'admin') {
+    if (id === 'shift' && rawRecord) id = 'orders';
+    if (id === 'orders' && ['tools', 'attention'].includes(rawRecord)) rawRecord = undefined;
+  }
   const sections = getSections(role);
   const tool = role === 'admin' && Object.hasOwn(OWNER_TOOLS, id) ? OWNER_TOOLS[id] : undefined;
   const legacy = role === 'mechanic' && ['assigned', 'my-work'].includes(id);
@@ -33,6 +38,6 @@ export function resolveRoute(role, hash = '') {
   const section = match || sections[0];
   const record = !['home', 'mechanics'].includes(match?.id) && (match || legacy) && /^[A-Za-z0-9_-]{1,100}$/.test(rawRecord || '') ? rawRecord : undefined;
   const routeId = (tool || legacy) ? id : section?.id;
-  return { section, id: routeId, record, label: tool?.label || section?.label };
+  return { section, id: routeId, record, view, query, label: tool?.label || section?.label };
 }
 export function resolveSection(role, hash = '') { return resolveRoute(role, hash).section; }

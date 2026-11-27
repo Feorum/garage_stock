@@ -1,6 +1,6 @@
 import './owner-detail.css';
 import { qualifies, type GiftOffer } from './owner-gift';
-import { useLayoutEffect, useState, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useState, useRef } from 'preact/hooks';
 import { dayLabel, taskName } from './shift-model';
 import type { Client } from './workspace-types';
 import { TaskPricing } from './owner-pricing';
@@ -16,6 +16,7 @@ import { OwnerHandoff } from './owner-handoff';
 import { OwnerAct } from './owner-act';
 import { OrderSectionBar, PhotoShortcut, type OrderSection } from './order-section-bar';
 import { OwnerOrderNote } from './owner-order-note';
+import { confirmOrderDeletion, deleteOrder } from './order-delete';
 
 interface DetailProps {
   order: OwnerOrder;
@@ -74,11 +75,17 @@ export function OwnerDetail({
   const [cancelVersion, setCancel] = useState<number | null>(null),
     [reason, setReason] = useState('');
   const sending = useRef(false);
+  const mounted = useRef(true);
+  const deleteRequest = useRef<{ version: number; id: string } | null>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
   const reasonField = useRef<HTMLTextAreaElement>(null);
   const published = order.status === 'published';
   const cancelling = published && cancelVersion !== null;
   const reload = () => refreshOrder().catch(() => {});
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   useLayoutEffect(() => {
     if (cancelling) reasonField.current?.focus();
   }, [cancelling]);
@@ -106,19 +113,25 @@ export function OwnerDetail({
     }
   }
   async function remove() {
-    if (sending.current || !window.confirm('Удалить заказ «' + order.vehicle + '»? Записи о выполненных работах и выплатах сохранятся.')) return;
+    if (sending.current || !confirmOrderDeletion(order.vehicle)) return;
     sending.current = true;
     setBusy(true);
     setError('');
     try {
-      await mutate('garage_delete_order', { p_order_id: order.id, p_custom: false, p_expected_version: order.version });
-      deleted();
+      if (deleteRequest.current?.version !== order.version) {
+        deleteRequest.current = { version: order.version, id: crypto.randomUUID() };
+      }
+      await deleteOrder(client, order.id, false, order.version, deleteRequest.current.id);
+      window.dispatchEvent(new Event('garage-orders-changed'));
+      if (mounted.current) deleted();
     } catch (failure) {
-      setError(errorText(failure));
-      await reload();
+      if (mounted.current) {
+        setError(errorText(failure));
+        await reload();
+      }
     } finally {
       sending.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   }
   const canClose =
@@ -138,6 +151,8 @@ export function OwnerDetail({
   const [visited, setVisited] = useState<Set<OrderSection>>(() => new Set([payrollLink ? 'payroll' : 'overview']));
   const [closeNote, setCloseNote] = useState('');
   const panel = useRef<HTMLDivElement>(null);
+  const sheet = useRef<HTMLElement>(null);
+  const documents = useRef<HTMLDivElement>(null);
   const sections: OrderSection[] = ['overview', 'prices', 'payroll'];
   if (canEdit) sections.push('edit');
   sections.push('photos');
@@ -152,12 +167,25 @@ export function OwnerDetail({
     choose('photos');
     requestAnimationFrame(() => panel.current?.focus());
   }
+  function closeAct(message?: string) {
+    const wasVisible = documents.current?.hidden === false;
+    setVisited(previous => {
+      const next = new Set(previous);
+      next.delete('documents');
+      return next;
+    });
+    setSection(current => current === 'documents' ? 'overview' : current);
+    if (message) notify(message);
+    if (wasVisible) requestAnimationFrame(() => {
+      sheet.current?.querySelector<HTMLButtonElement>('.order-section-bar button[aria-pressed="true"]')?.focus();
+    });
+  }
   const sourceChanged = order.source_changed || intake?.source_changed;
   return <>
     <button class="order-back" type="button" aria-label="К списку заказов" onClick={back}>
       <span aria-hidden="true">‹ </span>К списку
     </button>
-    <article class="owner-order-detail order-sheet" aria-label={'Заказ ' + order.vehicle}>
+    <article class="owner-order-detail order-sheet" aria-label={'Заказ ' + order.vehicle} ref={sheet}>
       <div class="order-sheet-title"><span>Заказ {order.order_number}</span></div>
       <OrderSectionBar sections={sections} selected={section} change={choose} />
       <header class="order-detail-head">
@@ -191,6 +219,9 @@ export function OwnerDetail({
           {order.tasks.length ? <ul>{order.tasks.map(task => <li key={task.id}>
             <span>{taskName(task)}</span><small>{statusText[task.status] || task.status}</small>
           </li>)}</ul> : <p class="muted">Работы пока не добавлены.</p>}
+          {order.status !== 'cancelled' && <button type="button" class="button button-small" onClick={omit}>
+            Добавить пропущенную выполненную работу
+          </button>}
         </section>
         <footer class="order-sheet-footer">
           {workflow && ((workflow.can_return || workflow.can_close) ? handoff :
@@ -238,9 +269,8 @@ export function OwnerDetail({
           {priceError ? <p role="alert">Не удалось загрузить стоимость работ.{' '}
             <button type="button" class="button" onClick={() => void financials().catch(() => {})}>Повторить расчёт</button>
           </p> : !price && <p role="status">Загружаем стоимость работ…</p>}
-          {order.status !== 'cancelled' && <div class="button-row owner-price-actions">
-            <button type="button" class="button" onClick={omit}>Добавить пропущенную выполненную работу</button>
-            {canOfferGift && <button type="button" class="button" onClick={() => edit(true)}>Выбрать подарок для клиента</button>}
+          {canOfferGift && <div class="button-row owner-price-actions">
+            <button type="button" class="button" onClick={() => edit(true)}>Выбрать подарок для клиента</button>
           </div>}
         </section>
         <OrderFilm key={'film-' + order.id} client={client} orderId={order.id} orderVersion={order.version} mutate={mutate} notify={notify} />
@@ -251,8 +281,8 @@ export function OwnerDetail({
       {visited.has('photos') && <div hidden={section !== 'photos'} class="order-section-body" ref={panel} tabIndex={-1}>
         <OrderPhotos key={order.id} client={client} orderId={order.id} upload={published} initialLoad />
       </div>}
-      {order.status === 'closed' && visited.has('documents') && <div hidden={section !== 'documents'} class="order-section-body">
-        <OwnerAct order={order} client={client} price={price} refreshOrder={refreshOrder} refreshPrice={financials}/>
+      {order.status === 'closed' && visited.has('documents') && <div hidden={section !== 'documents'} class="order-section-body" ref={documents}>
+        <OwnerAct order={order} client={client} price={price} refreshOrder={refreshOrder} refreshPrice={financials} close={closeAct} />
       </div>}
     </article>
   </>;

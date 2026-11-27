@@ -67,7 +67,7 @@ def finish_context(context, errors, live):
 
 
 def fill_order(page, vehicle='Synthetic new vehicle', source='owner'):
-    page.get_by_role('button', name='Новый заказ', exact=True).click()
+    page.get_by_role('link', name='Новый заказ', exact=True).click()
     page.get_by_role('combobox', name='Модель автомобиля', exact=True).select_option('manual')
     page.get_by_label('Автомобиль', exact=True).fill(vehicle)
     page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG02')
@@ -79,6 +79,80 @@ def fill_order(page, vehicle='Synthetic new vehicle', source='owner'):
     page.get_by_role('checkbox', name='капот полностью', exact=True).check()
 
 
+def check_preloaded_workspace(browser, base):
+    visit = order(81)
+    context, page, errors, live = smoke.new_page(browser, {'orders': [visit]})
+    page.goto(base + '/index.html#shift/attention')
+    expect(page).to_have_url(base + '/index.html#orders')
+    row = page.locator(f'.od-order a[href="#orders/{visit["id"]}"]')
+    expect(row).to_be_visible()
+    sources = ['garage_list_orders', 'garage_manager_intakes', 'garage_custom_orders', 'garage_owner_review_prices',
+               'garage_mechanic_rates', 'garage_pay_worklist', 'garage_sheet_pull_sources', 'garage_ledger_imports',
+               'garage_staff', 'garage_owner_gift_offer', 'garage_owner_preferences']
+    page.wait_for_function('names => names.every(n => __garageCalls.some(c => c.name === n))', arg=sources)
+    counts = {name: len(rpc_calls(page, name)) for name in sources}
+    nav = page.get_by_role('navigation', name='Кабинет владельца')
+    for name in ['Главная', 'На проверке', 'Механики', 'Отчёты и история', 'Все заказы']:
+        nav.get_by_role('link', name=name, exact=True).click()
+        expect(page.get_by_role('heading', name=name, exact=True, level=1)).to_be_visible()
+    assert {name: len(rpc_calls(page, name)) for name in sources} == counts
+    expect(page.get_by_role('link', name='Смена и заявки')).to_have_count(0)
+    row.click()
+    delete = page.get_by_role('dialog').get_by_role('button', name='Удалить заказ', exact=True)
+    page.once('dialog', lambda confirm: confirm.dismiss())
+    delete.click()
+    assert not rpc_calls(page, 'garage_permanently_delete_order')
+    assert not rpc_calls(page, 'garage_delete_order')
+    page.once('dialog', lambda confirm: confirm.accept())
+    delete.click()
+    expect(page).to_have_url(base + '/index.html#orders')
+    expect(row).to_have_count(0)
+    assert len(rpc_calls(page, 'garage_permanently_delete_order')) == 1
+    assert not rpc_calls(page, 'garage_delete_order')
+    page.evaluate("location.hash = '#orders/tools'")
+    expect(page).to_have_url(base + '/index.html#orders')
+    expect(page.get_by_role('heading', name='Все заказы', level=1)).to_be_visible()
+    finish_context(context, errors, live)
+
+
+def check_drawer_return(browser, base):
+    completed = task(86, status='completed', worker=ME)
+    completed['completed_at'] = '2026-11-18T09:00:00Z'
+    visit = order(86, tasks=[completed])
+    context, page, errors, live = smoke.new_page(browser, {'orders': [visit]})
+    report_url = base + '/index.html#reports/activity'
+    page.goto(report_url)
+    since = page.get_by_label('С даты', exact=True)
+    since.fill('2026-11-18')
+    row = page.get_by_role('button', name='Открыть заказ · ' + visit['vehicle'])
+    row.click()
+    dialog = page.get_by_role('dialog', name='Карточка заказа')
+    expect(dialog.get_by_role('heading', name=visit['vehicle'], exact=True)).to_be_visible()
+
+    # Back and Forward travel actual entries. Closing a nested editor returns in one step.
+    page.go_back()
+    expect(page).to_have_url(report_url)
+    expect(since).to_have_value('2026-11-18')
+    expect(row).to_be_focused()
+    page.go_forward()
+    dialog.get_by_role('button', name='Изменить заказ', exact=True).click()
+    expect(dialog.get_by_role('heading', name='Изменить заказ')).to_be_visible()
+    dialog.get_by_role('button', name='Закрыть карточку заказа').click()
+    expect(page).to_have_url(report_url)
+    expect(since).to_have_value('2026-11-18')
+    expect(row).to_be_focused()
+
+    # Reloading the detail starts a new workspace and has no mounted opener.
+    row.click()
+    expect(dialog).to_be_visible()
+    page.reload()
+    expect(dialog.get_by_role('heading', name=visit['vehicle'], exact=True)).to_be_visible()
+    page.keyboard.press('Escape')
+    expect(page).to_have_url(base + '/index.html#orders')
+    expect(page.get_by_role('heading', name='Все заказы', exact=True)).to_be_visible()
+    finish_context(context, errors, live)
+
+
 def run(args):
     args.output.mkdir(parents=True, exist_ok=True)
     server, base = smoke.serve(args.directory.resolve())
@@ -86,10 +160,14 @@ def run(args):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=args.chromium, headless=True, args=['--no-sandbox'])
         try:
+            check_preloaded_workspace(browser, base)
+            passed.append('Owner navigation reuses preloaded data and archived URLs lead to the journal with permanent deletion')
+            check_drawer_return(browser, base)
+            passed.append('Closing an order restores the filtered report and opener, with a journal fallback after reload')
             context, page, errors, live = smoke.new_page(browser, {})
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
-            page.get_by_role('button', name='Новый заказ', exact=True).click()
+            page.get_by_role('link', name='Новый заказ', exact=True).click()
             model = page.get_by_role('combobox', name='Модель автомобиля', exact=True)
             model.select_option('BELGEE X50+')
             model.select_option('GEELY MONJARO (матовый)')
@@ -105,9 +183,9 @@ def run(args):
 
             # The form offers the approved matrix and requires assignment for direct orders.
             context, page, errors, live = smoke.new_page(browser, {})
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
-            page.get_by_role('button', name='Новый заказ', exact=True).click()
+            page.get_by_role('link', name='Новый заказ', exact=True).click()
             page.get_by_role('combobox', name='Модель автомобиля', exact=True).select_option('manual')
             page.get_by_label('Автомобиль', exact=True).fill('Synthetic assigned vehicle')
             page.get_by_role('combobox', name='Группа автомобилей', exact=True).select_option('VG01')
@@ -137,7 +215,7 @@ def run(args):
             finish_context(context, errors, live)
 
             context, page, errors, live = smoke.new_page(browser, {'rpcDelays': {'garage_save_team_order': 400}})
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             fill_order(page, 'Synthetic tinted vehicle')
             page.get_by_role('checkbox', name='тонировка задней полусферы (5%,15%)', exact=True).check()
@@ -160,7 +238,7 @@ def run(args):
 
             # An acknowledgement lost after commit must not create a second vehicle order.
             context, page, errors, live = smoke.new_page(browser, {'loseCreateResponseOnce': True})
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             fill_order(page, 'Synthetic retry vehicle')
             page.get_by_role('button', name='Отправить заказ', exact=True).click()
@@ -176,7 +254,7 @@ def run(args):
 
             # Manager-origin work is shared, with no forced assignee.
             context, page, errors, live = smoke.new_page(browser, {})
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             fill_order(page, 'Synthetic manager vehicle', 'manager')
             page.get_by_role('button', name='Отправить заказ', exact=True).click()
@@ -193,7 +271,7 @@ def run(args):
             owner_order = order(10, tasks=[completed, pending])
             owner_order['vehicle_workflow'] = {'state': 'active', 'holder_id': ME}
             context, page, errors, live = smoke.new_page(browser, {'orders': [owner_order]})
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             page.locator(f'[data-order-id="{owner_order["id"]}"]').click()
             page.get_by_role('button', name='Изменить заказ', exact=True).click()
@@ -221,7 +299,6 @@ def run(args):
             page.wait_for_function("__garageOrderState.orders[0].status === 'closed'")
             page.get_by_role('button', name='К списку заказов', exact=True).click()
             expect(page.get_by_role('region', name='Подробности заказа')).to_have_count(0)
-            page.get_by_role('link', name='Управление заказами', exact=True).click()
             page.get_by_role('combobox', name='Статус заказа', exact=True).select_option('closed')
             closed_row = page.locator(f'[data-order-id="{owner_order["id"]}"]')
             expect(closed_row.get_by_text('Закрыт', exact=True)).to_be_visible()
@@ -267,7 +344,7 @@ def run(args):
             context, page, errors, live = smoke.new_page(browser, {
                 'orders': [order(9)], 'rpcDelays': {'garage_list_orders': 600},
             })
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
             page.wait_for_function("(__garageCalls || []).some(call => call.name === 'garage_list_orders')")
             page.get_by_role('link', name='Отчёты и история', exact=True).click()
@@ -320,19 +397,16 @@ def run(args):
             context, page, errors, live = smoke.new_page(browser, {
                 'rpcErrors': {'garage_staff': 'Temporary staff lookup failure'},
             })
-            page.goto(base + '/index.html#orders/tools')
+            page.goto(base + '/index.html#orders')
             smoke.ready(page, 'Test Owner')
-            staff_error = page.get_by_text('Не удалось загрузить механиков. Обновите список перед созданием заказа.', exact=True)
+            page.get_by_role('link', name='Новый заказ', exact=True).click()
+            staff_error = page.get_by_role('status').filter(has_text='Не удалось загрузить механиков.')
             expect(staff_error).to_be_visible()
-            new_order = page.get_by_role('button', name='Новый заказ', exact=True)
-            expect(new_order).to_be_disabled()
             # Mount and Realtime subscription can each refresh the roster.
             failed_reads = len(rpc_calls(page, 'garage_staff'))
             page.evaluate('delete __garageTest.rpcErrors.garage_staff')
-            page.get_by_role('button', name='Обновить', exact=True).click()
+            staff_error.get_by_role('button', name='Повторить загрузку механиков').click()
             expect(staff_error).to_have_count(0)
-            expect(new_order).to_be_enabled()
-            new_order.click()
             expect(page.get_by_role('combobox', name='Назначить механика', exact=True)).to_be_visible()
             assert len(rpc_calls(page, 'garage_staff')) > failed_reads
             passed.append('transient staff lookup failure can recover without a page reload')

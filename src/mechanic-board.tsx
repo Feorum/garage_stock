@@ -246,6 +246,10 @@ export function MechanicBoard({ client, profile, section, recordId, navigate }: 
                 {expanded && (
                   <div class="mb-panel">
                     {feedback(true)}
+                    {flow?.return_note && <section class="mb-return-note" aria-labelledby={'mb-return-' + order.id}>
+                      <h3 id={'mb-return-' + order.id}>Комментарий владельца</h3>
+                      <p>{flow.return_note}</p>
+                    </section>}
                     {!draft && (
                       <>
                         <ul class="mb-work-list">

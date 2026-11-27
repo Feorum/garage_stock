@@ -3,10 +3,10 @@ import { decimal, hundredths, money } from './pay-model';
 import { errorText, isConflict, read } from './owner-model';
 import { workshopDay, type Client, type Navigate } from './workspace-types';
 import { formatOrderDay } from './order-calendar';
-import { readRpc } from './workspace-rpc';
 import { OrderSectionBar, PhotoShortcut, type OrderSection } from './order-section-bar';
 import { OwnerOrderNote } from './owner-order-note';
 import { OrderPhotos } from './order-photos';
+import { confirmOrderDeletion, deleteOrder } from './order-delete';
 import './owner-detail.css';
 import type { CustomOrderSummary as Summary } from './dashboard-model';
 
@@ -28,45 +28,9 @@ export function OrderType({ custom, change }: { custom: boolean; change: (custom
   </label>;
 }
 
-export function useCustomOrders(client: Client, refreshWith: object | null) {
-  const [orders, setOrders] = useState<Summary[] | null>(null);
-  const [error, setError] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    const scope = new AbortController();
-    readRpc<Summary[]>(client, 'garage_custom_orders', {}, scope.signal).then(rows => {
-      if (!Array.isArray(rows)) throw new Error('Invalid custom order list');
-      if (!scope.signal.aborted) { setOrders(rows); setError(false); }
-    }).catch(() => {
-      if (!scope.signal.aborted) { setOrders(null); setError(true); }
-    });
-    return () => scope.abort();
-  }, [client, attempt, refreshWith]);
-  return { orders, error, retry: () => setAttempt(n => n + 1) };
-}
-
 export function CustomOrderError({ retry }: { retry: () => void }) {
   return <p role="alert" class="notice">Не удалось загрузить кастомные заказы.{' '}
     <button type="button" class="button" onClick={retry}>Повторить</button></p>;
-}
-
-export function CustomOrderList({ client, refreshWith, search = '', filter = 'all' }: {
-  client: Client; refreshWith: object | null; search?: string; filter?: string;
-}) {
-  const { orders, error, retry } = useCustomOrders(client, refreshWith);
-  if (error) return <CustomOrderError retry={retry} />;
-  if (!orders) return null;
-  const matches = orders.filter(o => (filter === 'all' || filter === o.status)
-    && o.vehicle.toLocaleLowerCase('ru').includes(search.trim().toLocaleLowerCase('ru')));
-  if (!matches.length) return null;
-  return <section aria-label="Кастомные заказы">
-    <h2 class="owner-history-title">Кастомные заказы</h2>
-    <div class="owner-board-list">{matches.map(o => <article class="owner-board-card" key={o.id}>
-      <a class="owner-board-open" href={'#orders/custom-' + o.id}>
-        <h3>{o.vehicle}</h3><span class="owner-board-meta">{formatOrderDay(o.visit_date)} · {o.status === 'open' ? 'Открыт' : 'Закрыт'}</span>
-      </a>
-    </article>)}</div>
-  </section>;
 }
 
 function lines(items: Item[]): Line[] {
@@ -98,8 +62,16 @@ function AmountLines({ title, nameLabel, rows, change, addLabel }: {
   </fieldset>;
 }
 
-export function CustomOrderPage({ client, record, navigate, close = () => navigate('orders') }: {
-  client: Client; record: string; navigate: Navigate; close?: () => void;
+function BackToList({ href, close }: { href: string; close(): void }) {
+  return <a class="order-back" href={href} onClick={event => {
+    if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    close();
+  }}>К списку заказов</a>;
+}
+
+export function CustomOrderPage({ client, record, navigate, close = () => navigate('orders'), returnHash = '#orders' }: {
+  client: Client; record: string; navigate: Navigate; close?: () => void; returnHash?: string;
 }) {
   const creating = record === 'new';
   const [loaded, setLoaded] = useState<CustomOrder | null>(null);
@@ -113,14 +85,14 @@ export function CustomOrderPage({ client, record, navigate, close = () => naviga
       .catch(e => { if (live) setError(errorText(e)); });
     return () => { live = false; };
   }, [client, record, creating, attempt]);
-  if (!creating && !loaded) return <div><a href="#orders">К списку заказов</a>
+  if (!creating && !loaded) return <div><BackToList href={returnHash} close={close} />
     {error ? <p role="alert">{error} <button type="button" class="button" onClick={() => setAttempt(n => n + 1)}>Повторить</button></p>
       : <p role="status">Загрузка заказа…</p>}</div>;
-  return <CustomOrderEditor client={client} seed={loaded} navigate={navigate} close={close} />;
+  return <CustomOrderEditor client={client} seed={loaded} navigate={navigate} close={close} returnHash={returnHash} />;
 }
 
-function CustomOrderEditor({ client, seed, navigate, close }: {
-  client: Client; seed: CustomOrder | null; navigate: Navigate; close: () => void;
+function CustomOrderEditor({ client, seed, navigate, close, returnHash }: {
+  client: Client; seed: CustomOrder | null; navigate: Navigate; close: () => void; returnHash: string;
 }) {
   const [vehicle, setVehicle] = useState(seed?.vehicle ?? '');
   const [visitDate, setDate] = useState(seed?.visit_date ?? workshopDay());
@@ -145,6 +117,7 @@ function CustomOrderEditor({ client, seed, navigate, close }: {
   const [failed, setFailed] = useState(false);
   const live = useRef(true), lock = useRef(false);
   const request = useRef<{ payload: string; id: string } | null>(null);
+  const deleteRequest = useRef<{ version: number; id: string } | null>(null);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const price = customer.trim() ? hundredths(customer) : null;
   const pay = items(payments), expenses = items(allocations);
@@ -178,6 +151,7 @@ function CustomOrderEditor({ client, seed, navigate, close }: {
     if (request.current?.payload !== payload) request.current = { payload, id: crypto.randomUUID() };
     try {
       const result = await read<CustomOrder>(client, 'garage_save_custom_order', { ...args, p_request_id: request.current.id });
+      window.dispatchEvent(new Event('garage-orders-changed'));
       if (!live.current) return;
       request.current = null;
       setFailed(false); setMessage(nextStatus === status ? 'Кастомный заказ сохранён.' : 'Заказ принят и закрыт.');
@@ -191,15 +165,13 @@ function CustomOrderEditor({ client, seed, navigate, close }: {
     }
   }
   async function remove() {
-    if (!savedOrder || lock.current || conflict ||
-      !window.confirm('Удалить заказ «' + savedOrder.vehicle + '»? Записи о выплатах сохранятся.')) return;
+    if (!savedOrder || lock.current || conflict || !confirmOrderDeletion(savedOrder.vehicle)) return;
     lock.current = true;
     setSaving(true); setFailed(true); setMessage('');
-    const args = { p_order_id: savedOrder.id, p_custom: true, p_expected_version: version };
-    const payload = JSON.stringify(args);
-    if (request.current?.payload !== payload) request.current = { payload, id: crypto.randomUUID() };
+    if (deleteRequest.current?.version !== version) deleteRequest.current = { version, id: crypto.randomUUID() };
     try {
-      await read(client, 'garage_delete_order', { ...args, p_request_id: request.current.id });
+      await deleteOrder(client, savedOrder.id, true, version, deleteRequest.current.id);
+      window.dispatchEvent(new Event('garage-orders-changed'));
       if (live.current) close();
     } catch (failure) {
       if (live.current) { setConflict(isConflict(failure)); setMessage(errorText(failure)); }
@@ -209,7 +181,7 @@ function CustomOrderEditor({ client, seed, navigate, close }: {
     }
   }
   return <article class="owner-order-detail order-sheet custom-order-form">
-    <a class="order-back" href="#orders">К списку заказов</a>
+    <BackToList href={returnHash} close={close} />
     {seed ? <div class="order-sheet-title"><span>Кастомный заказ</span></div> :
       <OrderType custom change={() => navigate('orders', 'new')} />}
     <OrderSectionBar selected={section} change={choose}

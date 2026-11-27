@@ -29,9 +29,11 @@
 .mb-feedback,.mb-blocked { color: var(--danger); }
 .mb-notice { color: var(--green); font-size: .875rem; margin-bottom: var(--gap-control); }
 .mb-instructions summary { min-height: 44px; align-content: center; cursor: pointer; font-size: .875rem; color: var(--muted); }
-.mb-instructions h4 { font-size: .875rem; }
-.mb-instructions p,.mb-history-note,.mb-blocked { white-space: pre-wrap; overflow-wrap: anywhere; }
+.mb-instructions h4,.mb-return-note h3 { font-size: .875rem; }
+.mb-instructions p,.mb-return-note p,.mb-history-note,.mb-blocked { white-space: pre-wrap; overflow-wrap: anywhere; }
 .mb-instructions > div { padding-bottom: var(--gap-row); }
+.mb-return-note { margin-bottom: var(--gap-control); padding: var(--gap-control) var(--gap-card); border-radius: .4rem; background: var(--warning-soft); }
+.mb-return-note p { margin-top: var(--gap-tight); font-size: .875rem; }
 .mb-order:focus-visible,.mb-check:focus-visible { outline-offset: -3px; }
 
 .mb-order-list {

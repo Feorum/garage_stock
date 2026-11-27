@@ -76,6 +76,8 @@ def check_no_private_data(page, *, owner_home=False):
     rpc_names = {entry['name'] for entry in calls if entry['method'] == 'rpc'}
     allowed = {'garage_list_orders'} if role == 'mechanic' else {
         'garage_list_orders', 'garage_staff', 'garage_manager_intakes', 'garage_owner_review_prices', 'garage_custom_orders',
+        'garage_owner_preferences', 'garage_owner_gift_offer', 'garage_mechanic_rates', 'garage_pay_worklist',
+        'garage_sheet_pull_sources', 'garage_ledger_imports',
     }
     assert rpc_names <= allowed, rpc_names
     body = page.locator('body').inner_text()

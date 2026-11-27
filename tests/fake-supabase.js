@@ -213,6 +213,32 @@ export function createClient() {
     if (!session && !(fixture.allowLateRpcResponse && authenticatedAtRequest)) return errorResult('Sign in to continue.', '42501');
     if (globalThis.__garageRpcFixture) return globalThis.__garageRpcFixture(name, args);
     const owner = currentRole() === 'admin';
+    if (name === 'garage_owner_preferences' || name === 'garage_save_owner_preference') {
+      if (!owner) return errorResult('Owner access required.', '42501');
+      const key = 'fixture-preferences-' + user.id;
+      const values = JSON.parse(localStorage.getItem(key) || '{}');
+      if (name === 'garage_owner_preferences') return { data: values, error: null };
+      if (args.p_owner_id !== user.id) return errorResult('Owner access required.', '42501');
+      values[args.p_key] = args.p_value;
+      localStorage.setItem(key, JSON.stringify(values));
+      return { data: null, error: null };
+    }
+    if (name === 'garage_permanently_delete_order') {
+      if (!owner) return errorResult('Owner access required.', '42501');
+      if (receipts.has(args.p_request_id)) return receipts.get(args.p_request_id).result;
+      const list = args.p_custom ? fixture.customOrders || [] : orders;
+      const index = list.findIndex(row => row.id === args.p_order_id);
+      if (index < 0) return errorResult('Order unavailable.', '42501');
+      if ((list[index].version ?? 1) !== args.p_expected_version) return errorResult('Order changed.', '40001');
+      list.splice(index, 1);
+      for (let i = managerIntakes.length - 1; i >= 0; i--) {
+        if (managerIntakes[i].order_id === args.p_order_id) managerIntakes.splice(i, 1);
+      }
+      const result = { data: { order_id: args.p_order_id }, error: null };
+      receipts.set(args.p_request_id, { result });
+      return result;
+    }
+    if (name === 'garage_ledger_imports' && !ledgerRpc) return { data: [], error: null };
     if (name.startsWith('garage_pay_') && !owner) return errorResult('Owner access required.', '42501');
     if (name === 'garage_pay_worklist') return { data: (fixture.payWorklist || []).map(row =>
       clone({...row, ...payouts.get(row.task_id)})), error: null };
@@ -302,6 +328,10 @@ export function createClient() {
       return { data: null, error: null };
     }
     if (name === 'garage_staff') return owner ? { data: clone(staff), error: null } : errorResult('Owner access required.', '42501');
+    const settlementOrder = fixture.settlementOrders?.[args.p_order_id];
+    if (settlementOrder && Object.hasOwn(settlementOrder, name)) {
+      return owner ? { data: clone(settlementOrder[name]), error: null } : errorResult('Owner access required.', '42501');
+    }
     if (name === 'garage_order_financials') {
       if (!owner) return errorResult('Owner access required.', '42501');
       const order = orders.find(item => item.id === args.p_order_id);

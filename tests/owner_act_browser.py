@@ -30,6 +30,8 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
         order_id = args.get('p_order_id')
         if name == 'garage_list_orders':
             value = [order, second, opened]
+        elif name == 'garage_owner_preferences':
+            value = {}
         elif name == 'garage_order_financials':
             value = {'status': 'priced', 'tasks': [
                 {'task_id': t['id'], 'effective_kopeks': p, 'private_version': 0}
@@ -98,14 +100,15 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
     ctx, page, errors, requests = smoke.new_page(browser, {}, {'width': 320, 'height': 900})
     try:
         page.expose_function('__garageRpcFixture', rpc)
-        button = page.get_by_role('button', name='Скачать акт (.docx)', exact=True)
+        documents = page.get_by_role('button', name='Документы', exact=True)
+        form = page.get_by_role('form', name='Акт выполненных работ', exact=True)
         submit = page.get_by_role('button', name='Скачать Word', exact=True)
         number = page.get_by_label('Номер акта', exact=True)
         act_date = page.get_by_label('Дата акта', exact=True)
         def open_panel(row):
             page.goto(f'{base}/index.html#orders/{row["id"]}')
-            page.get_by_role('button', name='Документы', exact=True).click()
-            button.click()
+            documents.click()
+            expect(form).to_be_visible()
         def exported_text():
             with page.expect_download() as info:
                 submit.click()
@@ -115,8 +118,15 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
 
         page.goto(f'{base}/index.html#orders/{opened["id"]}')
         expect(page.get_by_role('heading', name=opened['vehicle'])).to_be_visible()
-        expect(button).to_have_count(0)
+        expect(documents).to_have_count(0)
         open_panel(order)
+        expect(number).to_have_value('')
+        number.fill('46')
+        form.get_by_role('button', name='Закрыть', exact=True).click()
+        expect(form).to_have_count(0)
+        expect(page.get_by_role('button', name='Обзор', exact=True)).to_be_focused()
+        assert not writes
+        documents.click()
         expect(number).to_have_value('')
         number.fill('47')
         page.get_by_label('VIN для акта').fill('SYNTH000000000001')
@@ -139,7 +149,8 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
         assert '47/11' in first and '12 (двенадцать)' in first and 'BYN' not in first
         assert first.index('1. ' + tasks[1]['work_name']) < first.index('2. ' + tasks[0]['work_name'])
         assert '15%' in first and tasks[2]['work_name'] not in first
-        button.click()
+        expect(form).to_have_count(0)
+        documents.click()
         expect(number).to_have_value('47/11')
         expect(number).to_have_attribute('readonly', '')
         expect(page.get_by_label('VIN для акта')).to_have_value('SYNTH000000000001')
@@ -160,8 +171,7 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
         assert '49/12' in exported_text()
         prices[1] = None
         page.reload()
-        page.get_by_role('button', name='Документы', exact=True).click()
-        button.click()
+        documents.click()
         expect(page.get_by_role('alert')).to_contain_text(tasks[1]['work_name'])
         expect(submit).to_be_disabled()
         assert [w['p_number'] for w in writes] == ['47/11', '47/11', '47/11', '47/11', '48/12', '49/12']
@@ -177,13 +187,12 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
         page.get_by_label('От какой суммы считать 80%').select_option('agreed')
         page.get_by_role('button', name='Сохранить условия').click()
         expect(page.get_by_role('button', name='Изменить договорную сумму заказа')).to_contain_text('750,00')
-        page.get_by_role('button', name='Документы', exact=True).click()
-        button.click()
+        documents.click()
         expect(page.get_by_role('list', name='Работы в акте')).not_to_contain_text('BYN')
         text = exported_text()
         assert all(task['work_name'] in text for task in tasks[:2]) and '750 (семьсот пятьдесят)' in text
         assert not any(item in text for item in ('BYN', 'Скидка', '450,00', '300,00'))
-        button.click()
+        documents.click()
         assert exported_text() == text
         assert not errors and not requests, (errors, requests)
     finally:
@@ -192,7 +201,8 @@ def exercise_owner_act(browser, base, smoke, make_order, make_task):
     try:
         page.goto(f'{base}/index.html#orders/{order["id"]}')
         expect(page.get_by_role('navigation', name='Кабинет механика')).to_be_visible()
-        expect(page.get_by_role('button', name='Скачать акт (.docx)')).to_have_count(0)
+        expect(page.get_by_role('button', name='Документы', exact=True)).to_have_count(0)
+        expect(page.get_by_role('button', name='Скачать Word', exact=True)).to_have_count(0)
         assert not page.evaluate("(__garageCalls || []).some(c => c.name?.startsWith('garage_act_'))")
         assert not errors and not requests, (errors, requests)
     finally:

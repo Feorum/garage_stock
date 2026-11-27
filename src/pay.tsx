@@ -4,6 +4,7 @@ import { date, money, payRead, title, type PayItem, type Revision } from './pay-
 import { PayoutSummary, TaskPricing } from './owner-pricing';
 import { MechanicRates } from './mechanic-rates';
 import './order-payroll.css';
+import { useOwnerData, useResource } from './owner-data';
 import { PayEditor } from './pay-editor';
 import './pay.css';
 
@@ -33,28 +34,30 @@ export function PayHistory({ taskId, version, client }: { taskId: string; versio
 }
 
 function Worklist({ client, recordId }: { client: GarageClient; recordId?: string }) {
-  const [items, setItems] = useState<PayItem[]>([]);
+  const store = useOwnerData();
+  const worklist = useResource(store.pay);
+  const items = worklist.data ?? [];
   const [filter, setFilter] = useState<Filter>('pending');
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<string | null>(recordId || null);
   const [history, setHistory] = useState<string | null>(null);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const status = worklist.failed ? 'failed' : worklist.loaded ? 'ready' : 'loading';
   const [notice, setNotice] = useState('');
   const lastEditedItem = useRef<PayItem | null>(null);
   const active = useRef(false);
-  const generation = useRef(0);
   const filterField = useRef<HTMLSelectElement>(null);
   const actionRefs = useRef(new Map<string, HTMLButtonElement>());
 
-  async function refresh() {
-    const loading = ++generation.current;
-    setStatus('loading');
-    try {
-      const next = await payRead<PayItem[]>(client, 'garage_pay_worklist');
-      if (active.current && loading === generation.current) { setItems(next); setStatus('ready'); }
-    } catch { if (active.current && loading === generation.current) setStatus('failed'); }
-  }
-  useEffect(() => { active.current = true; void refresh(); return () => { active.current = false; ++generation.current; }; }, [client]);
+  async function refresh() { await store.pay.read(true).catch(() => {}); }
+  useEffect(() => {
+    active.current = true;
+    const returned = () => { void refresh(); };
+    window.addEventListener('garage-order-drawer-closed', returned);
+    return () => {
+      active.current = false;
+      window.removeEventListener('garage-order-drawer-closed', returned);
+    };
+  }, [client]);
   const currentEdit = items.find(item => item.task_id === editing);
   useEffect(() => {
     if (currentEdit) lastEditedItem.current = currentEdit;
@@ -102,9 +105,8 @@ function Worklist({ client, recordId }: { client: GarageClient; recordId?: strin
         <span>{money(share.kopeks)}</span>
       </li>)}</ul>}
       {item.order_payroll ? <a class="button" href={'#orders/' + encodeURIComponent(item.order_id!) + '/payroll'}>Открыть выплаты по заказу</a> : editing === item.task_id ? <PayEditor item={item} client={client} unavailable={item.task_id === removed?.task_id} reloadItem={async () => {
-        const next = await payRead<PayItem[]>(client, 'garage_pay_worklist');
+        const next = await store.pay.read(true);
         const current = next.find(row => row.task_id === item.task_id);
-        if (active.current) setItems(next);
         return current ?? null;
       }} close={() => {
         setEditing(null);

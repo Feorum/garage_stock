@@ -165,6 +165,7 @@ def check_history_order(browser, base):
 def check_handoff(browser, base, output=None):
     data = fixture()
     data['loseInlineResponseOnce'] = ['garage_check_work', 'garage_uncheck_work', 'garage_submit_work']
+    data['orders'][2]['instructions'] = 'Сохранить общие указания к заказу.'
     context, page, errors, live = smoke.new_page(browser, data, {'width':390,'height':844})
     try:
         page.goto(base + '/index.html#shift')
@@ -266,6 +267,24 @@ def check_handoff(browser, base, output=None):
         history = open_visit(page, '013')
         expect(history.get_by_text('Перепроверить кромку на дверях', exact=True)).to_be_visible()
         expect(history.get_by_role('checkbox')).to_have_count(0)
+        page.evaluate("""() => {
+            const order = __garageOrderState.orders.find(item => item.id === '013');
+            Object.assign(order.vehicle_workflow, {
+                state: 'available', holder_id: null, return_note: 'Закончить работу на дверях.'
+            });
+            order.version++;
+            document.dispatchEvent(new Event('visibilitychange'));
+        }""")
+        page.get_by_role('link', name='Заказы менеджеров', exact=True).click()
+        returned = open_visit(page, '013')
+        owner_note = returned.get_by_role('region', name='Комментарий владельца', exact=True)
+        expect(owner_note.get_by_text('Закончить работу на дверях.', exact=True)).to_be_visible()
+        instructions = returned.get_by_text('Сохранить общие указания к заказу.', exact=True)
+        expect(instructions).to_be_hidden()
+        returned.get_by_text('Указания и заметки', exact=True).click()
+        expect(instructions).to_be_visible()
+        expect(returned.get_by_text('Закончить работу на дверях.', exact=True)).to_have_count(1)
+        expect(returned.get_by_role('checkbox', name='Двери', exact=True)).to_be_enabled()
         for width in (320,390,768,1440):
             page.set_viewport_size({'width':width,'height':844})
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), width

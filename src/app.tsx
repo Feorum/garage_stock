@@ -5,7 +5,11 @@ import { getSections, isOwnerOrderDetail, resolveRoute } from './navigation.js';
 import { installRussianValidation } from './locale.js';
 import type { Section as ShiftSection } from './shift-model';
 import { MechanicBoard } from './mechanic-board';
-import { OwnerWorkspace } from './owner-workspace';
+import { OwnerOrderDialog, OwnerWorkspace, TabWidgets } from './owner-workspace';
+import { orderTableDefaults, orderViewHref, readOrderTableSettings } from './dashboard-order-table';
+import { OwnerPreferences, OwnerPreferenceStatus, useOwnerPreference } from './owner-preferences';
+import { OwnerData } from './owner-data';
+import { useWorkspaceRoute } from './workspace-route';
 import { ExecutorMarker } from './executor-marker';
 import { MechanicSettings } from './mechanic-settings';
 import { accountRequest } from './mechanic-accounts';
@@ -118,61 +122,61 @@ function TabIcon({ icon }: { icon: string }) {
 }
 
 function Workspace({ auth, client, profile }: { auth: Auth; client: Client; profile: Profile }) {
-  const [hash, setHash] = useState(location.hash);
+  const { hash, origin, positions, dismiss } = useWorkspaceRoute(profile.role);
   const [online, setOnline] = useState(navigator.onLine);
-  const positions = useRef(new Map<string, number>());
+  const behind = useRef<HTMLDivElement>(null);
   const main = useRef<HTMLElement>(null);
   const previous = useRef(hash);
-  const drawerOrigin = useRef('orders');
   const route = resolveRoute(profile.role, hash);
   const drawer = profile.role === 'admin' && isOwnerOrderDetail(route.id, route.record);
-  const visibleRoute = drawer ? resolveRoute(profile.role, '#' + drawerOrigin.current) : route;
+  const visibleRoute = drawer ? resolveRoute(profile.role, origin) : route;
+  const [savedTables] = useOwnerPreference('orderTable', orderTableDefaults);
+  const views = readOrderTableSettings(savedTables).views;
+  const view = visibleRoute.id === 'orders' && !visibleRoute.record
+    ? views.find(v => v.id === new URLSearchParams(visibleRoute.query).get('view')) : undefined;
+  const pageLabel = view?.name || visibleRoute.label;
   const navigate: Navigate = (section, recordId) => {
     location.hash = recordId ? section + '/' + encodeURIComponent(recordId) : section;
   };
   useEffect(() => {
-    const readHash = () => {
-      positions.current.set(previous.current, window.scrollY);
-      setHash(location.hash);
-    };
     const net = () => setOnline(navigator.onLine);
     const restored = (event: PageTransitionEvent) => { if (event.persisted) void auth.refresh(true); };
     window.addEventListener('pageshow', restored);
-    window.addEventListener('hashchange', readHash);
     window.addEventListener('offline', net);
     window.addEventListener('online', net);
     return () => {
       window.removeEventListener('pageshow', restored);
-      window.removeEventListener('hashchange', readHash);
       window.removeEventListener('offline', net);
       window.removeEventListener('online', net);
     };
   }, []);
   useLayoutEffect(() => {
-    document.title = (drawer ? 'Карточка заказа' : route.label) + ' · Garage';
-    const origin = drawerOrigin.current;
-    if (profile.role === 'admin') {
-      if (!route.record && route.id === route.section.id && route.id !== 'mechanics') drawerOrigin.current = route.id;
-      else if (!drawer) drawerOrigin.current = 'orders';
-    }
+    document.title = (drawer ? 'Карточка заказа' : pageLabel) + ' · Garage';
     if (previous.current === hash) return;
     const prior = resolveRoute(profile.role, previous.current);
     previous.current = hash;
     // Inline rows retain their focus and scroll position when opened or folded.
     if (profile.role === 'mechanic' && prior.id === route.id) return;
+    // Moving the selected week updates the same calendar in place.
+    if (profile.role === 'admin' && prior.id === 'home' && route.id === 'home') return;
     // The order dialog owns focus and restores it to the originating row on close.
     if (profile.role === 'admin') {
       const wasDrawer = isOwnerOrderDetail(prior.id, prior.record);
-      if (drawer || (wasDrawer && !route.record && route.id === origin)) return;
+      if (drawer) return;
+      if (wasDrawer && hash === origin) {
+        window.scrollTo(0, positions.get(hash) ?? 0);
+        window.dispatchEvent(new Event('garage-order-drawer-closed'));
+        return;
+      }
     }
     const target = main.current?.querySelector<HTMLElement>('[data-route-heading]') || main.current;
     target?.focus({ preventScroll: true });
-    window.scrollTo(0, positions.current.get(hash) ?? 0);
-  }, [hash, profile.role]);
+    window.scrollTo(0, positions.get(hash) ?? 0);
+  }, [hash, profile.role, origin, pageLabel]);
   let screen;
-  const props = { client, profile, navigate, section: route.id, recordId: route.record };
+  const props = { client, profile, navigate, section: visibleRoute.id, recordId: visibleRoute.record };
   if (profile.role === 'admin') {
-    switch (route.id) {
+    switch (visibleRoute.id) {
       case 'mechanics':
         screen = <MechanicSettings client={client} />;
         break;
@@ -183,10 +187,10 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
         screen = <SheetsView client={client} navigate={navigate} />;
         break;
       case 'pay':
-        screen = <PayView client={client} profile={profile} recordId={route.record} />;
+        screen = <PayView client={client} profile={profile} recordId={visibleRoute.record} />;
         break;
       default:
-        screen = <OwnerWorkspace {...props} backgroundSection={drawer ? drawerOrigin.current : undefined} />;
+        screen = <OwnerWorkspace {...props} title={view?.name} viewId={view?.id} query={visibleRoute.query} />;
     }
   } else screen = <MechanicBoard {...props} section={route.id as ShiftSection} />;
   const roleName = profile.role === 'admin' ? 'Владелец' : 'Механик';
@@ -204,10 +208,14 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
           <nav class="workspace-nav" aria-label={cabinet} data-workspace-role={profile.role}>
             {getSections(profile.role).map(item => (
               <a key={item.id} class="nav-link" href={'#' + item.id} aria-label={item.label} title={item.label}
-                aria-current={visibleRoute.section.id === item.id ? 'page' : undefined}>
+                aria-current={visibleRoute.section.id === item.id && !view ? 'page' : undefined}>
                 <TabIcon icon={item.icon} /><span class="nav-label">{item.label}</span>
               </a>
             ))}
+            {views.map(tab => <a key={tab.id} class="nav-link nav-order-view" href={orderViewHref(tab.id)}
+              title={tab.name} aria-current={view?.id === tab.id ? 'page' : undefined}>
+              <TabIcon icon="orders" /><span class="nav-label">{tab.name}</span>
+            </a>)}
           </nav>
         </div>
         <div class="account-identity">
@@ -234,7 +242,7 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
               stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
               <path d="M3 20V7l9-4 9 4v13h-3V10H6v10z M6 14h12 M6 17h12" />
             </svg>
-            Мастерская <span class="path-divider" aria-hidden="true">/</span> <b>{visibleRoute.label}</b>
+            Мастерская <span class="path-divider" aria-hidden="true">/</span> <b>{pageLabel}</b>
           </span>
           <div class="workspace-status">
             <span class="workshop-date">{today}</span>
@@ -244,10 +252,17 @@ function Workspace({ auth, client, profile }: { auth: Auth; client: Client; prof
           </div>
         </div>
         <main ref={main} tabIndex={-1} id="main-content" class="workspace-main">
-          {profile.role === 'admin' && ['pay', 'ledger', 'sheets'].includes(route.id) && (
-            <div class="page-heading"><h1>{route.label}</h1></div>
-          )}
-          {screen}
+          <div ref={behind}>
+            <OwnerPreferenceStatus />
+            {profile.role === 'admin' && ['pay', 'ledger', 'sheets'].includes(visibleRoute.id) && (
+              <div class="page-heading"><h1>{visibleRoute.label}</h1></div>
+            )}
+            {profile.role === 'admin' && (['mechanics', 'pay', 'sheets', 'ledger'].includes(visibleRoute.id)
+              || visibleRoute.id === 'reports' && visibleRoute.record) && <TabWidgets tab={visibleRoute.record ? visibleRoute.id + '-detail' : visibleRoute.id} />}
+            {screen}
+          </div>
+          {drawer && route.record && <OwnerOrderDialog client={client} profile={profile} navigate={navigate}
+            recordId={route.record} directReview={route.view === 'review'} behind={behind} dismiss={dismiss} returnHash={origin || '#home'} />}
         </main>
       </div>
     </div>
@@ -282,14 +297,11 @@ function App() {
     };
   }, []);
   if (state.status === 'ready' && auth.current && client.current) {
-    return (
-      <Workspace
-        key={state.profile.id + state.profile.role}
-        profile={state.profile}
-        auth={auth.current}
-        client={client.current}
-      />
-    );
+    const key = state.profile.id + state.profile.role;
+    const workspace = <Workspace key={key} profile={state.profile} auth={auth.current} client={client.current} />;
+    return state.profile.role === 'admin' ? <OwnerData key={key} client={client.current} ownerId={state.profile.id}>
+      <OwnerPreferences client={client.current} ownerId={state.profile.id}>{workspace}</OwnerPreferences>
+    </OwnerData> : workspace;
   }
   if (state.status === 'signed_out' && auth.current)
     return <SignIn auth={auth.current} client={client.current!} message={state.message} />;

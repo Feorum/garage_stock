@@ -7,7 +7,9 @@ export function subscribeBoardUpdates(
   onSignal: () => void,
   connection?: (connected: boolean) => void,
   scope = 'board',
+  refreshOnConnect = true,
 ) {
+  let firstConnection = true;
   const channel = client
     .channel?.('workshop-' + scope + '-' + profileId)
     .on(
@@ -18,7 +20,10 @@ export function subscribeBoardUpdates(
     .subscribe((status) => {
       const ready = status === 'SUBSCRIBED';
       connection?.(ready);
-      if (ready) onSignal();
+      if (ready) {
+        if (refreshOnConnect || !firstConnection) onSignal();
+        firstConnection = false;
+      }
     });
   return () => {
     if (channel) void client.removeChannel(channel);

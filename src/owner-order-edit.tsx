@@ -1,5 +1,4 @@
 import type { ComponentProps } from 'preact';
-import { useState } from 'preact/hooks';
 import { OwnerCommercial } from './owner-commercial';
 import { OrderEditor } from './owner-editor';
 import { OrderJobPrices } from './owner-job-prices';
@@ -16,7 +15,6 @@ type Props = Omit<ComponentProps<typeof OrderEditor>, 'seed' | 'quoteRevision'> 
 };
 
 export function OwnerOrderEdit({ order, intake, promptGift, refreshOrder, notify, ...editor }: Props) {
-  const [scopeVisited, setScopeVisited] = useState(promptGift);
   const { price, priceError, financials } = useOrderFinancials(editor.client, order);
   const priceVersions = (price?.tasks || price?.items || [])
     .map(item => `${item.task_id}:${item.private_version}`).sort().join(',');
@@ -29,11 +27,9 @@ export function OwnerOrderEdit({ order, intake, promptGift, refreshOrder, notify
       <h2 id="order-edit-title">Изменить заказ</h2>
       <p>{order.vehicle}</p>
     </header>
-    {order.status === 'published' && <details class="owner-edit-scope" open={promptGift || undefined}
-      onToggle={event => { if (event.currentTarget.open) setScopeVisited(true); }}>
+    {order.status === 'published' && <details class="owner-edit-scope" open>
       <summary>Данные и состав работ</summary>
-      {scopeVisited && <OrderEditor {...editor} seed={{ mode: 'edit', order, intake, promptGift }}
-        quoteRevision={priceVersions} />}
+      <OrderEditor {...editor} seed={{ mode: 'edit', order, intake, promptGift }} quoteRevision={priceVersions} />
     </details>}
     <section class="owner-order-detail owner-edit-financials" aria-label="Цены и выплаты">
       <h3>Цены и выплаты</h3>

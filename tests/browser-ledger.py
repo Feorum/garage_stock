@@ -104,6 +104,32 @@ def run(args):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=args.chromium, headless=True)
         try:
+            context, page, errors, live = smoke.new_page(browser, fixture())
+            page.goto(base + '/index.html#home')
+            smoke.ready(page, 'Test Owner')
+            page.wait_for_function('__garageCalls.some(c => c.name === "garage_ledger_context")')
+            page.evaluate('location.hash = "#ledger"')
+            expect(entry(page)).to_be_visible()
+            previous = page.evaluate('__garageCalls.filter(c => c.name?.startsWith("garage_ledger_")).length')
+            assert previous == 3
+            page.evaluate('location.hash = "#home"')
+            expect(page.locator('.ledger-workspace')).to_have_count(0)
+            page.evaluate('location.hash = "#ledger"')
+            expect(entry(page)).to_be_visible()
+            assert page.evaluate('__garageCalls.filter(c => c.name?.startsWith("garage_ledger_")).length') == previous
+            period = page.get_by_role('combobox', name='Лист / период', exact=True)
+            period.select_option('sheet-10')
+            expect(entry(page, 'old-row-2')).to_be_visible()
+            period.select_option('sheet-11')
+            expect(entry(page)).to_be_visible()
+            edit(page).locator('#ledger-field-B').fill('112')
+            save(page)
+            expect(page.locator('.ledger-form')).to_have_count(0)
+            period.select_option('sheet-10')
+            expect(page.locator('.ledger-source')).to_contain_text('версия 2')
+            passed.append('Workspace preloads and reuses ledger data, invalidates sibling sheets after edits')
+            finished(context, errors, live)
+
             context, page, errors, live = open_page(browser, base, fixture())
             expect(page.get_by_role('combobox', name='Лист / период', exact=True)).to_have_value('sheet-11')
             expect(page.get_by_role('combobox', name='Раздел', exact=True)).to_have_value('ledger')

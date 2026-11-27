@@ -13,28 +13,10 @@ interface Props {
   price: Money | null;
   refreshPrice(): Promise<Money>;
   refreshOrder(): Promise<void>;
+  close(message?: string): void;
 }
 
-export function OwnerAct(props: Props) {
-  const [open, setOpen] = useState(false);
-  const [notice, setNotice] = useState('');
-  const toggle = useRef<HTMLButtonElement>(null);
-  function close(message = '') {
-    setOpen(false);
-    setNotice(message);
-    requestAnimationFrame(() => toggle.current?.focus({ preventScroll: true }));
-  }
-  return <section class="owner-act" aria-label="Акт выполненных работ">
-    {open
-      ? <ActForm {...props} close={close} />
-      : <button ref={toggle} class="button" type="button" onClick={() => { setNotice(''); setOpen(true); }}>
-          Скачать акт (.docx)
-        </button>}
-    {notice && <p role="status">{notice}</p>}
-  </section>;
-}
-
-function ActForm({ order, client, price, refreshPrice, refreshOrder, close }: Props & { close(message?: string): void }) {
+export function OwnerAct({ order, client, price, refreshPrice, refreshOrder, close }: Props) {
   const [record, setRecord] = useState<ActRecord | null>(null);
   const [fields, setFields] = useState<ActFields | null>(null);
   const [busy, setBusy] = useState(false);
@@ -162,8 +144,8 @@ function ActForm({ order, client, price, refreshPrice, refreshOrder, close }: Pr
     }
   }
 
-  return <form onSubmit={submit} class="act-form">
-    <h3>Акт выполненных работ</h3>
+  return <form onSubmit={submit} class="act-form" aria-labelledby="owner-act-heading">
+    <h3 id="owner-act-heading">Акт выполненных работ</h3>
     {record && fields && <>
       <dl class="act-parties">
         <div><dt>Заказчик</dt><dd>{record.customer_name}</dd></div>

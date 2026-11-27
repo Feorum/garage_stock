@@ -111,9 +111,11 @@ export function ShiftView({ client, profile, section, recordId, navigate }: Shif
     const connection = () => { setOnline(navigator.onLine); if (navigator.onLine) void refresh(); };
     document.addEventListener('visibilitychange', visibleRefresh);
     window.addEventListener('online', connection); window.addEventListener('offline', connection);
+    window.addEventListener('garage-order-drawer-closed', visibleRefresh);
     const interval = window.setInterval(visibleRefresh, 60000);
     return () => { ++generation.current; window.clearInterval(interval); document.removeEventListener('visibilitychange', visibleRefresh);
-      window.removeEventListener('online', connection); window.removeEventListener('offline', connection); };
+      window.removeEventListener('online', connection); window.removeEventListener('offline', connection);
+      window.removeEventListener('garage-order-drawer-closed', visibleRefresh); };
   }, [refresh, profile.id]);
   useEffect(() => { setSearch(''); }, [section]);
   useEffect(() => {

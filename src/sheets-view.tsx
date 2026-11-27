@@ -9,10 +9,11 @@ import {
   REVIEW_MESSAGES,
   connectionUrl,
 } from './sheet-format.js';
+import { useOwnerData, useResource } from './owner-data';
 import { readRpc } from './workspace-rpc';
 import type { Client, Navigate } from './workspace-types';
 
-interface Source {
+export interface Source {
   id: string;
   source_id?: string;
   name: string;
@@ -127,8 +128,10 @@ function ReaderSetup({ setup, close }: { setup: Setup; close: () => void }) {
   );
 }
 export function SheetsView({ client, navigate }: { client: Client; navigate: Navigate }) {
-  const [sources, setSources] = useState<Source[]>([]);
-  const [loading, setLoading] = useState(true);
+  const store = useOwnerData();
+  const sourceList = useResource(store.sources);
+  const sources = sourceList.data ?? [];
+  const loading = !sourceList.loaded;
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState({ title: '', message: '' });
   const [showConnect, setShowConnect] = useState(false);
@@ -137,27 +140,13 @@ export function SheetsView({ client, navigate }: { client: Client; navigate: Nav
   const [setup, setSetup] = useState<Setup | null>(null);
   const [review, setReview] = useState<{ source: Source; rows: Review[]; intakes: Intake[] } | null>(null);
   const scope = useRef(new AbortController());
-  const version = useRef(0);
   const locked = useRef(false);
   const attempt = useRef<{ source: string; version: number; secret: string } | null>(null);
   const tell = (title: string, message = '') => setFeedback({ title, message });
   async function refresh() {
-    const token = ++version.current;
-    setLoading(true);
-    try {
-      const data = await readRpc<Source[]>(client, 'garage_sheet_pull_sources', {}, scope.current.signal);
-      if (version.current !== token || scope.current.signal.aborted) return;
-      setSources(data);
-      setFeedback({ title: '', message: '' });
-    } catch (error) {
-      if (version.current === token && !scope.current.signal.aborted)
-        tell('Подключения недоступны', feedbackMessage(error));
-    } finally {
-      if (version.current === token && !scope.current.signal.aborted) setLoading(false);
-    }
+    await store.sources.read(true).then(() => tell(''), error => tell('Подключения недоступны', feedbackMessage(error)));
   }
   useEffect(() => {
-    void refresh();
     return () => {
       scope.current.abort();
       attempt.current = null;
@@ -177,9 +166,7 @@ export function SheetsView({ client, navigate }: { client: Client; navigate: Nav
     }
   }
   function apply(source: Source, fresh: Partial<Source>) {
-    ++version.current;
-    setLoading(false);
-    setSources((old) => [{ ...source, ...fresh }, ...old.filter((s) => keyOf(s) !== keyOf(source))]);
+    store.sources.set([{ ...source, ...fresh }, ...(store.sources.get().data || []).filter((s) => keyOf(s) !== keyOf(source))]);
   }
   function connect(event: SubmitEvent) {
     event.preventDefault();
@@ -262,6 +249,14 @@ export function SheetsView({ client, navigate }: { client: Client; navigate: Nav
       if (!scope.current.signal.aborted) setReview({ source, rows, intakes });
     });
   }
+  useEffect(() => {
+    const returned = () => {
+      void refresh();
+      if (review) reviews(review.source);
+    };
+    window.addEventListener('garage-order-drawer-closed', returned);
+    return () => window.removeEventListener('garage-order-drawer-closed', returned);
+  }, [client, review?.source]);
   return (
     <section class="sheets-workspace" aria-label="Подключения таблиц">
       <div class="sheet-list-heading">
@@ -274,8 +269,9 @@ export function SheetsView({ client, navigate }: { client: Client; navigate: Nav
         <strong>{feedback.title}</strong>
         {feedback.message && <p>{feedback.message}</p>}
       </div>
+      {sourceList.failed && !feedback.title && <p role="alert">Не удалось загрузить подключения.</p>}
       {loading && <p role="status">Загрузка подключений таблиц…</p>}
-      {!loading && !sources.length && <p>Рабочая копия не подключена</p>}
+      {!loading && !sourceList.failed && !sources.length && <p>Рабочая копия не подключена</p>}
       <div class="sheet-source-list">
         {sources.map((source) => {
           const url = connectionUrl(source, 0),

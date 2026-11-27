@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { RateForm, type Rate } from './mechanic-rates';
-import { readRpc } from './workspace-rpc';
+import { useOwnerData, useResource } from './owner-data';
 import { accountRequest } from './mechanic-accounts';
 import { workshopDay, type Client } from './workspace-types';
 import './mechanic-settings.css';
 
-interface Account { id: string; name: string; email: string | null; role: string; active: boolean; pending?: boolean }
+export interface Account { id: string; name: string; email: string | null; role: string; active: boolean; pending?: boolean }
 const percent = new Intl.NumberFormat('ru-RU', { style: 'percent', maximumFractionDigits: 2 });
 
 function AccountForm({ client, account, saved, pending, cancel }: {
@@ -73,12 +73,12 @@ function AccountForm({ client, account, saved, pending, cancel }: {
 }
 
 export function MechanicSettings({ client }: { client: Client }) {
-  const [accounts, setAccounts] = useState<Account[] | null>(null);
-  const [rates, setRates] = useState<Rate[] | null>(null);
-  const [rosterError, setRosterError] = useState('');
-  const [rateError, setRateError] = useState(false);
-  const [rosterAttempt, reloadRoster] = useState(0);
-  const [rateAttempt, reloadRates] = useState(0);
+  const store = useOwnerData();
+  const { data: accounts, failed: rosterFailed } = useResource(store.accounts);
+  const { data: rates, failed: rateError } = useResource(store.rates);
+  const rosterError = rosterFailed && 'Не удалось загрузить механиков.';
+  const reloadRoster = () => { void Promise.allSettled([store.accounts.read(true), store.staff.read(true)]); };
+  const reloadRates = () => { void store.rates.read(true).catch(() => {}); };
   const [pickedId, pick] = useState('');
   const [creating, setCreating] = useState(false);
   const [writing, setWriting] = useState(false);
@@ -87,28 +87,6 @@ export function MechanicSettings({ client }: { client: Client }) {
   const actionLock = useRef(false);
   const panel = useRef<HTMLElement>(null);
   const focusPanel = () => requestAnimationFrame(() => panel.current?.focus());
-  useEffect(() => {
-    let live = true;
-    setRosterError('');
-    accountRequest<{ accounts: Account[] }>(client, { action: 'list' }).then(result => {
-      if (!Array.isArray(result.accounts)) throw new Error('Сервис вернул некорректный список механиков.');
-      if (live) setAccounts(result.accounts.filter(a => a.role === 'mechanic'));
-    }).catch(failure => {
-      if (live) { setAccounts(null); setRosterError(failure instanceof Error ? failure.message : 'Не удалось загрузить механиков.'); }
-    });
-    return () => { live = false; };
-  }, [client, rosterAttempt]);
-
-  useEffect(() => {
-    const scope = new AbortController();
-    setRateError(false);
-    readRpc<Rate[]>(client, 'garage_mechanic_rates', {}, scope.signal).then(result => {
-      if (!Array.isArray(result)) throw new Error();
-      if (!scope.signal.aborted) setRates(result);
-    }).catch(() => { if (!scope.signal.aborted) { setRates(null); setRateError(true); } });
-    return () => scope.abort();
-  }, [client, rateAttempt]);
-
   const applications = (accounts ?? []).filter(account => account.pending);
   const roster = (accounts ?? []).filter(account => !account.pending).sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name, 'ru') || a.id.localeCompare(b.id));
   const selected = roster.find(a => a.id === pickedId) ?? roster[0];
@@ -119,11 +97,11 @@ export function MechanicSettings({ client }: { client: Client }) {
     if (row.effective_date <= today && (!previous || row.effective_date > previous.effective_date)) currentRates.set(row.mechanic_id, row);
   }
   function saved(account: Account, created: boolean) {
-    setAccounts(items => [...(items ?? []).filter(a => a.id !== account.id), account]);
+    store.accounts.set([...(store.accounts.get().data ?? []).filter(a => a.id !== account.id), account]);
     pick(account.id);
     setCreating(false);
     if (created) focusPanel();
-    reloadRoster(n => n + 1);
+    reloadRoster();
     setNotice(created ? 'Механик добавлен. Выберите дату и задайте ставку.' : 'Данные для входа сохранены.');
   }
 
@@ -138,10 +116,10 @@ export function MechanicSettings({ client }: { client: Client }) {
     try {
       const { id } = await accountRequest<{ id: string }>(client, { action, id: account.id });
       if (id !== account.id) throw new Error('Сервис не подтвердил изменение доступа.');
-      setAccounts(items => (items ?? []).flatMap(person => person.id !== id ? [person] :
+      store.accounts.set((store.accounts.get().data ?? []).flatMap(person => person.id !== id ? [person] :
         action === 'approve' ? [{ ...person, active: true, pending: false }] : []));
       if (action === 'approve') { pick(id); setCreating(false); focusPanel(); }
-      reloadRoster(n => n + 1);
+      reloadRoster();
       setNotice(action === 'approve' ? 'Заявка одобрена. Механик может войти по имени и паролю.'
         : action === 'reject' ? 'Заявка отклонена.' : 'Профиль механика удалён.');
     } catch (failure) {
@@ -160,12 +138,12 @@ export function MechanicSettings({ client }: { client: Client }) {
     {actionError && <p class="notice notice-error" role="alert">{actionError}</p>}
     {notice && <p class="ms-notice" role="status">{notice}</p>}
     {rosterError && <p class="notice" role="alert">{rosterError}{' '}
-      <button type="button" class="button button-small" onClick={() => reloadRoster(n => n + 1)}>Повторить</button></p>}
+      <button type="button" class="button button-small" onClick={() => reloadRoster()}>Повторить</button></p>}
     {rateError && <p class="notice" role="alert">Не удалось загрузить ставки.{' '}
-      <button type="button" class="button button-small" onClick={() => reloadRates(n => n + 1)}>Повторить</button></p>}
+      <button type="button" class="button button-small" onClick={() => reloadRates()}>Повторить</button></p>}
     <section class="ms-panel ms-applications" aria-label="Заявки на доступ">
       <div class="ms-heading"><h2>Заявки на доступ</h2>
-        <button type="button" class="button button-small" disabled={writing} onClick={() => reloadRoster(n => n + 1)}>Обновить заявки</button>
+        <button type="button" class="button button-small" disabled={writing} onClick={() => reloadRoster()}>Обновить заявки</button>
       </div>
       {accounts && (applications.length ? <ul>{applications.map(person => <li key={person.id}>
         <strong>{person.name}</strong>
@@ -194,7 +172,7 @@ export function MechanicSettings({ client }: { client: Client }) {
         <h2>{selected.name}</h2>
         {!selected.active ? <p>Доступ механика отключён.</p> : <>
           <section class="ms-rate" aria-label="Процент механика"><h3>Процент механика</h3>
-            {rates ? <RateForm client={client} selected={{ mechanicId: selected.id, rates, refresh: () => reloadRates(n => n + 1) }} />
+            {rates ? <RateForm client={client} selected={{ mechanicId: selected.id, rates, refresh: () => reloadRates() }} />
               : !rateError && <p role="status">Загружаем ставки…</p>}
           </section>
           <section class="ms-access" aria-label="Доступ к мастерской"><h3>Доступ к мастерской</h3>

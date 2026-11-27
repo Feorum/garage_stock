@@ -1,4 +1,4 @@
-import { compareOrderDays, orderDay } from './order-calendar';
+import { compareOrderDays, orderDay, workshopOrderDay } from './order-calendar';
 import { isArchived, orderAuthor, orderPhase, type OwnerOrder } from './owner-model';
 import { historyOrderDate, participants, taskName, type Order } from './shift-model';
 
@@ -7,6 +7,22 @@ export interface CustomOrderSummary {
   vehicle: string;
   visit_date: string;
   status: 'open' | 'closed';
+}
+
+export type DashboardMetric = 'orders' | 'active' | 'closed' | 'works' | 'completedWorks' | 'amount';
+export interface DashboardScope { week: string; day: string; metric: DashboardMetric }
+
+interface DashboardPerson { id: string; name: string; color?: string | null }
+interface DashboardWork { id: string; name: string; status: string; people: DashboardPerson[] }
+interface DashboardOrderDetails {
+  plannedDate: string;
+  dueDate: string;
+  createdDate: string;
+  closedDate: string;
+  priority: string;
+  instructions: string;
+  managerComment: string;
+  sourceSheet: string;
 }
 
 export interface DashboardOrder {
@@ -29,9 +45,11 @@ export interface DashboardOrder {
   tone: string;
   inReview: boolean;
   archived: boolean;
-  people: { id: string; name: string; color?: string | null }[];
-  works: { id: string; name: string; status: string }[];
+  people: DashboardPerson[];
+  works: DashboardWork[];
   catalogueKopeks: number | null;
+  catalogueRateMissing: boolean;
+  details?: DashboardOrderDetails;
 }
 
 interface CatalogueRow {
@@ -41,13 +59,11 @@ interface CatalogueRow {
 function standardRow(order: OwnerOrder): DashboardOrder {
   const day = orderDay(order);
   const phase = orderPhase(order);
-  const works = order.tasks.filter(task => task.status !== 'cancelled');
-  const people = new Map<string, DashboardOrder['people'][number]>();
-  for (const task of works) {
-    for (const person of participants(task)) {
-      people.set(person.mechanic_id, { id: person.mechanic_id, name: person.name, color: person.color });
-    }
-  }
+  const works = order.tasks.filter(task => task.status !== 'cancelled').map(task => ({
+    id: task.id, name: taskName(task), status: task.status,
+    people: participants(task).map(person => ({ id: person.mechanic_id, name: person.name, color: person.color })),
+  }));
+  const people = new Map(works.flatMap(work => work.people.map(person => [person.id, person] as const)));
   return {
     id: order.id, key: order.id, href: '#orders/' + encodeURIComponent(order.id),
     isCustom: false, vehicle: order.vehicle, number: order.order_number || '', vin: order.vin || '',
@@ -57,8 +73,9 @@ function standardRow(order: OwnerOrder): DashboardOrder {
     status: order.status, phaseLabel: phase.label, tone: phase.tone, archived: isArchived(order),
     inReview: order.status === 'published' && order.vehicle_workflow?.state === 'review',
     people: [...people.values()],
-    works: works.map(task => ({ id: task.id, name: taskName(task), status: task.status })),
+    works,
     catalogueKopeks: null,
+    catalogueRateMissing: false,
   };
 }
 
@@ -70,7 +87,8 @@ function catalogueAmount(works: DashboardOrder['works'], row?: CatalogueRow) {
   let total = 0;
   for (const work of works) {
     const rate = rates.get(work.id);
-    if (rate == null || !Number.isSafeInteger(rate)) return null;
+    if (rate === null) return 'missing';
+    if (rate === undefined || !Number.isSafeInteger(rate)) return null;
     total += rate;
   }
   return Number.isSafeInteger(total) ? total : null;
@@ -85,17 +103,30 @@ function customRow(order: CustomOrderSummary): DashboardOrder {
     sourceLabel: 'Вы', manager: '', holder: '', date, dateKind: date ? 'visit' : 'none',
     status: order.status, phaseLabel: closed ? 'Закрыт' : 'Открыт', tone: closed ? 'closed' : 'open',
     inReview: false, archived: closed, people: [], works: [], catalogueKopeks: null,
+    catalogueRateMissing: false,
   };
 }
 
 export function dashboardOrders(
-  standard: OwnerOrder[],
+  standard: (OwnerOrder & { created_at?: string | null })[],
   custom: CustomOrderSummary[],
   prices?: ReadonlyMap<string, CatalogueRow> | null,
 ) {
   const rows = standard.map(order => {
     const row = standardRow(order);
-    row.catalogueKopeks = catalogueAmount(row.works, prices?.get(order.id));
+    row.details = {
+      plannedDate: orderDay({ planned_date: order.planned_date }),
+      dueDate: orderDay({ due_date: order.due_date }),
+      createdDate: workshopOrderDay(order.created_at),
+      closedDate: workshopOrderDay(order.closed_at),
+      priority: order.priority || '',
+      instructions: order.instructions || '',
+      managerComment: order.manager_comment || '',
+      sourceSheet: order.source_name || '',
+    };
+    const amount = catalogueAmount(row.works, prices?.get(order.id));
+    row.catalogueKopeks = typeof amount === 'number' ? amount : null;
+    row.catalogueRateMissing = amount === 'missing';
     return row;
   });
   return rows.concat(custom.map(customRow)).sort((a, b) =>
@@ -121,7 +152,7 @@ export function shiftDate(day: string, days: number) {
   if (!orderDay({ planned_date: day })) return '';
   const date = new Date(day + 'T00:00:00Z');
   date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
+  return orderDay({ planned_date: date.toISOString().split('T')[0] });
 }
 
 export function mondayOf(day: string) {
@@ -129,10 +160,57 @@ export function mondayOf(day: string) {
   return shiftDate(day, -((weekday + 6) % 7));
 }
 
+export function lastDayOfWeek(weekStart: string) {
+  return shiftDate(weekStart, 6) || '9999-12-31';
+}
+
 export function ordersInWeek(orders: DashboardOrder[], weekStart: string | null) {
   if (!weekStart) return orders;
-  const end = shiftDate(weekStart, 7);
-  return orders.filter(order => order.date >= weekStart && order.date < end);
+  const end = lastDayOfWeek(weekStart);
+  return orders.filter(order => order.date >= weekStart && order.date <= end);
+}
+
+const metrics = new Set<string>(['orders', 'active', 'closed', 'works', 'completedWorks', 'amount']);
+
+export function parseDashboardScope(query: string): DashboardScope {
+  const params = new URLSearchParams(query);
+  const day = orderDay({ planned_date: params.get('day') });
+  const date = day || orderDay({ planned_date: params.get('week') });
+  const metric = params.get('metric') || '';
+  return { week: date ? mondayOf(date) : '', day, metric: metrics.has(metric) ? metric as DashboardMetric : 'orders' };
+}
+
+export function dashboardScopeHref(week: string, metric: DashboardMetric | 'review', day = '') {
+  const params = new URLSearchParams({ week });
+  if (metric === 'review') return '#shift?' + params;
+  params.set('metric', metric);
+  if (day) params.set('day', day);
+  return '#orders?' + params;
+}
+
+function contributesCatalogue(order: DashboardOrder) {
+  return !order.isCustom && order.status !== 'cancelled';
+}
+
+export function dashboardMetricOrders(orders: DashboardOrder[], metric: DashboardMetric) {
+  switch (metric) {
+    case 'active': return orders.filter(order => order.tone === 'active' && !order.inReview);
+    case 'closed': return orders.filter(order => order.status === 'closed');
+    case 'amount': return orders.filter(contributesCatalogue);
+    default: return orders;
+  }
+}
+
+export function dashboardWorkRows(orders: DashboardOrder[], metric: 'works' | 'completedWorks') {
+  return orders.filter(contributesCatalogue).flatMap(order => order.works
+    .filter(work => work.status !== 'cancelled' && (metric === 'works' || work.status === 'completed'))
+    .map(work => ({ order, work })));
+}
+
+export function dashboardCatalogueTotal(orders: DashboardOrder[]) {
+  const missing = orders.filter(order => !Number.isSafeInteger(order.catalogueKopeks)).length;
+  const sum = orders.reduce((total, order) => total + (order.catalogueKopeks ?? 0), 0);
+  return { missing, total: missing || !Number.isSafeInteger(sum) ? null : sum };
 }
 
 export function matchesOrder(order: DashboardOrder, query: string) {

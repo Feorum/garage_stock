@@ -28,8 +28,13 @@ create table auth.users(id uuid primary key, email text not null, raw_user_meta_
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid
 $$;
-grant usage on schema public,auth to anon,authenticated,service_role;
+create schema storage;
+create table storage.buckets(id text primary key,name text not null,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+create table storage.objects(bucket_id text references storage.buckets(id),name text not null,primary key(bucket_id,name));
+alter table storage.objects enable row level security;
+grant usage on schema public,auth,storage to anon,authenticated,service_role;
 grant execute on function auth.uid() to anon,authenticated,service_role;
+grant select,insert,delete on storage.objects to authenticated;
 """
 GRANTS = """
 grant select, insert, update, delete on all tables in schema public to anon, authenticated;
@@ -40,13 +45,16 @@ alter default privileges in schema public grant usage, select on sequences to an
 # Only these fixture operations can be issued from the mocked browser transport.
 RPC = {
     'garage_list_orders', 'garage_manager_intakes', 'garage_staff',
+    'garage_owner_preferences', 'garage_save_owner_preference', 'garage_sheet_pull_sources',
+    'garage_ledger_imports', 'garage_ledger_sheet', 'garage_ledger_context',
     'garage_create_order', 'garage_task_action', 'garage_team_action', 'garage_save_team_order', 'garage_vehicle_action',
     'garage_order_financials', 'garage_record_team_omission', 'garage_quote_order',
     'garage_pay_worklist', 'garage_pay_history', 'garage_pay_save', 'garage_pay_save_amounts', 'garage_save_task_pricing',
     'garage_owner_gift_offer', 'garage_save_order_with_gift', 'garage_owner_review_prices',
     'garage_check_work', 'garage_uncheck_work', 'garage_submit_work',
     'garage_act_get', 'garage_act_save', 'garage_act_template', 'garage_save_commercial',
-    'garage_custom_orders', 'garage_save_custom_order', 'garage_delete_order', 'garage_owner_order_note', 'garage_save_owner_order_note',
+    'garage_custom_orders', 'garage_save_custom_order', 'garage_delete_order', 'garage_permanently_delete_order',
+    'garage_owner_order_note', 'garage_save_owner_order_note',
     'garage_order_payroll', 'garage_save_order_payroll', 'garage_mechanic_rates', 'garage_save_mechanic_rate',
 }
 PARAM_TYPES = {
@@ -61,6 +69,7 @@ PARAM_TYPES = {
     'p_override_kopeks': 'bigint', 'p_private_comment': 'text',
     'p_equal_split': 'boolean', 'p_custom': 'boolean',
     'p_gift_expected_version': 'integer',
+    'p_owner_id': 'uuid', 'p_key': 'text', 'p_value': 'jsonb', 'p_sheet_id': 'uuid', 'p_import_id': 'uuid',
     'p_number': 'text', 'p_contract_number': 'text', 'p_contract_date': 'date', 'p_act_date': 'date',
     'p_expected_order_version': 'integer', 'p_expected_amounts': 'jsonb',
     'p_agreed_total_kopeks': 'bigint', 'p_basis': 'text',
@@ -466,7 +475,7 @@ if __name__ == '__main__':
     try:
         with Database() as database:
             database.setup()
-            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql', 'pay-amounts.sql', 'completion-acts.sql', 'commercial-terms.sql', 'custom-orders.sql', 'standard-payroll.sql', 'order-film.sql', 'owner-order-notes.sql', 'profile-login-names.sql', 'mechanic-registration-and-removal.sql'):
+            for suite in ('vehicle-workflow.sql', 'task-pricing.sql', 'gift-pricing.sql', 'undo-work.sql', 'pay-amounts.sql', 'completion-acts.sql', 'commercial-terms.sql', 'custom-orders.sql', 'standard-payroll.sql', 'order-film.sql', 'owner-order-notes.sql', 'profile-login-names.sql', 'mechanic-registration-and-removal.sql', 'permanent-order-deletion.sql', 'owner-workspace-preferences.sql'):
                 database.sql((ROOT / 'tests' / suite).read_text())
             database.sql("""
                 insert into garage_price_lists (id,name,source_sha256,status)
