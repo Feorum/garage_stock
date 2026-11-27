@@ -69,7 +69,8 @@ def exercise_order_pay(db, directory, chromium, owner, first, second):
                     expect(payroll.get_by_text('Всего исполнителям', exact=True).locator('..')).to_contain_text('16,54')
                     page.reload()
                     expect(payroll.get_by_text('Всего исполнителям', exact=True).locator('..')).to_contain_text('16,54')
-                    assert not page.evaluate("__garageCalls.some(c => c.name === 'garage_pay_worklist')")
+                    assert page.evaluate("__garageCalls.filter(c => c.name === 'garage_pay_worklist').length") == 1
+                    assert page.evaluate("id => __garageCalls.some(c => c.name === 'garage_order_payroll' && c.args.p_order_id === id)", visit)
                     assert not errors and not live, (errors, live)
                 finally:
                     ctx.close()

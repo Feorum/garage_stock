@@ -9,16 +9,9 @@ workflow = run_path(str(ROOT / 'tests/test-team-workflow.py'))
 OWNER, A, B, C = [workflow[name] for name in ('OWNER', 'A', 'B', 'C')]
 MIGRATION = '20261126171123_custom_order_photos.sql'
 
-# The Storage service owns these relations in hosted Supabase. Only the fields used by
-# our bucket and policies are needed to exercise PostgreSQL RLS in the isolated fixture.
-STORAGE = """
-create schema storage;
-create table storage.buckets(id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
-create table storage.objects(bucket_id text references storage.buckets(id), name text, primary key(bucket_id,name));
-alter table storage.objects enable row level security;
-grant usage on schema storage to authenticated,anon;
-grant select,insert,update,delete on storage.objects to authenticated,anon;
-"""
+# The shared test database provides Storage tables. Broad fixture grants let
+# the photo tests distinguish RLS denials from table permission errors.
+STORAGE_GRANTS = "grant select,insert,update,delete on storage.objects to authenticated,anon;"
 
 
 def actor(db, subject, query, **params):
@@ -43,7 +36,7 @@ def visible(db, subject, order_id):
 
 
 def run(db):
-    db.sql(workflow['BOOTSTRAP'] + (ROOT / 'schema.sql').read_text() + workflow['GRANTS'] + STORAGE)
+    db.sql(workflow['BOOTSTRAP'] + (ROOT / 'schema.sql').read_text() + workflow['GRANTS'] + STORAGE_GRANTS)
     for uid, name in workflow['PEOPLE'].items():
         db.sql("insert into auth.users values (:'id', :'email', jsonb_build_object('name', :'name'));",
                {'id':uid, 'email':uid + '@example.invalid', 'name':name})
