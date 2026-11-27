@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 
 from playwright.sync_api import expect, sync_playwright
-from order_browser_helpers import check_decision_buttons, open_visit
+from order_browser_helpers import check_decision_buttons, navigate_section, open_visit
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('garage_browser_smoke', ROOT / 'tests/browser-smoke.py')
@@ -174,7 +174,7 @@ def check_handoff(browser, base, output=None):
         mine = open_visit(page, '011')
         expect(mine.get_by_text('Чужое поручение', exact=True)).to_have_count(0)
         expect(mine.locator('[data-task-id="assigned"]').get_by_role('checkbox')).to_be_enabled()
-        page.get_by_role('link', name='Заказы менеджеров', exact=True).click()
+        navigate_section(page, 'Заказы менеджеров')
         visits = page.locator('[data-vehicle-id]')
         expect(visits).to_have_count(2)
         expect(visits.nth(0)).to_have_attribute('data-vehicle-id', '014')
@@ -263,7 +263,7 @@ def check_handoff(browser, base, output=None):
         assert not calls(page, 'garage_vehicle_action') and not calls(page, 'garage_team_action')
         assert not [name for name in ('garage_manager_intakes','garage_staff','garage_pay_worklist','garage_order_financials','garage_owner_review_prices') if calls(page,name)]
         assert not re.search(r'BYN|НДС|€', page.locator('body').inner_text())
-        page.get_by_role('link', name='История', exact=True).click()
+        navigate_section(page, 'История')
         history = open_visit(page, '013')
         expect(history.get_by_text('Перепроверить кромку на дверях', exact=True)).to_be_visible()
         expect(history.get_by_role('checkbox')).to_have_count(0)
@@ -275,7 +275,7 @@ def check_handoff(browser, base, output=None):
             order.version++;
             document.dispatchEvent(new Event('visibilitychange'));
         }""")
-        page.get_by_role('link', name='Заказы менеджеров', exact=True).click()
+        navigate_section(page, 'Заказы менеджеров')
         returned = open_visit(page, '013')
         owner_note = returned.get_by_role('region', name='Комментарий владельца', exact=True)
         expect(owner_note.get_by_text('Закончить работу на дверях.', exact=True)).to_be_visible()
@@ -336,7 +336,7 @@ def check_photo_protocol(browser, base):
         card.get_by_role('button',name=re.compile(r'^Фото 1')).click()
         expect(card.get_by_role('img',name='Фотография автомобиля по заказу')).to_be_visible()
         card.get_by_role('button',name='Закрыть фото').click()
-        page.get_by_role('link', name='Заказы менеджеров', exact=True).click()
+        navigate_section(page, 'Заказы менеджеров')
         other = open_visit(page, '014')
         other.get_by_role('button',name='Показать фотографии').click()
         expect(other.get_by_text('Фотографий пока нет.', exact=True)).to_be_visible()
