@@ -126,11 +126,16 @@ function Calculation({ order, client, mutate, staff }: Props) {
   const amount = editor ? hundredths(editor.text) : null;
   const pendingExcess = selected && amount != null && selected.kopeks != null && model.cap_kopeks != null && model.total_kopeks != null
     ? Math.max(0, model.total_kopeks - selected.kopeks + amount - model.cap_kopeks) : 0;
-  function row(label: string, key: string, current: Amount, auto: Amount, override: Amount) {
+  const automaticAdditional = model.closed ? model.automatic_additional_kopeks
+    : model.cap_kopeks == null || model.total_kopeks == null ? null
+      : Math.max(0, model.cap_kopeks - model.total_kopeks);
+  const additional = model.closed ? model.additional_kopeks : model.override_additional_kopeks ?? automaticAdditional;
+  function row(label: string, key: string, current: Amount, auto: Amount, override: Amount, note?: string) {
     return <div key={key} class="payroll-amount-row"><dt>{label}</dt><dd>
       <button class="payroll-amount" type="button" disabled={!!editor || !editable} aria-label={'Изменить сумму · ' + label}
         onClick={() => begin(key, current)}>{fmt(current)}</button>
       {override != null && <small>Вручную · расчёт {fmt(auto)}</small>}
+      {note && <small>{note}</small>}
     </dd></div>;
   }
   return <div class="payroll-calculation">
@@ -144,8 +149,9 @@ function Calculation({ order, client, mutate, staff }: Props) {
       {model.people.map(p => row(p.name, p.mechanic_id, p.kopeks, p.automatic_kopeks, p.override_kopeks))}
       <div><dt>Всего исполнителям</dt><dd>{fmt(model.total_kopeks)}</dd></div>
       {row('Премиальный фонд · 5%', 'reserve', model.reserve_kopeks, model.automatic_reserve_kopeks, model.override_reserve_kopeks)}
-      {row('доп прем', 'additional', model.additional_kopeks, model.automatic_additional_kopeks, model.override_additional_kopeks)}
-      <div><dt>Всего в премиальный фонд</dt><dd>{fmt(model.reserve_kopeks == null || model.additional_kopeks == null ? null : model.reserve_kopeks + model.additional_kopeks)}</dd></div>
+      {row('доп прем', 'additional', additional, automaticAdditional, model.override_additional_kopeks,
+        model.closed ? undefined : 'Предварительно · начислится при закрытии')}
+      <div><dt>Всего в премиальный фонд</dt><dd>{fmt(model.reserve_kopeks == null || additional == null ? null : model.reserve_kopeks + additional)}</dd></div>
     </dl>
     {(model.excess_kopeks ?? 0) > 0 && <p class="notice">Выплаты выше потолка на {fmt(model.excess_kopeks)}.</p>}
     {(wrappingSteps || savedSteps) && <>

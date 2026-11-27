@@ -21,11 +21,11 @@ class Fixture:
                       'tasks': [{'id': 'task', 'work_code': 'W01', 'work_name': 'Оклейка капота', 'version': 1,
                                  'status': 'completed', 'options': {}, 'participants': []}]}
         self.rates = [{'mechanic_id': 'm', 'name': 'Миша', 'effective_date': '2026-11-01', 'rate_bp': 1500}]
-        self.pay = {'applicable': True, 'version': 0, 'token': '0', 'closed': True, 'history': [],
+        self.pay = {'applicable': True, 'version': 0, 'token': '0', 'closed': False, 'history': [],
                     'missing_prices': [], 'missing_rates': [], 'prep_ids': [], 'heat_ids': [],
                     'basis_kopeks': 90000, 'cap_kopeks': 22500, 'total_kopeks': 20100, 'excess_kopeks': 0,
                     'automatic_reserve_kopeks': 4500, 'reserve_kopeks': 4500, 'override_reserve_kopeks': None,
-                    'automatic_additional_kopeks': 2400, 'additional_kopeks': 2400, 'override_additional_kopeks': None,
+                    'automatic_additional_kopeks': 0, 'additional_kopeks': 0, 'override_additional_kopeks': None,
                     'people': [{'mechanic_id': 'a', 'name': 'Андрей', 'automatic_kopeks': 20100,
                                 'kopeks': 20100, 'override_kopeks': None}],
                     'lines': [{'task_id': 'task', 'work_date': '2026-11-30', 'basis_kopeks': 90000,
@@ -45,7 +45,8 @@ class Fixture:
             person['kopeks'] = person['automatic_kopeks'] if person['override_kopeks'] is None else person['override_kopeks']
             self.pay.update(prep_ids=params['p_prep_ids'], heat_ids=params['p_heat_ids'], total_kopeks=person['kopeks'],
                             excess_kopeks=max(0, person['kopeks'] - 22500))
-            for field, default in [('reserve', 4500), ('additional', max(0, 22500 - person['kopeks']))]:
+            automatic_additional = max(0, 22500 - person['kopeks']) if self.pay['closed'] else 0
+            for field, default in [('reserve', 4500), ('additional', automatic_additional)]:
                 override = params['p_' + field + '_kopeks']
                 self.pay.update({field + '_kopeks': default if override is None else override,
                                  'override_' + field + '_kopeks': override, 'automatic_' + field + '_kopeks': default})
@@ -107,12 +108,18 @@ def run(browser, base):
         page.goto(base + '/index.html#orders/visit')
         section = page.locator('.order-payroll')
         page.get_by_role('button', name='Оплата механиков', exact=True).click()
+        additional = section.get_by_role('button', name='Изменить сумму · доп прем')
+        preliminary = section.get_by_text('Предварительно · начислится при закрытии', exact=True)
+        expect(additional).to_contain_text('24,00')
+        expect(preliminary).to_be_visible()
+        assert not fixture.saves
         expect(section.get_by_text('Всего в премиальный фонд').locator('..')).to_contain_text(re.compile(r'69,00\sBYN'))
         section.get_by_role('button', name='Изменить сумму · Андрей').click()
         section.get_by_label('Андрей, BYN').fill('235,00')
         expect(section.get_by_text(re.compile(r'После сохранения выплаты превысят потолок на 10,00'))).to_be_visible()
         section.get_by_role('button', name='Сохранить расчёт').click()
         expect(section.get_by_text(re.compile(r'Выплаты выше потолка на 10,00'))).to_be_visible()
+        expect(additional).to_have_text(re.compile(r'^0,00\sBYN'))
         assert fixture.saves[-1]['p_amounts'] == [{'mechanic_id': 'a', 'kopeks': 23500}]
         section.get_by_role('button', name='Изменить сумму · Андрей').click()
         section.get_by_role('button', name='По расчёту').click()
@@ -127,6 +134,10 @@ def run(browser, base):
         expect(section.locator('.payroll-roles')).to_contain_text('Миша')
         assert fixture.saves[-1]['p_prep_ids'] == ['m'] and fixture.saves[-1]['p_heat_ids'] == []
         assert fixture.saves[-1]['p_additional_kopeks'] == 1931
+        fixture.pay.update(closed=True, automatic_additional_kopeks=2400)
+        page.evaluate("window.dispatchEvent(new CustomEvent('garage-order-finance-updated', {detail:'visit'}))")
+        expect(preliminary).to_have_count(0)
+        expect(additional).to_contain_text('19,31')
         section.get_by_text('Ставки механиков', exact=True).click()
         expect(section.locator('.payroll-rates')).to_be_visible()
         section.get_by_role('combobox').select_option('m')
